@@ -61,3 +61,10 @@ index. For a scoped export, edit-history changes are filtered to that video's
 entities; cross-video restored history is omitted. Native project backups
 retain the complete project and full replayable history. Finishing records the
 user's confirmation and revision in video metadata without inventing frame reviews.
+
+A **Mark hidden range** action removes that person's observations in the inclusive
+range and saves an `intervals` record with `reason: occlusion`. Surviving visible
+segments are trimmed/split and retain the same identity. Generated boxes retained
+at the cut boundaries become protected draft keyframes, not approved observations.
+The complete action is recorded as one operation, so Undo restores boxes, segments,
+gaps and affected review states together.

@@ -3,7 +3,7 @@ Unicode true
 !include "x64.nsh"
 !include "WinVer.nsh"
 Name "Frameinsight"
-OutFile "output/Frameinsight-Setup-1.2.0-win64.exe"
+OutFile "output/Frameinsight-Setup-1.2.1-win64.exe"
 InstallDir "$LOCALAPPDATA\Programs\Frameinsight"
 InstallDirRegKey HKCU "Software\Frameinsight" "InstallDir"
 RequestExecutionLevel user
@@ -22,10 +22,10 @@ SetCompressor /SOLID lzma
 !insertmacro MUI_UNPAGE_CONFIRM
 !insertmacro MUI_UNPAGE_INSTFILES
 !insertmacro MUI_LANGUAGE "English"
-VIProductVersion "1.2.0.0"
+VIProductVersion "1.2.1.0"
 VIAddVersionKey /LANG=1033 "ProductName" "Frameinsight"
 VIAddVersionKey /LANG=1033 "FileDescription" "Frameinsight offline annotation installer"
-VIAddVersionKey /LANG=1033 "FileVersion" "1.2.0"
+VIAddVersionKey /LANG=1033 "FileVersion" "1.2.1"
 VIAddVersionKey /LANG=1033 "LegalCopyright" "Frameinsight project"
 Function .onInit
   ${IfNot} ${RunningX64}
@@ -54,7 +54,7 @@ Section "Frameinsight"
   WriteRegStr HKCU "Software\Frameinsight" "InstallDir" "$INSTDIR"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Frameinsight" "DisplayName" "Frameinsight"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Frameinsight" "UninstallString" '"$INSTDIR\Uninstall.exe"'
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Frameinsight" "DisplayVersion" "1.2.0"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Frameinsight" "DisplayVersion" "1.2.1"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Frameinsight" "DisplayIcon" "$INSTDIR\Frameinsight.exe"
   WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Frameinsight" "NoModify" 1
   WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Frameinsight" "NoRepair" 1

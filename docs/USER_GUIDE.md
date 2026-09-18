@@ -38,6 +38,7 @@ judge whether your boxes are correct. If you have more work to do, choose
 | Enter | Next frame |
 | C | Copy the previous frame's box |
 | K | Fill between drawn boxes |
+| Shift+G | Delete boxes in a hidden frame range and prevent interpolation there |
 | G | Start a gap when the person disappears |
 | H | Resume when they return |
 | T | End this person's track at the current frame |
@@ -59,6 +60,29 @@ change key bindings.
 - **Focus:** show only that person's boxes. **Show all people** restores everyone.
 - **Trash:** remove that person and all their annotations. Read the dialog before
   deleting. **Ctrl+Z** restores an accidental deletion.
+
+# Removing boxes while a person is completely hidden
+
+You can draw before and after the hidden section, let interpolation fill the
+middle, then remove the hidden frames in one action:
+
+1. Select the person on the left.
+2. Click **Mark hidden range** above the video, or press **Shift+G**.
+3. Enter the **first hidden frame** and **last hidden frame**. Both are included.
+4. Check the person and number of boxes shown, then click
+   **Delete boxes & mark hidden**.
+
+For example, keep the last visible box at **39** and the first returning box at
+**60**, then mark **40–59** hidden. Only this person's boxes in that range are
+removed. Their ID stays the same, and interpolation cannot refill the gap.
+You do not need to press G/H separately for this workflow. Drawing resumes
+outside the range; **Go to frame 60** on the gap banner jumps to its end.
+
+**Ctrl+Z** restores the entire change, including removed boxes; **Ctrl+Shift+Z**
+reapplies it. Correcting the range can be done by Undo followed by marking the
+right range. Use this only when the person is completely hidden; keep a box
+around visible parts when they are partly visible. Eye/Focus only change what
+you see and do not create hidden intervals in the annotations.
 
 # Returning to an earlier frame
 

@@ -19,7 +19,9 @@ No terminal, Python, Node, internet connection or GPU setup is needed.
 F = next frame. D = previous frame. Shift+F / Shift+D = jump 10 frames.
 N = new person. I = choose ID, class and color. Ctrl+Z = undo.
 Drag inside a selected box to move it; drag its edge/corner to resize.
-Use G when a person disappears and H when they return. T ends their track.
+For an already interpolated hidden section, press Shift+G, enter the first
+and last hidden frames, then Delete boxes & mark hidden. Ctrl+Z restores it.
+G/H also support disappearance and return as you go. T ends their track.
 Each person has Eye (hide/show), Focus (show only them), and Trash (delete).
 Hidden boxes stay saved and exported. Ctrl+Z restores a deleted person.
 Useful shortcuts are shown on the right side of the editor.

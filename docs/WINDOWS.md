@@ -1,6 +1,6 @@
 # Windows installation
 
-Give the annotator `Frameinsight-Setup-1.2.0-win64.exe` and `START-HERE.txt`.
+Give the annotator `Frameinsight-Setup-1.2.1-win64.exe` and `START-HERE.txt`.
 Double-click the installer, follow its pages, then use the desktop shortcut.
 Windows 10 or 11, **64-bit**, is required. A normal browser such as Edge or
 Chrome is sufficient. Python, Node, AI models and GPU setup are not required.
