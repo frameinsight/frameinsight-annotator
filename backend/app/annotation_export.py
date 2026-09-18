@@ -79,7 +79,7 @@ def annotation_document(pid, video_id=None):
             })
     return {
         'format': 'frameinsight.annotations', 'schema_version': 2, 'exported_at': now(),
-        'media_included': False, 'video_scope': video_id, 'classes': project.get('classes', []),
+        'media_included': False, 'video_scope': video_id, 'classes': project.get('classes', []), 'class_colors': project.get('class_colors', {}),
         'project': {k: project[k] for k in ('id', 'name', 'revision', 'created_at')},
         'conventions': {
             'active_classes': sorted({row['class_name'] for row in annotation_index}) or project.get('classes') or ['person_visible'],

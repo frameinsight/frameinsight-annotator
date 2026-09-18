@@ -1,7 +1,7 @@
 import {create} from 'zustand';
 import {interpolatePerson,markCorrected} from './interpolation';
 import {assignPerson as assignPersonInDomain} from './identity';
-import {VISIBLE_ONLY,legacyExtended} from './types';
+import {VISIBLE_ONLY,legacyExtended,boxStyle,classColor} from './types';
 import {deleteGeometryRange,prepareGeometryFrame} from './hidden-range';
 import {get,set as dbSet,del as dbDelete} from 'idb-keyval';
 import {api,post} from './api';
@@ -86,7 +86,7 @@ export const useStore=create<Store>((set,get)=>({
  undo:()=>compensate(false),redo:()=>compensate(true),retry:()=>void durableAndPump(),
  newPerson:()=>{
   const s=get();if(!s.videoId)return;
-  const id=uuid(),seg=uuid();s.commit('New person',d=>{d.identities[id]={id,person_id:null,name:'Person '+(Object.keys(d.identities).length+1),class_name:s.project?.classes?.[0]||'Person',box_styles:{[s.geometry]:{class_name:s.geometry==='person_ext'?'person_extended':s.project?.classes?.[0]||'Person',color:s.geometry==='person_ext'?'#67e2b1':'#baa7ff'}}};d.segments[seg]={id:seg,video_id:s.videoId,identity_uuid:id,start:s.frame,end:null,status:'verified'};});set({activeId:id});
+  const id=uuid(),seg=uuid();s.commit('New person',d=>{d.identities[id]={id,person_id:null,name:'Person '+(Object.keys(d.identities).length+1),class_name:s.project?.classes?.[0]||'Person',box_styles:{[s.geometry]:{class_name:s.geometry==='person_ext'?'person_extended':s.project?.classes?.[0]||'Person',color:classColor(s.project,s.geometry==='person_ext'?'person_extended':s.project?.classes?.[0]||'Person')}}};d.segments[seg]={id:seg,video_id:s.videoId,identity_uuid:id,start:s.frame,end:null,status:'verified'};});set({activeId:id});
  },
  editObservation:(label,fn,propagate=true)=>{
   const s=get();if(!s.activeId||s.hiddenIds[s.activeId]){s.toast('Select a visible person or press N first');return;}
@@ -94,6 +94,9 @@ export const useStore=create<Store>((set,get)=>({
    else{const segment=prepareGeometryFrame(d,s.videoId,s.activeId,s.frame,s.geometry);
     o=emptyObservation(s.videoId,s.frame,s.activeId,segment.id);d.observations[o.id]=o;
    }
+   const person=d.identities[s.activeId];
+   // Legacy extended tracks keep their original marker until explicit ID conversion.
+   if(!legacyExtended(person)){person.box_styles??={};if(!person.box_styles[s.geometry]){const style=boxStyle(person,s.geometry);person.box_styles[s.geometry]={...style,color:s.geometry==='person_visible'&&person.color?person.color:classColor(s.project,style.class_name)};}}
    prepareGeometryFrame(d,s.videoId,s.activeId,s.frame,s.geometry);markCorrected(o,s.geometry);o.review_state='draft';fn(o);
    if(s.autoInterpolate&&propagate)interpolatePerson(d,s.videoId,s.activeId,s.frameTimes[s.videoId],s.frame,s.geometry);
   });

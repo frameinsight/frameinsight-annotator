@@ -115,7 +115,7 @@ test('I links an older extended-class track to visible ID on the same frame and 
  await page.getByTestId('canvas').press('n');await drag(page,[130,120],[190,240]);await page.keyboard.press('i');await page.getByLabel('Person ID',{exact:true}).fill('7');await page.getByLabel('Class name',{exact:true}).fill('person_visible');await page.getByRole('button',{name:'Save ID',exact:true}).click();await expect(page.getByRole('dialog')).toHaveCount(0);await saved(page);
  const first=Object.keys((await state(request)).state.identities)[0];
  await page.getByTestId('canvas').press('n');await drag(page,[100,80],[220,300]);await saved(page);let p=await state(request);const second=Object.keys(p.state.identities).find(id=>id!==first)!;const identity=p.state.identities[second];
- const response=await request.post(`/api/projects/${projectId}/operations`,{data:{id:crypto.randomUUID(),base_revision:p.revision,label:'Legacy fixture',changes:[{collection:'identities',id:second,before:identity,after:Object.fromEntries(Object.entries({...identity,class_name:'person_extended',color:'#ffaa00'}).filter(([key])=>key!=='box_styles'))}]}});expect(response.ok()).toBeTruthy();await reopen(page);await ready(page,0);await page.locator('.person').filter({hasText:'Person 2'}).click();const before=(await state(request)).state;
+ const response=await request.post(`/api/projects/${projectId}/operations`,{data:{id:crypto.randomUUID(),base_revision:p.revision,label:'Legacy fixture',changes:[{collection:'identities',id:second,before:identity,after:Object.fromEntries(Object.entries({...identity,class_name:'person_extended',color:'#ffaa00'}).filter(([key])=>key!=='box_styles'))}]}});expect(response.ok()).toBeTruthy();await reopen(page);await ready(page,0);await page.locator('.person').filter({hasText:'Person 2'}).click();await drag(page,[110,190],[115,190]);await saved(page);const before=(await state(request)).state;expect(before.identities[second].box_styles).toBeUndefined();
  await page.getByTestId('canvas').press('i');await expect(page.getByLabel('Annotation box type')).toHaveValue('person_ext');await page.getByLabel('Existing person ID').selectOption(first);await expect(page.getByLabel('Class name',{exact:true})).toHaveValue('person_extended');await page.getByRole('button',{name:'Save ID',exact:true}).click();await expect(page.getByRole('dialog')).toHaveCount(0);await saved(page);
  p=await state(request);expect(Object.keys(p.state.identities)).toEqual([first]);expect(obs(p)).toHaveLength(1);expect(at(p,0).person_visible[0]).toBeCloseTo(130,0);expect(at(p,0).person_ext).toEqual((Object.values(before.observations) as any[]).find(o=>o.identity_uuid===second).person_visible);expect(p.state.identities[first].person_id).toBe(7);
  await page.getByTestId('canvas').press('Control+z');await saved(page);expect((await state(request)).state).toEqual(before);await page.keyboard.press('Control+Shift+z');await saved(page);await reopen(page);await ready(page,0);expect((await state(request)).state).toEqual(p.state);
@@ -125,4 +125,34 @@ test('a new extended-first person can set its ID and later receive a visible box
  await page.getByTestId('canvas').press('2');await page.keyboard.press('n');await drag(page,[100,60],[220,310]);await saved(page);let p=await state(request);expect(at(p,0).person_ext).not.toBeNull();expect(at(p,0).person_visible).toBeNull();
  await page.getByTestId('canvas').press('i');await expect(page.getByLabel('Annotation box type')).toHaveValue('person_ext');await page.getByLabel('Person ID',{exact:true}).fill('9');await page.getByRole('button',{name:'Save ID',exact:true}).click();await expect(page.getByRole('dialog')).toHaveCount(0);await saved(page);
  const ext=at(await state(request),0).person_ext;await page.getByTestId('canvas').press('1');await drag(page,[130,120],[190,240]);await saved(page);p=await state(request);expect(at(p,0).person_ext).toEqual(ext);expect(at(p,0).person_visible).not.toBeNull();expect(Object.keys(p.state.identities)).toHaveLength(1);expect(Object.values(p.state.identities)[0]).toMatchObject({person_id:9});
+});
+
+test('class buttons group both classes under one person and persist random colors',async({page,request})=>{
+ await page.getByTestId('canvas').press('n');await drag(page,[120,100],[180,240]);
+ await page.getByRole('button',{name:'Add class',exact:true}).click();await page.getByLabel('New class name').fill('person_extended');await page.getByRole('button',{name:'Create class',exact:true}).click();await expect(page.getByRole('dialog')).toHaveCount(0);
+ await drag(page,[100,80],[200,300]);await saved(page);
+ await expect(page.locator('.person-row')).toHaveCount(1);await expect(page.locator('.person-classes')).toContainText('Person');await expect(page.locator('.person-classes')).toContainText('person_extended');
+ let p=await state(request);const person:any=Object.values(p.state.identities)[0];const styles=person.box_styles;
+ expect(styles.person_visible.color).not.toBe(styles.person_ext.color);expect(styles.person_ext.color).toBe(p.class_colors.person_extended);
+ const classes=page.locator('.class-bar');await classes.getByRole('button',{name:'Person',exact:true}).click();await expect(page.getByRole('button',{name:'Visible 1',exact:true})).toHaveAttribute('aria-pressed','true');
+ await classes.getByRole('button',{name:'person_extended',exact:true}).click();await expect(page.getByRole('button',{name:'Extended 2',exact:true})).toHaveAttribute('aria-pressed','true');
+ await reopen(page);await ready(page,0);await expect(page.locator('.person-row')).toHaveCount(1);expect((await state(request)).state.identities[person.id].box_styles).toEqual(styles);
+ await page.getByTestId('canvas').press('i');await page.getByRole('dialog').getByRole('button',{name:'Add class',exact:true}).click();await page.getByLabel('Class name',{exact:true}).fill('Estimated body');await page.getByRole('button',{name:'Save ID',exact:true}).click();await expect(page.getByRole('dialog')).toHaveCount(0);await saved(page);
+ p=await state(request);expect(p.state.identities[person.id].box_styles.person_ext.color).toBe(p.class_colors['Estimated body']);expect(p.class_colors['Estimated body']).not.toBe(styles.person_ext.color);await expect(classes.getByRole('button',{name:'Estimated body',exact:true})).toBeVisible();
+});
+
+test('manual zoom and pan survive drawing, resizing panels and switching frames',async({page,request})=>{
+ const canvas=page.getByTestId('canvas');await canvas.press('n');
+ const initial=Number(await canvas.getAttribute('data-scale'));const rect=(await canvas.boundingBox())!;
+ await page.mouse.move(rect.x+rect.width/2,rect.y+rect.height/2);await page.mouse.wheel(0,-300);
+ await expect.poll(async()=>Number(await canvas.getAttribute('data-scale'))).toBeGreaterThan(initial);
+ const zoom=await canvas.getAttribute('data-scale');const view=async()=>[await canvas.getAttribute('data-offset-x'),await canvas.getAttribute('data-offset-y'),await canvas.getAttribute('data-scale')];
+ // Pan with the key held, then draw in the central visible source region.
+ await page.keyboard.down('Space');await page.mouse.move(rect.x+rect.width/2,rect.y+rect.height/2);await page.mouse.down();await page.mouse.move(rect.x+rect.width/2+20,rect.y+rect.height/2+10);await page.mouse.up();await page.keyboard.up('Space');
+ const before=await view();await drag(page,[290,140],[350,220]);await saved(page);expect(await view()).toEqual(before);
+ await page.getByRole('button',{name:'Toggle shortcuts',exact:true}).click();await expect(page.locator('.shortcut-panel')).toHaveCount(0);expect(await canvas.getAttribute('data-scale')).toBe(zoom);
+ await page.getByRole('button',{name:'Toggle people panel',exact:true}).click();await expect(page.locator('.people-panel')).toHaveCount(0);expect(await view()).toEqual(before);
+ await page.getByLabel('Go to frame').fill('10');await ready(page,10);await drag(page,[300,140],[360,220]);await saved(page);expect(await view()).toEqual(before);
+ expect(at(await state(request),0).person_visible[0]).toBeCloseTo(290,0);expect(at(await state(request),5).person_visible[0]).toBeCloseTo(295,0);
+ await page.getByRole('button',{name:'Fit image',exact:true}).click();await expect.poll(async()=>canvas.getAttribute('data-scale')).not.toBe(zoom);
 });

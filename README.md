@@ -12,6 +12,8 @@ Local video annotation for person detection and tracking. Draw boxes, keep consi
 6. Changes save automatically; **Save** and **Ctrl+S** are also available.
 7. Click **Finish**, confirm your annotation coverage, and download annotation-only JSON or a native project backup.
 
+The left panel shows one person per track, with small colored class labels underneath. Use the class buttons above the canvas, or **Add class** to type a new label. New classes receive distinct random colors that are saved with the project; existing per-track color overrides are preserved. Classes apply across the selected box type’s track. Zoom and pan stay fixed while drawing, changing frames, or resizing panels; **0 / Fit image** fits the image again.
+
 The simplified editor supports one visible and one extended rectangle per person per frame. Each type has independent keyframes, interpolation, class, and color; no individual approval step is needed. Direction arrows and future movement prediction are proposed work, not implemented features.
 
 ## Run locally
@@ -81,7 +83,7 @@ If you already drew separate tracks in the older single-box version:
 3. Choose the existing visible person's ID, verify the extended class and color, then **Save ID**.
 4. Both rectangles now belong to that person, including overlapping frames. **Ctrl+Z** restores the separate tracks.
 
-This converts the older extended-class rectangles into the actual extended slot without changing their coordinates. It never guesses which two people should be linked. Two boxes of the **same** type on one frame are a conflict; the app rejects the join without overwriting either. Class names alone do not select box geometry in new work: use the Visible/Extended controls.
+This converts the older extended-class rectangles into the actual extended slot without changing their coordinates. It never guesses which two people should be linked. Two boxes of the **same** type on one frame are a conflict; the app rejects the join without overwriting either. The `person_visible` and `person_extended` class buttons select the matching box type. A custom class uses the selected Visible/Extended type; choosing a class already used by this person selects its existing type.
 
 The paired JSON view looks like this (example coordinates):
 
@@ -157,7 +159,7 @@ npm --prefix frontend run test:e2e -- editor.spec.ts
 
 Use a separate `FRAMEINSIGHT_DATA` directory for the test server: browser tests create synthetic projects in whichever server they target. The optional real-video performance test needs locally supplied footage and is not a clean-checkout acceptance test.
 
-The v1.4.0 verification passed 44 backend tests, 32 frontend unit tests, and 14 editor browser tests. These cover paired editing, independent interpolation, legacy-track linking, scoped deletion, JSON v2, and undo/reload, plus manual Chrome checks. Windows packaging was tested under Wine; native Windows 10/11 validation remains outstanding.
+The v1.5.0 verification passed 45 backend tests, 32 frontend unit tests, and 16 editor browser tests. These cover saved class palettes, grouped class labels, zoom/pan stability, database migration, paired editing, independent interpolation, legacy-track linking, scoped deletion, JSON v2, and undo/reload, plus manual Chrome checks. Windows packaging was tested under Wine; native Windows 10/11 validation remains outstanding.
 
 ## Windows packaging
 

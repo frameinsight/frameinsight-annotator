@@ -13,7 +13,7 @@ export type ProposalReview={id:string;video_id:string;frame_index:number;proposa
 export type Domain={proposal_reviews:Record<string,ProposalReview>;identities:Record<string,Identity>;segments:Record<string,Segment>;observations:Record<string,Observation>;intervals:Record<string,Interval>;links:Record<string,Link>;reviews:Record<string,Review>};
 export type Collection=keyof Domain;
 export type Video={id:string;name:string;width:number;height:number;frame_count:number;nominal_fps:number;status:string;error?:string;source_hash:string;stream_index:number;session:string;finished_revision?:number;finished_at?:string};
-export type Project={classes?:string[];id:string;name:string;revision:number;state:Domain;videos:Record<string,Video>};
+export type Project={class_colors?:Record<string,string>;classes?:string[];id:string;name:string;revision:number;state:Domain;videos:Record<string,Video>};
 export type Change={collection:Collection;id:string;before:any;after:any};
 export type Operation={id:string;base_revision:number;label:string;video_id:string|null;frame_index:number|null;changes:Change[];compensates?:string|null};
 export type Proposal={id:string;video_id:string;frame_index:number;geometry:Geometry;box:Box;confidence:number;class_name:string;cache_key:string};
@@ -67,3 +67,5 @@ export const legacyExtended=(p:Identity)=>(!p.box_styles||!Object.keys(p.box_sty
 export function boxStyle(p:Identity|undefined,g:Geometry):BoxStyle {
  return p?.box_styles?.[g]||{class_name:g==='person_ext'?(p&&legacyExtended(p)?p.class_name!:'person_extended'):(p?.class_name||'person_visible'),color:g==='person_ext'?(p&&legacyExtended(p)?p.color||'#67e2b1':'#67e2b1'):(p?.color||'#baa7ff')};
 }
+
+export function classColor(p:Project|null,name:string){return p?.class_colors?.[name]||Object.values(p?.state.identities||{}).flatMap(i=>Object.values(i.box_styles||{})).find(s=>s.class_name===name)?.color||'#baa7ff';}

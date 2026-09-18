@@ -1,4 +1,6 @@
 import json
+import colorsys
+import secrets
 import sqlite3
 import threading
 from contextlib import contextmanager
@@ -6,6 +8,19 @@ from datetime import datetime, timezone
 from .config import DB
 from .schema import MODELS, Operation, validate_state
 LOCK = threading.RLock()
+
+def class_palette(names, existing=None):
+    palette = dict(existing or {})
+    for name in dict.fromkeys([*(names or ['Person']), 'person_visible', 'person_extended']):
+        if name in palette:
+            continue
+        # Sample several bright colors and keep the most distinct candidate.
+        def rgb(color): return tuple(int(color[i:i+2], 16) for i in (1, 3, 5))
+        candidates = [tuple(round(c * 255) for c in colorsys.hsv_to_rgb(secrets.randbelow(3600)/3600, .55, .95)) for _ in range(32)]
+        used = [rgb(c) for c in palette.values()]
+        chosen = max(candidates, key=lambda c: min((sum((a-b)**2 for a,b in zip(c,u)) for u in used), default=0))
+        palette[name] = '#%02x%02x%02x' % chosen
+    return palette
 
 def now(): return datetime.now(timezone.utc).isoformat()
 def connect():
@@ -44,6 +59,18 @@ def init():
         ''')
         if 'classes' not in {r['name'] for r in c.execute('PRAGMA table_info(projects)')}:
             c.execute("ALTER TABLE projects ADD COLUMN classes TEXT NOT NULL DEFAULT '[]'")
+        if 'class_colors' not in {r['name'] for r in c.execute('PRAGMA table_info(projects)')}:
+            c.execute("ALTER TABLE projects ADD COLUMN class_colors TEXT NOT NULL DEFAULT '{}'")
+            for row in c.execute('SELECT id,classes FROM projects').fetchall():
+                styles = {}
+                for entity in c.execute("SELECT data FROM entities WHERE project_id=? AND collection='identities'", (row['id'],)):
+                    person = json.loads(entity['data'])
+                    if person.get('class_name') and person.get('color'):
+                        styles.setdefault(person['class_name'], person['color'])
+                    for style in person.get('box_styles', {}).values():
+                        styles.setdefault(style['class_name'], style['color'])
+                palette = class_palette(json.loads(row['classes']), styles)
+                c.execute('UPDATE projects SET class_colors=? WHERE id=?', (json.dumps(palette), row['id']))
         c.execute('INSERT OR IGNORE INTO migrations VALUES(1,?)', (now(),))
         c.execute('INSERT OR IGNORE INTO migrations VALUES(2,?)', (now(),))
         if not c.execute('SELECT 1 FROM migrations WHERE version=3').fetchone():
@@ -62,7 +89,7 @@ def get_state(c, pid):
     for row in c.execute('SELECT collection,id,data FROM entities WHERE project_id=?', (pid,)):
         state[row['collection']][row['id']] = json.loads(row['data'])
     videos = {r['id']: json.loads(r['data']) for r in c.execute('SELECT id,data FROM videos WHERE project_id=?', (pid,))}
-    return {**dict(p), 'classes': json.loads(p['classes']), 'schema_version': 1, 'state': state, 'videos': videos}
+    return {**dict(p), 'classes': json.loads(p['classes']), 'class_colors': json.loads(p['class_colors']), 'schema_version': 1, 'state': state, 'videos': videos}
 
 def snapshot(pid):
     with connect() as c: return get_state(c, pid)

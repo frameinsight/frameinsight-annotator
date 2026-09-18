@@ -17,8 +17,13 @@ export const EditorCanvas=forwardRef<CanvasHandle,{proposals:Proposal[];showGhos
  const displayedGeometries=showBoth?geometries:[geometry];
  const requestedKey=videoId+':'+frame;const displayedImage=imageCache.get(requestedKey)||(image?.key===requestedKey?image.image:undefined);const ready=!!displayedImage&&!!video;
  useLayoutEffect(()=>{const ro=new ResizeObserver(entries=>{const r=entries[0].contentRect;setSize({w:r.width,h:r.height})});if(host.current)ro.observe(host.current);return()=>ro.disconnect()},[]);
- const fit=()=>{if(!video?.width)return;const scale=Math.min((size.w-48)/video.width,(size.h-48)/video.height);setView({scale,x:(size.w-video.width*scale)/2,y:(size.h-video.height*scale)/2})};
- useEffect(fit,[videoId,video?.width,size.w,size.h]);
+ const autoFit=useRef(true),fittedVideo=useRef('');
+ const fit=()=>{autoFit.current=true;fitView()};
+ const fitView=()=>{if(!video?.width)return;const scale=Math.min((size.w-48)/video.width,(size.h-48)/video.height);setView({scale,x:(size.w-video.width*scale)/2,y:(size.h-video.height*scale)/2})};
+ useLayoutEffect(()=>{
+  if(fittedVideo.current!==videoId){fittedVideo.current=videoId;autoFit.current=true;}
+  if(autoFit.current&&!gesture.current)fitView();
+ },[videoId,video?.width,size.w,size.h]);
  useEffect(()=>{let cancelled=false;setError('');if(!videoId||!video?.frame_count)return;const key=requestedKey;
  fetchImage(key,`/api/videos/${videoId}/frames/${frame}`).then(img=>{if(!cancelled)setImage({key,image:img});for(const delta of [1,-1,2,-2,3]){const f=frame+delta;if(f>=0&&f<video.frame_count)void fetchImage(videoId+':'+f,`/api/videos/${videoId}/frames/${f}`).catch(()=>{});}}).catch(e=>{if(!cancelled)setError(String(e))});return()=>{cancelled=true};},[requestedKey,video?.frame_count]);
  const observations=frameObservations(project,videoId,frame).filter(o=>!hiddenIds[o.identity_uuid]);
@@ -43,6 +48,7 @@ export const EditorCanvas=forwardRef<CanvasHandle,{proposals:Proposal[];showGhos
  useImperativeHandle(ref,()=>({finish,cancel:()=>{gesture.current=null;setPreview(null)},fit,space:(down)=>{spaceDown.current=down;if(down){panned.current=false;setCursor('grab');return false;}setCursor('crosshair');return panned.current;},isReady:()=>ready}));
  function down(e:React.PointerEvent){
   if(e.button!==0||!ready||!video)return;e.currentTarget.setPointerCapture(e.pointerId);host.current?.focus();
+  autoFit.current=false;
   const screen=point(e),p=toSource(...screen,view);let kind:Gesture['kind']='click',box:Box|null=null,edge='',who=activeId,g=geometry;
   if(spaceDown.current){kind='pan';setCursor('grabbing');}
   else if(activeId&&(!active?.[geometry]||e.altKey)){kind='draw';}
@@ -53,7 +59,7 @@ export const EditorCanvas=forwardRef<CanvasHandle,{proposals:Proposal[];showGhos
   gesture.current={kind,start:p,screen,box,original:box,edge,videoId,frame,activeId:who,geometry:g,moved:false,alt:e.altKey,view};
  }
  function move(e:React.PointerEvent){
-  if(!ready||!video)return;const screen=point(e),p=toSource(...screen,view),g=gesture.current;
+  if(!ready||!video)return;const screen=point(e),g=gesture.current,p=toSource(...screen,g?.view||view);
   if(!g){if(spaceDown.current){setCursor('grab');return;}if(activeId&&!active?.[geometry]){setCursor('crosshair');return;}const hit=boxEntries.find(b=>b.g===geometry&&edgeHit(b.box,p,7/view.scale));if(hit){const edge=edgeHit(hit.box,p,7/view.scale);setCursor(edge.length===2?(edge==='nw'||edge==='se'?'nwse-resize':'nesw-resize'):(edge==='n'||edge==='s'?'ns-resize':'ew-resize'));}else setCursor(active?.[geometry]&&contains(active[geometry],p)?'move':'crosshair');return;}
   if(Math.hypot(screen[0]-g.screen[0],screen[1]-g.screen[1])>3)g.moved=true;
   if(!g.moved)return;
@@ -63,7 +69,7 @@ export const EditorCanvas=forwardRef<CanvasHandle,{proposals:Proposal[];showGhos
   else if(g.kind==='move')g.box=moveBox(g.original!,p[0]-g.start[0],p[1]-g.start[1],video.width,video.height);
   setPreview(g.box);
  }
- function wheel(e:React.WheelEvent){e.preventDefault();if(gesture.current)return;const screen=point(e),p=toSource(...screen,view),scale=clamp(view.scale*Math.exp(-e.deltaY*.0015),.04,20);setView({scale,x:screen[0]-p[0]*scale,y:screen[1]-p[1]*scale});}
+ function wheel(e:React.WheelEvent){e.preventDefault();if(gesture.current)return;autoFit.current=false;const screen=point(e),p=toSource(...screen,view),scale=clamp(view.scale*Math.exp(-e.deltaY*.0015),.04,20);setView({scale,x:screen[0]-p[0]*scale,y:screen[1]-p[1]*scale});}
  const drawBox=(box:Box,g:Geometry,key:string,label:string,selected=false,opacity=1,dashed=false,color=colors[g])=>{
   const [x1,y1,x2,y2]=box;return <Group key={key} opacity={opacity}><Rect x={x1} y={y1} width={x2-x1} height={y2-y1} stroke={color} strokeWidth={(selected?2:1.3)/view.scale} dash={(!VISIBLE_ONLY&&g==='person_visible')||dashed?[6/view.scale,4/view.scale]:undefined}/>{label&&<><Rect x={x1} y={y1-19/view.scale} width={Math.max(34,label.length*6.1+10)/view.scale} height={18/view.scale} fill={selected?color:'#151d24'}/><Text x={x1+4/view.scale} y={y1-16/view.scale} text={label} fontFamily="monospace" fontSize={11/view.scale} fill={selected?(parseInt(color.slice(1,3),16)*.299+parseInt(color.slice(3,5),16)*.587+parseInt(color.slice(5,7),16)*.114>145?'#10161b':'#ffffff'):color}/></>}{selected&&[[x1,y1],[x2,y1],[x1,y2],[x2,y2],[(x1+x2)/2,y1],[(x1+x2)/2,y2],[x1,(y1+y2)/2],[x2,(y1+y2)/2]].map(([x,y],i)=><Rect key={i} x={x-3/view.scale} y={y-3/view.scale} width={6/view.scale} height={6/view.scale} fill="#10161b" stroke={color} strokeWidth={1/view.scale}/>)}</Group>;
  };

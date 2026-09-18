@@ -37,7 +37,9 @@ def restore_archive(path, jid):
                 with archive.open(member) as src,open(dest,'wb') as dst:shutil.copyfileobj(src,dst,1024*1024)
                 if sha256(dest)!=digest:dest.unlink();raise ValueError('Original video hash mismatch')
                 sources[old]=dest
-            with db.transaction() as c:c.execute('INSERT INTO projects(id,name,created_at,classes) VALUES(?,?,?,?)',(pid,original['name']+' (restored)',db.now(),json.dumps(original.get('classes',[]))))
+            palette=original.get('class_colors',{})
+            if not isinstance(palette,dict) or any(not isinstance(k,str) or not isinstance(v,str) or len(v)!=7 or not v.startswith('#') or any(c not in '0123456789abcdefABCDEF' for c in v[1:]) for k,v in palette.items()):raise ValueError('Invalid class colors in backup')
+            with db.transaction() as c:c.execute('INSERT INTO projects(id,name,created_at,classes,class_colors) VALUES(?,?,?,?,?)',(pid,original['name']+' (restored)',db.now(),json.dumps(original.get('classes',[])),json.dumps(db.class_palette(original.get('classes',[]),palette))))
             for old,v in original['videos'].items():
                 vid=str(uuid.uuid4());mapping[old]=vid;new={**v,'id':vid,'project_id':pid,'status':'indexing','frame_count':0,'source':str(DATA/'originals'/(vid+sources[old].suffix))};videos[vid]=new
                 with db.transaction() as c:c.execute('INSERT INTO videos VALUES(?,?,?)',(vid,pid,json.dumps(new)))

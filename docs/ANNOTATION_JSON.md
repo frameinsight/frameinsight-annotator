@@ -35,7 +35,7 @@ Either box slot can be `null`. Frames with neither box generally have no observa
 |---|---|
 | `format`, `schema_version` | `frameinsight.annotations`, version `2` |
 | `exported_at`, `media_included` | UTC export time; media is always `false` |
-| `project`, `video_scope`, `classes` | Project metadata/revision, selected video ID, and saved class catalog |
+| `project`, `video_scope`, `classes`, `class_colors` | Project metadata/revision, selected video ID, saved class catalog, and persistent default class colors |
 | `videos` | Video metadata keyed by video ID: name, dimensions, nominal FPS, source hash and path references |
 | `frames` | Exact frame ledger keyed by video ID, including frame index, PTS, time base, seconds and decode status |
 | `frame_annotations` | Paired rectangles for each saved person/frame |
@@ -51,6 +51,7 @@ Each `annotation_index` row includes:
 
 - `box_type`: `person_visible` or `person_extended`.
 - `geometry_name`: internal slot `person_visible` or `person_ext` (the latter means extended).
+- `class_colors` at the document root maps class names to saved default colors. Per-box `color` is authoritative when an annotator has customized a track.
 - `class_name`, `color`: settings for this box type, taken from `state.identities[identity_uuid].box_styles`. The same person can have different classes and colors for the two types. Older visible labels fall back to identity-level `class_name` and `color`.
 - `box_xyxy`: `[left, top, right, bottom]`; `box_xywh`: `[left, top, width, height]`. Both use unrounded original-image pixels, with origin at the upper-left, x rightwards and y downwards.
 - `frame_index`: zero-based source frame; `timestamp_seconds`: actual source time, or `null` when unavailable. Use the ledger rather than estimating from nominal FPS.

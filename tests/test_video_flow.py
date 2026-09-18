@@ -19,10 +19,15 @@ def test_classes_are_validated_persisted_and_can_be_added():
         response=client.post('/api/projects',json={'name':'Video classes','classes':[' Worker ','Customer']})
         assert response.status_code==200
         p=response.json();assert p['classes']==['Worker','Customer']
+        colors=p['class_colors'];assert len(set(colors.values()))==len(colors)
+        assert client.get('/api/projects/'+p['id']).json()['class_colors']==colors
         for classes in ([''],['x','x'],['a'*81]):assert client.post('/api/projects',json={'name':'Invalid','classes':classes}).status_code==422
         assert client.post('/api/projects/'+p['id']+'/classes',json={'name':' Visitor '}).json()['classes']==['Worker','Customer','Visitor']
         assert client.post('/api/projects/'+p['id']+'/classes',json={'name':'Visitor'}).json()['classes']==['Worker','Customer','Visitor']
-        assert client.get('/api/projects/'+p['id']).json()['classes']==['Worker','Customer','Visitor']
+        current=client.get('/api/projects/'+p['id']).json()
+        assert current['classes']==['Worker','Customer','Visitor']
+        assert all(current['class_colors'][k]==v for k,v in colors.items())
+        assert current['class_colors']['Visitor'] not in colors.values()
 
 
 def test_finish_requires_confirmation_current_revision_and_ready_video(project):
@@ -56,3 +61,18 @@ def test_selected_video_json_excludes_other_video_annotations_and_history(projec
     assert list(doc['videos'])==[v] and list(doc['state']['observations'])==[o]
     assert list(doc['state']['identities'])==[i] and doc['operations']==[]
     assert doc['video_scope']==v and not doc['media_included']
+
+
+def test_existing_database_palette_migration_preserves_annotations():
+    with db.transaction() as c:
+        c.execute('ALTER TABLE projects DROP COLUMN class_colors')
+        c.execute("INSERT INTO projects(id,name,created_at,classes) VALUES('legacy','Legacy',?,?)",(db.now(),json.dumps(['Worker','Customer'])))
+        person={'id':'old-person','name':'Person 1','class_name':'Worker','color':'#ff7700'}
+        c.execute("INSERT INTO entities VALUES('legacy','identities','old-person',?)",(json.dumps(person),))
+    db.init()
+    p=db.snapshot('legacy')
+    assert p['class_colors']['Worker']=='#ff7700'
+    assert p['class_colors']['Customer']!='#ff7700'
+    assert p['state']['identities']['old-person']==person
+    db.init()
+    assert db.snapshot('legacy')['class_colors']==p['class_colors']

@@ -115,10 +115,23 @@ select their existing box instead of creating another.
 # Classes and downloads
 
 Class names are your chosen labels. All classes use the same box-drawing tool.
-Press **I** to choose an existing class or type a new class name. Class and color
-apply to the selected box type across that person's track. New names are saved
-in the class list. The Visible/Extended control chooses geometry; the class name
-is its label.
+Select your person on the left. Their class names appear in small colored text
+under their ID. Click a class button above the video to use it. Click **Add
+class**, type a name, then **Create class** to add one. A distinct random color
+is assigned and saved, so it stays the same when you reopen the video. Press
+**I** if you want to change the ID or manually choose a box color.
+
+Clicking `person_visible` or `person_extended` selects the matching box type.
+Other new class names use the currently selected Visible/Extended type. Clicking
+a class already used by this person switches to that box type. Class changes
+apply across that person's selected box track. Both types stay under one person
+on the left; do not press N for the second type. There are two box slots per
+person per frame (one Visible, one Extended), regardless of how many class names
+you create.
+
+Scroll to zoom and hold Space while dragging to pan. Your zoom and position stay
+fixed while you draw, change frames, or hide/resize panels. Press **0** or click
+**Fit image** to fit the whole video again.
 
 **Annotations JSON** exports the selected video, including IDs, classes, colors,
 both box types under the same identity, coordinates, frame times, gaps,

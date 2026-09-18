@@ -96,7 +96,7 @@ def projects():
 @app.post('/api/projects')
 def create_project(body:NewProject):
     ident=str(uuid.uuid4())
-    with db.transaction() as c:c.execute('INSERT INTO projects(id,name,created_at,classes) VALUES(?,?,?,?)',(ident,body.name.strip(),db.now(),json.dumps(body.classes)))
+    with db.transaction() as c:c.execute('INSERT INTO projects(id,name,created_at,classes,class_colors) VALUES(?,?,?,?,?)',(ident,body.name.strip(),db.now(),json.dumps(body.classes),json.dumps(db.class_palette(body.classes))))
     return db.snapshot(ident)
 @app.get('/api/video-library')
 def video_library():
@@ -115,7 +115,9 @@ def add_class(pid:str,body:NewClass):
             if len(classes)>=100:raise ValueError('Maximum 100 classes')
             classes.append(name)
             c.execute('UPDATE projects SET classes=? WHERE id=?',(json.dumps(classes),pid))
-    return {'classes':classes}
+        palette=db.class_palette(classes,p['class_colors'])
+        c.execute('UPDATE projects SET class_colors=? WHERE id=?',(json.dumps(palette),pid))
+    return {'classes':classes,'class_colors':palette}
 
 @app.delete('/api/videos/{vid}')
 def remove_video(vid:str,confirmed:bool=False):

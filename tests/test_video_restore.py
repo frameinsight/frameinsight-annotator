@@ -34,10 +34,12 @@ def test_vfr_ledger_and_lossless_source_cache(tmp_path):
     for n in range(5):assert Image.open(DATA/'frames'/vid/f'{n:08d}.png').getpixel((100,70))[0]==n*40
 
 def test_native_restore_redecodes_and_verifies_timestamps(tmp_path):
-    pid,vid=setup_video(tmp_path);job=new_job(pid,'export');export_project(pid,{'format':'native','include_videos':True},job['id']);eid=db.job_get(job['id'])['export_id']
+    pid,vid=setup_video(tmp_path)
+    with db.transaction() as c:c.execute('UPDATE projects SET class_colors=? WHERE id=?',(json.dumps({'Worker':'#abcd12'}),pid))
+    job=new_job(pid,'export');export_project(pid,{'format':'native','include_videos':True},job['id']);eid=db.job_get(job['id'])['export_id']
     with db.connect() as c:path=json.loads(c.execute('SELECT data FROM exports WHERE id=?',(eid,)).fetchone()['data'])['path']
     restore=new_job('native-import','restore');restore_archive(path,restore['id']);j=db.job_get(restore['id']);assert j['status']=='completed',j
-    p=db.snapshot(j['restored_project_id']);assert len(p['videos'])==1;v=next(iter(p['videos'].values()));assert v['frame_count']==5 and v['source_hash']==db.snapshot(pid)['videos'][vid]['source_hash']
+    p=db.snapshot(j['restored_project_id']);assert p['class_colors']['Worker']=='#abcd12';assert len(p['videos'])==1;v=next(iter(p['videos'].values()));assert v['frame_count']==5 and v['source_hash']==db.snapshot(pid)['videos'][vid]['source_hash']
 
 def test_native_restore_keeps_proposal_review_and_provenance_references(tmp_path):
     from backend.app.schema import MODELS
