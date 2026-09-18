@@ -1,0 +1,15 @@
+Bundled components remain under their original licenses; see individual files.
+PyAV 18.1.0 is BSD-3-Clause; its unmodified PyPI Windows wheel contains
+FFmpeg and codec DLLs, including GPL components (x264, x265). Their source
+and build recipes are available from the upstream projects:
+https://github.com/PyAV-Org/PyAV/tree/v18.1.0
+https://github.com/PyAV-Org/pyav-ffmpeg
+https://ffmpeg.org/download.html
+https://code.videolan.org/videolan/x264
+https://bitbucket.org/multicoreware/x265_git
+FFmpeg license: https://ffmpeg.org/legal.html
+Python: https://www.python.org/downloads/release/python-31312/
+React, React DOM, Konva, React Konva, Zustand, idb-keyval and Lucide
+license notices are included here. The application backend is supplied
+as Python source under app/backend. Application frontend source and
+build files are supplied in app/frontend-source.

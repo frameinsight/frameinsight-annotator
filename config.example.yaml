@@ -1,0 +1,24 @@
+# Documentation of local defaults. The app reads environment variables listed below,
+# not this YAML file. No secrets or footage leave this machine.
+server:
+  host: 127.0.0.1
+  port: 8765
+storage:
+  # FRAMEINSIGHT_DATA: absolute path, default <repository>/.frameinsight
+  data_directory: .frameinsight
+  # FRAMEINSIGHT_WORKSPACE: allowed root for local imports
+  workspace: .
+  # FRAMEINSIGHT_MODELS: trusted model directory
+  models: models
+video:
+  cache: lossless_png
+  source_frame_numbering: zero_based
+  browser_cached_frames: 15
+proposals:
+  optional: true
+  model: student_yolo26m_20260815_0023_best.pt
+  device: '0'
+  batch_size: 1
+  imgsz: 640
+  confidence: 0.15
+  class_mapping: {'0': person_ext}

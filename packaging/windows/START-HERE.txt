@@ -1,0 +1,35 @@
+FRAMEINSIGHT — WINDOWS 10 / 11 (64-bit)
+
+Double-click Frameinsight on your desktop. Your normal browser will open.
+No terminal, Python, Node, internet connection or GPU setup is needed.
+
+1. The opening screen shows your videos. Click one to continue your work.
+2. For a new recording, click New video. Choose the number of classes and
+   type their names. Click Continue to upload, then select your video.
+3. When the video is ready, press N and drag a box around a person.
+4. Press I to assign a number, choose or create a class, and choose a color.
+   For an existing person, choose their ID from the list.
+5. Skip some frames and draw/adjust the box for the SAME person. The app
+   fills the frames between your boxes. Check these and correct any mistakes.
+6. Changes save automatically. You can also click Save or press Ctrl+S.
+7. When everyone is annotated and tracked, click Finish. Confirm that you
+   checked every person, then choose an export and prepare your download.
+   Annotations JSON contains no video or images.
+
+F = next frame. D = previous frame. Shift+F / Shift+D = jump 10 frames.
+N = new person. I = choose ID, class and color. Ctrl+Z = undo.
+Drag inside a selected box to move it; drag its edge/corner to resize.
+Use G when a person disappears and H when they return. T ends their track.
+Each person has Eye (hide/show), Focus (show only them), and Trash (delete).
+Hidden boxes stay saved and exported. Ctrl+Z restores a deleted person.
+Useful shortcuts are shown on the right side of the editor.
+
+You can reopen finished videos. Editing changes their status to In progress.
+Closing the browser leaves Frameinsight running. Right-click its icon
+near the Windows clock and choose Exit Frameinsight after saving.
+
+Data: %LOCALAPPDATA%\Frameinsight\Data
+Logs: %LOCALAPPDATA%\Frameinsight\Logs\server.log
+Updating or uninstalling keeps your saved work. Keep the original videos
+and back up your data directory while the app is closed.
+The installer is unsigned; Windows may show an unknown-publisher warning.

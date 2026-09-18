@@ -1,0 +1,66 @@
+# Person-detector training pipeline — all knobs in one place.
+# Paths are relative to this folder unless absolute.
+
+data_root: /data/users/humza/cctv/detector-training   # heavy artefacts live on the HDD
+videos_dir: training_videos                            # drop .mp4 files here
+
+sampling:
+  fps: 5              # frames per second extracted from each video
+  jpeg_quality: 95
+  max_frames_per_video: 9000   # long videos (hours-long livestreams) are sampled
+                               # EVENLY across their whole length instead of 5fps,
+                               # so day+night variety survives but compute stays sane
+
+teachers:
+  conf: 0.05          # catch-everything threshold; filtering happens later
+  rfdetr_resolution: 1344
+  yolo_weights: ../models/yolo/yolo26x.pt
+  yolo_imgsz: 1280
+
+tracking:               # offline ByteTrack pass used for persistence + gap filling
+  activation_threshold: 0.30
+  min_iou: 0.10
+  lost_buffer_seconds: 3.0
+  min_persist_seconds: 1.2    # a box inside a track alive >= this is a real person
+  interp_max_gap_seconds: 1.5 # fill detection gaps inside a track up to this long
+
+merge:
+  agree_iou: 0.55       # two-teacher agreement => auto-accept
+  auto_accept_conf: 0.60 # single-teacher box above this => accept
+  min_box_px: 14         # ignore boxes shorter than this (noise)
+  final_nms_iou: 0.65
+  clip_person_prob: 0.75 # CLIP zero-shot verdict threshold for ambiguous crops
+  clip_min_conf: 0.12    # below this teacher conf, only track-persistence can rescue a box
+  review_sample_cap: 1200  # max uncertain crops saved for human review per run
+  static_iou: 0.95       # a "person" box frozen in place (IoU>=this ...
+  static_frac: 0.90      # ... in >=this fraction of frames) is a poster/mannequin -> review
+
+calibration:
+  grid_cols: 24
+  grid_rows: 14
+  background_frames: 61   # frames used for the median background plate
+
+dataset:
+  heldout_videos: [channel_23_supermarket_checkout]
+  empty_frame_fraction: 0.08  # include some person-free frames as negatives
+  use_crowdhuman: auto    # auto = include if prepared copy exists
+  crowdhuman_max_images: 10000
+  extra_yolo_dirs:        # extra datasets: folders each containing images/ + labels/
+    - /data/users/humza/cctv/detector-training/human-cctv-.v1i.yolo26/train
+    - /data/users/humza/cctv/detector-training/human-cctv-.v1i.yolo26/valid
+    - /data/users/humza/cctv/detector-training/human-cctv-.v1i.yolo26/test
+
+train:
+  model: ../models/yolo/yolo26m.pt   # COCO starting point
+  imgsz: 1280
+  epochs: 50
+  batch: 4                # fixed — auto-batch (-1) deadlocked; 6 OOM'd at multi-scale peaks (2026-08-14)
+  multi_scale: false      # 1.5x canvas peaks (1920) OOM 8GB at ANY batch (2026-08-15);
+                          # default in-canvas scale jitter still varies person sizes
+  patience: 15
+  device: 0
+  workers: 2              # 8 workers + fork-after-CUDA deadlocked; 2 is plenty at this imgsz
+
+evaluate:
+  n_frames: 300           # held-out frames rendered for side-by-side comparison
+  iou_match: 0.5
