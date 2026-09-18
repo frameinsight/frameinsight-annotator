@@ -19,10 +19,10 @@ No terminal, Python, Node, internet connection or GPU setup is needed.
 F = next frame. D = previous frame. Shift+F / Shift+D = jump 10 frames.
 N = new person. I = choose ID, class and color. Ctrl+Z = undo.
 Drag inside a selected box to move it; drag its edge/corner to resize.
-Box present = Visible. No box = Not visible, automatically.
-Press Delete to remove the selected person's box on this frame.
+Visible box present = Visible. No visible box = Not visible, automatically.
+Press Delete to remove the selected person's chosen box type on this frame.
 For several frames, press Shift+Delete, enter the first and last frame,
-then click Delete boxes. Deleted frames will not be filled by interpolation.
+then click Delete boxes. That type stays empty on deleted frames; the other type stays.
 Draw a box again to make the person visible; no G/H steps are needed.
 Ctrl+Z restores a deletion. The cause of missing boxes remains unspecified.
 Each person has Eye (hide/show), Focus (show only them), and Trash (delete).
@@ -42,3 +42,14 @@ The installer is unsigned; Windows may show an unknown-publisher warning.
 To remove old work, open All videos and click Delete video under its card.
 Confirm the filename, then Delete video and annotations. This cannot be undone.
 Your original file and downloaded exports are not deleted.
+
+VISIBLE AND EXTENDED BOXES (version 1.4.0)
+Press 1 for Visible and 2 for Extended. Draw both for the same person; do not
+press N again for their second box type. Press I to set each type's class/color.
+C, K, Delete and Shift+Delete affect only the selected type. Uncheck Show both
+to focus on it. Both rectangles share one person ID in JSON v2.
+
+For an older separate person_extended track: select it, press I, keep Extended,
+choose the matching visible person's ID, and Save ID. Coordinates are preserved.
+Ctrl+Z restores the separate tracks. Same-type collisions are not overwritten.
+No visible box means Not visible; an extended box can still remain.

@@ -39,9 +39,9 @@ try:
  assert request('/api/videos/'+vid+'/frames/10',raw=True).startswith(b'\x89PNG')
  from backend.app.schema import Identity,Segment,Observation
  who,seg,obs=uid(),uid(),uid()
- identity=Identity(id=who,person_id=7,class_name='Worker',color='#ff7700').model_dump(mode='json')
+ identity=Identity(id=who,person_id=7,class_name='Worker',color='#ff7700',box_styles={'person_ext':{'class_name':'person_extended','color':'#67e2b1'}}).model_dump(mode='json')
  segment=Segment(id=seg,identity_uuid=who,video_id=vid,start=0).model_dump(mode='json')
- observation=Observation(id=obs,identity_uuid=who,segment_id=seg,video_id=vid,frame_index=10,person_visible=[10,20,100,200],full_quality='unknown',provenance={'person_visible':{'origin':'manual'}}).model_dump(mode='json')
+ observation=Observation(id=obs,identity_uuid=who,segment_id=seg,video_id=vid,frame_index=10,person_visible=[10,20,100,200],person_ext=[5,10,110,220],full_quality='estimated',provenance={'person_visible':{'origin':'manual'}}).model_dump(mode='json')
  changes=[{'collection':col,'id':val['id'],'before':None,'after':val} for col,val in [('identities',identity),('segments',segment),('observations',observation)]]
  request('/api/projects/'+pid+'/operations',{'id':uid(),'base_revision':0,'label':'Windows smoke annotation','changes':changes})
  assert request('/api/projects/'+pid)['classes']==['Worker','Customer']
@@ -50,6 +50,9 @@ try:
  job=request('/api/projects/'+pid+'/exports',{'format':'annotations_json','video_id':vid})
  job=wait(lambda:(j if (j:=request('/api/jobs/'+job['id']))['status']=='completed' else False))
  export=request('/api/exports/'+job['export_id']);assert export['media_included'] is False and export['annotation_index'][0]['color']=='#ff7700'
+ assert export['schema_version']==2 and len(export['annotation_index'])==2
+ assert export['annotation_index'][1]['person_id']==7 and export['annotation_index'][1]['box_type']=='person_extended'
+ assert export['frame_annotations'][0]['boxes']['person_extended']==[5,10,110,220]
  assert [(r['start'],r['end'],r['status']) for r in export['visibility_intervals']]==[(0,9,'not_visible'),(10,10,'visible'),(11,23,'not_visible')]
  stop(p)
  p=subprocess.Popen([str(root/'Frameinsight.exe')]);wait(lambda:request('/api/projects/'+pid)['revision']==1)
@@ -57,7 +60,7 @@ try:
  assert request('/api/videos/'+vid+'?confirmed=true',method='DELETE')['deleted']
  assert request('/api/video-library')==[] and fixture.exists()
  stop(p)
- report={'runtime':'Windows embedded Python 3.13.12','environment':'Wine on Linux' if 'WINEPREFIX' in os.environ else 'Windows','checks':['native launcher','single instance','HTTP frontend','multipart video import','24 exact frames','PNG decoding','annotation save with class/color','class catalog','video library','finish confirmation','annotations-only export','automatic visibility export','delete video preserves original file','graceful shutdown','relaunch persistence'],'project_id':pid}
+ report={'runtime':'Windows embedded Python 3.13.12','environment':'Wine on Linux' if 'WINEPREFIX' in os.environ else 'Windows','checks':['native launcher','single instance','HTTP frontend','multipart video import','24 exact frames','PNG decoding','annotation save with class/color','class catalog','video library','finish confirmation','annotations-only export','paired-box JSON v2 with shared identity','automatic visibility export','delete video preserves original file','graceful shutdown','relaunch persistence'],'project_id':pid}
  Path('windows-smoke-report.json').write_text(json.dumps(report,indent=2));print(json.dumps(report),flush=True)
 finally:
  if p.poll() is None:

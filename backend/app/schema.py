@@ -7,7 +7,11 @@ TOLERANCE = 0.01
 Geometry = tuple[float, float, float, float]
 class Strict(BaseModel):
     model_config = ConfigDict(extra='forbid')
+class BoxStyle(Strict):
+    class_name: str = Field(min_length=1, max_length=80, pattern=r'.*\S.*')
+    color: str = Field(pattern=r'^#[0-9a-fA-F]{6}$')
 class Identity(Strict):
+    box_styles: dict[Literal['person_ext', 'person_visible'], BoxStyle] = Field(default_factory=dict)
     id: str
     person_id: int | None = Field(default=None, gt=0)
     name: str = ''
@@ -40,6 +44,7 @@ class Observation(Strict):
     evidence_note: str = ''
     provenance: dict[str, Provenance] = Field(default_factory=dict)
 class Interval(Strict):
+    geometry: Literal['person_ext', 'person_visible'] | None = None
     id: str
     video_id: str
     identity_uuid: str
@@ -86,8 +91,9 @@ class Operation(Strict):
 def issues(o: dict, *, visible_only: bool = False) -> list[str]:
     result = []
     a, b = o.get('person_ext'), o.get('person_visible')
+    if visible_only:
+        return ['Missing box'] if a is None and b is None else []
     if b is None: result.append('Missing B (visible extent)')
-    if visible_only: return result
     if o['full_quality'] == 'unknown':
         if a is not None: result.append('Unknown full extent must have no A')
         if not o['evidence_note'].strip(): result.append('Unknown A needs an evidence note')
@@ -127,7 +133,8 @@ def validate_state(state: dict, videos: dict, *, visible_only: bool = False):
             raise ValueError('Observation lies outside its visible segment')
         for gap in state['intervals'].values():
             if gap['identity_uuid'] == o['identity_uuid'] and gap['video_id'] == o['video_id'] and gap['start'] <= o['frame_index'] and (gap['end'] is None or o['frame_index'] <= gap['end']):
-                raise ValueError('A fully invisible gap cannot contain positive observations')
+                if (o.get(gap['geometry']) if gap.get('geometry') else (o.get('person_ext') or o.get('person_visible'))):
+                    raise ValueError('A missing-box gap cannot contain that box type')
         v = videos[o['video_id']]
         for name in ('person_ext', 'person_visible'):
             box = o.get(name)

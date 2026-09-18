@@ -12,3 +12,5 @@
 .restore-backup{margin-top:36px;color:#a4b6c2;font-size:12px}.restore-backup summary{cursor:pointer}.restore-backup p{margin:14px 0}.restore-backup input{max-width:400px}
 
 .video-card{display:flex;flex-direction:column;gap:6px;min-width:0}.video-card .video-tile{width:100%;flex:1}.delete-video{align-self:flex-end;font-size:11px;color:#e3a0a0;background:transparent;border-color:transparent}.delete-video:hover{color:#ffc4c4;border-color:#845454}
+.canvas-toolbar>label{display:flex;flex-direction:row;align-items:center;gap:6px;white-space:nowrap;margin:0}.canvas-toolbar>button[aria-pressed="true"]{background:#24463b;color:#b4f7da;border-color:#5dba95}
+.box-status{height:42px;flex:0 0 42px;overflow:auto}.box-status>.gap-banner{min-height:100%;box-sizing:border-box}

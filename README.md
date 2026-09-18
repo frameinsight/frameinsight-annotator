@@ -6,13 +6,13 @@ Local video annotation for person detection and tracking. Draw boxes, keep consi
 
 1. Open the video library and choose **New video**. Use **Delete video** on a card to remove an old video and its annotations from the app.
 2. Enter your class names, upload a video, and wait for preparation.
-3. Press **N** and draw a box. Press **I** to assign/reuse a person ID, class, and color.
+3. Press **N** for a person. Use **1 / Visible** or **2 / Extended** to choose the box type, then draw. Both boxes share that person's ID. Press **I** to assign/reuse an ID and set the selected type's class and color.
 4. Move forward and adjust the same person's box. Auto-interpolation fills eligible frames between keyframes; inspect and correct the results.
-5. Use hide/focus controls for overlapping people. **Delete** or **Delete boxes in range (Shift+Delete)** removes boxes and automatically records Not visible. Drawing again restores visibility without G/H steps.
+5. Use hide/focus controls for overlapping people, or uncheck **Show both** to focus on one box type. **Delete** and **Shift+Delete** remove only the selected type. Missing visible boxes mean Not visible; an extended box can remain. Drawing restores that type without G/H steps.
 6. Changes save automatically; **Save** and **Ctrl+S** are also available.
 7. Click **Finish**, confirm your annotation coverage, and download annotation-only JSON or a native project backup.
 
-The simplified editor uses one box per observation. Historical paired full/visible geometry and legacy conversion helpers remain in the code for compatibility. Direction arrows and future movement prediction are proposed work, not implemented features.
+The simplified editor supports one visible and one extended rectangle per person per frame. Each type has independent keyframes, interpolation, class, and color; no individual approval step is needed. Direction arrows and future movement prediction are proposed work, not implemented features.
 
 ## Run locally
 
@@ -51,22 +51,52 @@ Start with these fields; most applications do not need to process the full edit 
 
 | Field | How to use it |
 |---|---|
-| `format`, `schema_version` | Check for `frameinsight.annotations` and version `1` before reading. |
+| `format`, `schema_version` | New exports use `frameinsight.annotations`, version `2`. Existing downloaded v1 files are unchanged. |
 | `videos` | Video metadata keyed by `video_id`, including original width and height. |
-| `annotation_index` | Current saved observations, ordered by video, frame, and person. Use non-null `box_xyxy` values as box labels. |
-| `identity_uuid` | Stable internal person identity. Group boxes by `(video_id, identity_uuid)` to build a track. |
+| `annotation_index` | One row per present box type. A person can have two rows on the same frame, sharing `identity_uuid`, `person_id`, and `observation_id`. |
+| `frame_annotations` | One row per person/frame, with `boxes.person_visible` and `boxes.person_extended`. Either can be `null`. |
+| `box_type` | `person_visible` or `person_extended`. Include this in your box/track key. Internal `geometry_name: person_ext` means extended. |
+| `identity_uuid` | Stable internal person identity. Group by `(video_id, identity_uuid, box_type)` for each rectangle's track, or use `frame_annotations` for paired tracks. |
 | `person_id` | The human-readable number assigned with **I**; it may be `null`. Do not use this number alone to join unrelated exports. |
 | `class_name`, `color` | The assigned class and display color. Read `class_name` for the training label; `geometry_name` is a storage field, not your chosen class. |
 | `frame_index`, `timestamp_seconds` | Exact source frame number and recorded source timestamp. Frame numbers start at **0**; timestamps can be `null`. |
 | `box_xyxy` | `[left, top, right, bottom]` in **original video pixels**, with `(0, 0)` at the top left. |
 | `box_xywh` | The same box as `[left, top, width, height]`. These values are not normalized. |
-| `annotation_type` | `keyframe`, `interpolated`, or `missing_box`. Manual corrections to interpolated boxes become keyframes. |
+| `annotation_type` | `keyframe` or `interpolated`, independently for each box type. A correction anchors only that type. Missing geometry is `null` in `frame_annotations`. |
 | `visibility_intervals` | Inclusive frame ranges for each person: `visible` or `not_visible`. Use this to find frames that have no observation row. |
 | `state`, `operations` | Detailed saved entities and the audit history. Old/deleted boxes in `operations` are **not current labels**. |
 
 For example, `box_xyxy: [100, 80, 200, 300]` means a rectangle 100 pixels wide and 220 pixels tall. `frame_index: 6` means the seventh decoded source frame.
 
-No box automatically means **Not visible** under this tool's annotation policy, including frames before the first box and after the last. It does not prove that a person was physically occluded: `reason: "unknown"` keeps the cause unspecified. An inclusive interval `start: 40, end: 59` covers frames 40 through 59. Hiding boxes with the eye/focus controls does not remove their exported labels.
+No **visible** box automatically means **Not visible** under this tool's annotation policy, including frames before the first box and after the last. It does not prove that a person was physically occluded: `reason: "unknown"` keeps the cause unspecified. An inclusive interval `start: 40, end: 59` covers frames 40 through 59. Extended boxes are estimates of full extent, so their presence alone does not establish visible evidence. Hiding boxes with the eye/focus controls or **Show both** does not remove their exported labels.
+
+### Two box types with one person ID
+
+For new work, select the person, press **1** to draw Visible, then **2** to draw Extended. Do not press N again for the second box type. Move forward and adjust each type as needed. **K**, **C**, **Delete**, and **Shift+Delete** apply to the selected type only. Press **I** to set each type's class and color.
+
+If you already drew separate tracks in the older single-box version:
+
+1. Select the old track whose class is `person_extended`.
+2. Press **I**. The dialog identifies it as an older extended track and selects **Extended**.
+3. Choose the existing visible person's ID, verify the extended class and color, then **Save ID**.
+4. Both rectangles now belong to that person, including overlapping frames. **Ctrl+Z** restores the separate tracks.
+
+This converts the older extended-class rectangles into the actual extended slot without changing their coordinates. It never guesses which two people should be linked. Two boxes of the **same** type on one frame are a conflict; the app rejects the join without overwriting either. Class names alone do not select box geometry in new work: use the Visible/Extended controls.
+
+The paired JSON view looks like this (example coordinates):
+
+```json
+{
+  "person_id": 1,
+  "frame_index": 53,
+  "boxes": {
+    "person_visible": [110, 100, 170, 180],
+    "person_extended": [100, 80, 180, 300]
+  }
+}
+```
+
+These entries live in `frame_annotations`; each also includes `identity_uuid`, `video_id`, `observation_id`, and `timestamp_seconds`. Classes, colors, and per-type provenance are available in `annotation_index` and `state`.
 
 ### Read it with Python
 
@@ -78,19 +108,19 @@ from collections import defaultdict
 from pathlib import Path
 
 data = json.loads(Path("annotations.json").read_text(encoding="utf-8"))
-if data.get("format") != "frameinsight.annotations" or data.get("schema_version") != 1:
+if data.get("format") != "frameinsight.annotations" or data.get("schema_version") != 2:
     raise ValueError("Unsupported annotation format or version")
 
 tracks = defaultdict(list)
 for row in data["annotation_index"]:
     if row["box_xyxy"] is None:
         continue  # No positive box label on this observation.
-    tracks[(row["video_id"], row["identity_uuid"])].append(row)
+    tracks[(row["video_id"], row["identity_uuid"], row["box_type"])].append(row)
 
-for (video_id, identity_uuid), rows in tracks.items():
+for (video_id, identity_uuid, box_type), rows in tracks.items():
     rows.sort(key=lambda row: row["frame_index"])
     video = data["videos"][video_id]
-    print(video["name"], identity_uuid, "boxes:", len(rows))
+    print(video["name"], identity_uuid, box_type, "boxes:", len(rows))
     for row in rows:
         print(row["frame_index"], row["timestamp_seconds"],
               row["person_id"], row["class_name"], row["box_xyxy"])
@@ -104,7 +134,7 @@ for interval in data.get("visibility_intervals", []):
 ### Use the labels for detection or tracking
 
 - **Detection training:** extract the matching source frames from the original video, then convert non-null boxes and class names into the dataset format your trainer expects. This custom JSON cannot be passed directly to a YOLO trainer. Assign one consistent numeric class mapping across the dataset, using your actual class names. Keep source-frame alignment and use original video dimensions when normalizing coordinates.
-- **Tracking:** group observations as in the Python example and order them by frame. Use visibility intervals to retain the same identity across missing-box periods; do not create zero-size boxes or refill explicitly deleted ranges. Separate exports with the same display number do not establish a cross-camera identity match.
+- **Tracking:** choose visible or extended geometry for your tracker, or keep the paired data explicitly. Do not treat both boxes as two different people. Group observations as in the Python example and order them by frame. Use visibility intervals to retain the same identity across missing-box periods; do not create zero-size boxes or refill explicitly deleted ranges. Separate exports with the same display number do not establish a cross-camera identity match.
 - **Motion analysis:** box positions and non-null source timestamps can support observed displacement or velocity calculations. Direction labels and future movement predictions are not currently exported.
 - **Quality checks:** inspect interpolated boxes before training. If you annotated only one person, other people are still unlabelled; do not treat those frames as exhaustively annotated detection examples or missing boxes as verified negative examples.
 
@@ -127,7 +157,7 @@ npm --prefix frontend run test:e2e -- editor.spec.ts
 
 Use a separate `FRAMEINSIGHT_DATA` directory for the test server: browser tests create synthetic projects in whichever server they target. The optional real-video performance test needs locally supplied footage and is not a clean-checkout acceptance test.
 
-The v1.3.0 verification passed 41 backend tests, 26 frontend unit tests, and 11 editor browser tests, plus manual Chrome checks. Windows packaging was tested under Wine; native Windows 10/11 validation remains outstanding.
+The v1.4.0 verification passed 44 backend tests, 32 frontend unit tests, and 14 editor browser tests. These cover paired editing, independent interpolation, legacy-track linking, scoped deletion, JSON v2, and undo/reload, plus manual Chrome checks. Windows packaging was tested under Wine; native Windows 10/11 validation remains outstanding.
 
 ## Windows packaging
 

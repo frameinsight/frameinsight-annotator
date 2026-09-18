@@ -11,6 +11,8 @@ def visibility_intervals(state, videos):
         if observation.get('person_visible'):
             person['frames'].add(observation['frame_index'])
     for gap in state['intervals'].values():
+        if gap.get('geometry') == 'person_ext':
+            continue
         people[(gap['video_id'], gap['identity_uuid'])]['gaps'].append(gap)
     result = []
     for (video_id, identity_id), person in sorted(people.items()):

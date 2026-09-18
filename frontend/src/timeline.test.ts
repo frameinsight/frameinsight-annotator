@@ -18,3 +18,8 @@ describe('aggregated frame review timeline',()=>{
   expect(timelineBins(d,'other',613,'p')[0].gap).toBe(false);
  });
 });
+it('a visible deletion is not an extended gap',()=>{
+ const d=state();d.intervals.g={id:'g',video_id:'v',identity_uuid:'p',start:1,end:1,reason:'unknown',evidence_note:'',geometry:'person_visible'};
+ expect(timelineBins(d,'v',24,'p','person_visible')[1].gap).toBe(true);
+ expect(timelineBins(d,'v',24,'p','person_ext')[1].gap).toBe(false);
+});

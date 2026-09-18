@@ -103,7 +103,9 @@ def test_visible_only_approval_accepts_optional_metadata_and_retains_legacy_a(pr
     obs['person_ext']=[30,30,40,40]  # historical A need not contain the current B
     validate_state(p['state'],p['videos'],visible_only=True)
     obs['person_visible']=None
-    with pytest.raises(ValueError,match='visible'):validate_state(p['state'],p['videos'],visible_only=True)
+    validate_state(p['state'],p['videos'],visible_only=True)  # An extended-only box is valid in the simplified paired workflow.
+    obs['person_ext']=None
+    with pytest.raises(ValueError,match='Missing box'):validate_state(p['state'],p['videos'],visible_only=True)
     obs['person_visible']=[-1,0,10,10]
     with pytest.raises(ValueError):validate_state(p['state'],p['videos'],visible_only=True)
 

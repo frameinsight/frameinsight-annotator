@@ -26,6 +26,7 @@ for wheel in sorted((BUILD/'wheels').glob('*.whl')):
    target=site.joinpath(*parts);target.parent.mkdir(parents=True,exist_ok=True);target.write_bytes(z.read(name))
 (RUNTIME/'python313._pth').write_text('python313.zip\n.\nLib/site-packages\n../app\nimport site\n')
 app=PAYLOAD/'app';app.mkdir()
+shutil.copy(ROOT/'README.md',app/'README.md')
 shutil.copytree(ROOT/'backend',app/'backend',ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
 shutil.copytree(ROOT/'frontend/dist',app/'frontend/dist',ignore=shutil.ignore_patterns('*.map'))
 shutil.copy(ROOT/'packaging/windows/windows_server.py',app/'windows_server.py')
@@ -50,7 +51,7 @@ for name in ('package.json','package-lock.json','index.html','vite.config.ts','t
  f=ROOT/'frontend'/name
  if f.exists():shutil.copy(f,source/name)
 
-manifest={'app':'Frameinsight','version':'1.3.0','target':'Windows 11 x64','python':VERSION,'python_sha256':SHA,'wheels':{f.name:hashlib.sha256(f.read_bytes()).hexdigest() for f in sorted((BUILD/'wheels').glob('*.whl'))},'media_included':False}
+manifest={'app':'Frameinsight','version':'1.4.0','target':'Windows 11 x64','python':VERSION,'python_sha256':SHA,'wheels':{f.name:hashlib.sha256(f.read_bytes()).hexdigest() for f in sorted((BUILD/'wheels').glob('*.whl'))},'media_included':False}
 (PAYLOAD/'build-manifest.json').write_text(json.dumps(manifest,indent=2))
 im=Image.new('RGBA',(256,256),'#151d24');draw=ImageDraw.Draw(im);draw.rounded_rectangle((24,24,232,232),radius=32,outline='#7fe5c0',width=16);draw.line((82,188,82,70,174,70),fill='#baa7ff',width=20);draw.line((82,126,155,126),fill='#baa7ff',width=20)
 im.save(BUILD/'frameinsight.ico',sizes=[(16,16),(32,32),(48,48),(64,64),(128,128),(256,256)])

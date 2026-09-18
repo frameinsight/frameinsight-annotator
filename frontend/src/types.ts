@@ -1,11 +1,12 @@
-// Current product workflow: visible-person rectangles only. Historical A data is retained.
+// Simplified manual workflow: no approval or detector controls; both box types are supported.
 export const VISIBLE_ONLY=true;
 export type Box=[number,number,number,number];
 export type Geometry='person_ext'|'person_visible';
-export type Identity={id:string;person_id:number|null;name:string;class_name?:string;color?:string};
+export type BoxStyle={class_name:string;color:string};
+export type Identity={id:string;person_id:number|null;name:string;class_name?:string;color?:string;box_styles?:Partial<Record<Geometry,BoxStyle>>};
 export type Segment={id:string;video_id:string;identity_uuid:string;start:number;end:number|null;status:'verified'|'unresolved'};
 export type Observation={id:string;video_id:string;frame_index:number;identity_uuid:string;segment_id:string;person_ext:Box|null;person_visible:Box|null;full_quality:'unset'|'observed'|'estimated'|'unknown';occluded:boolean|null;truncated:boolean|null;geometry_link:'independent'|'equal';review_state:'draft'|'needs_review'|'approved';evidence_note:string;provenance:Partial<Record<Geometry,{origin:'manual'|'model'|'copied'|'interpolated';proposal_id:string|null;human_corrected:boolean}>>};
-export type Interval={id:string;video_id:string;identity_uuid:string;start:number;end:number|null;reason:'occlusion'|'outside'|'unavailable'|'unknown';evidence_note:string};
+export type Interval={geometry?:Geometry|null;id:string;video_id:string;identity_uuid:string;start:number;end:number|null;reason:'occlusion'|'outside'|'unavailable'|'unknown';evidence_note:string};
 export type Link={id:string;source:string;target:string;relation:'same'|'different'|'unresolved';evidence_note:string};
 export type Review={id:string;video_id:string;frame_index:number;complete:boolean;checked_all_people:boolean;note:string};
 export type ProposalReview={id:string;video_id:string;frame_index:number;proposal_id:string;decision:'rejected';reason:string};
@@ -22,7 +23,8 @@ export const uuid=()=>crypto.randomUUID();
 export const geometries:Geometry[]=['person_ext','person_visible'];
 export function observationIssues(o:Observation):string[]{
  const a=o.person_ext,b=o.person_visible,r:string[]=[];
- if(!b)r.push(VISIBLE_ONLY?'Draw a box':'Draw B · visible extent');
+ if(VISIBLE_ONLY){if(!a&&!b)r.push('Draw a box');return r;}
+ if(!b)r.push('Draw B · visible extent');
  if(VISIBLE_ONLY)return r;
  if(o.full_quality==='unknown'){if(a)r.push('Unknown full extent must have no A');if(!o.evidence_note.trim())r.push('Explain why A is unknown');}
  else if(!a)r.push('Draw A or mark full extent unknown');
@@ -52,10 +54,16 @@ export function validateDomain(d:Domain,videos:Record<string,Video>){
  for(const o of Object.values(d.observations)){
   const key=o.video_id+':'+o.frame_index+':'+o.identity_uuid;if(seen.has(key))throw new Error('This identity already has an observation in that frame');seen.add(key);
   const seg=d.segments[o.segment_id];if(!seg||seg.identity_uuid!==o.identity_uuid||seg.video_id!==o.video_id||o.frame_index<seg.start||(seg.end!==null&&o.frame_index>seg.end))throw new Error('Observation is outside its visible segment');
-  if(Object.values(d.intervals).some(g=>g.video_id===o.video_id&&g.identity_uuid===o.identity_uuid&&g.start<=o.frame_index&&(g.end===null||o.frame_index<=g.end)))throw new Error('A gap overlaps existing observations; resolve its boundaries before this change');
+  if(Object.values(d.intervals).some(g=>g.video_id===o.video_id&&g.identity_uuid===o.identity_uuid&&g.start<=o.frame_index&&(g.end===null||o.frame_index<=g.end)&&(!g.geometry?(o.person_visible||o.person_ext):o[g.geometry])))throw new Error('A gap overlaps existing observations; resolve its boundaries before this change');
   for(const g of geometries){const b=o[g],v=videos[o.video_id];if(b&&(!b.every(Number.isFinite)||!(0<=b[0]&&b[0]<b[2]&&b[2]<=v.width&&0<=b[1]&&b[1]<b[3]&&b[3]<=v.height)))throw new Error('Boxes must have positive area inside source-image boundaries');}
   if(o.review_state==='approved'&&(observationIssues(o).length||seg.status!=='verified'))throw new Error('Resolve observation and identity issues before approving');
  }
  for(const l of Object.values(d.links))if(!d.identities[l.source]||!d.identities[l.target]||l.source===l.target||!l.evidence_note.trim())throw new Error('Identity links need two distinct identities and evidence');
  for(const r of Object.values(d.reviews))if(r.complete&&(!r.checked_all_people||Object.values(d.observations).some(o=>o.video_id===r.video_id&&o.frame_index===r.frame_index&&((!VISIBLE_ONLY&&o.review_state!=='approved')||observationIssues(o).length||d.segments[o.segment_id]?.status!=='verified'))))throw new Error('Completeness requires an explicit check, valid boxes and verified identities');
+}
+
+export const geometryLabel=(g:Geometry)=>g==='person_ext'?'Extended':'Visible';
+export const legacyExtended=(p:Identity)=>(!p.box_styles||!Object.keys(p.box_styles).length)&&['person_extended','person_ext','person_exteded'].includes((p.class_name||'').toLowerCase());
+export function boxStyle(p:Identity|undefined,g:Geometry):BoxStyle {
+ return p?.box_styles?.[g]||{class_name:g==='person_ext'?(p&&legacyExtended(p)?p.class_name!:'person_extended'):(p?.class_name||'person_visible'),color:g==='person_ext'?(p&&legacyExtended(p)?p.color||'#67e2b1':'#67e2b1'):(p?.color||'#baa7ff')};
 }

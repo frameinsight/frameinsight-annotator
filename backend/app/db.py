@@ -92,7 +92,7 @@ def apply(pid, operation: Operation):
             if state[change.collection].get(change.id) != change.before: raise Conflict(project['revision'])
             if change.after is None: state[change.collection].pop(change.id, None)
             else:
-                value = MODELS[change.collection].model_validate(change.after).model_dump(mode='json', exclude_unset=change.collection == 'identities')
+                value = MODELS[change.collection].model_validate(change.after).model_dump(mode='json', exclude_unset=change.collection in ('identities', 'intervals'))
                 if value['id'] != change.id: raise ValueError('Entity ID mismatch')
                 state[change.collection][change.id] = value
             if change.collection == 'observations':

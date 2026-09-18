@@ -1,12 +1,12 @@
 import {create} from 'zustand';
 import {interpolatePerson,markCorrected} from './interpolation';
 import {assignPerson as assignPersonInDomain} from './identity';
-import {VISIBLE_ONLY} from './types';
-import {markHiddenRange as markHiddenRangeInDomain,prepareVisibleFrame} from './hidden-range';
+import {VISIBLE_ONLY,legacyExtended} from './types';
+import {deleteGeometryRange,prepareGeometryFrame} from './hidden-range';
 import {get,set as dbSet,del as dbDelete} from 'idb-keyval';
 import {api,post} from './api';
 import {type Domain,type Project,type Operation,type Change,type Geometry,type Observation,type Proposal,uuid,currentObservation,emptyObservation,observationIssues,validateDomain} from './types';
-type Store={forgetProject:(id:string)=>Promise<void>;markHiddenRange:(start:number,end:number)=>boolean;saveNow:()=>Promise<void>;hiddenIds:Record<string,boolean>;togglePersonVisibility:(id:string)=>void;focusPerson:(id:string)=>void;showAllPeople:()=>void;selectPerson:(id:string)=>void;deletePerson:(id:string)=>boolean;assignPerson:(target:string,personId:number|null,className:string,color:string)=>boolean;autoInterpolate:boolean;frameTimes:Record<string,(number|null)[]>;toggleInterpolation:()=>void;fillInterpolation:()=>void;project:Project|null;videoId:string;frame:number;activeId:string;geometry:Geometry;saveStatus:string;saveError:string;notice:string;pending:Operation[];history:Operation[];redoStack:Operation[];ready:boolean;load:(id:string)=>Promise<void>;commit:(label:string,fn:(d:Domain)=>void)=>boolean;navigate:(n:number)=>void;undo:()=>void;redo:()=>void;retry:()=>void;newPerson:()=>void;editObservation:(label:string,fn:(o:Observation)=>void,propagate?:boolean)=>void;setBox:(geometry:Geometry,box:Observation['person_ext'],proposal?:Proposal,context?:{videoId:string;frame:number;activeId:string})=>void;equal:()=>void;copyPrevious:()=>void;approve:()=>boolean;rename:(id:string,n:number|null)=>void;toast:(message:string)=>void;};
+type Store={forgetProject:(id:string)=>Promise<void>;markHiddenRange:(start:number,end:number)=>boolean;saveNow:()=>Promise<void>;hiddenIds:Record<string,boolean>;togglePersonVisibility:(id:string)=>void;focusPerson:(id:string)=>void;showAllPeople:()=>void;selectPerson:(id:string)=>void;deletePerson:(id:string)=>boolean;assignPerson:(target:string,personId:number|null,className:string,color:string,geometry?:Geometry)=>boolean;autoInterpolate:boolean;frameTimes:Record<string,(number|null)[]>;toggleInterpolation:()=>void;fillInterpolation:()=>void;project:Project|null;videoId:string;frame:number;activeId:string;geometry:Geometry;saveStatus:string;saveError:string;notice:string;pending:Operation[];history:Operation[];redoStack:Operation[];ready:boolean;load:(id:string)=>Promise<void>;commit:(label:string,fn:(d:Domain)=>void)=>boolean;navigate:(n:number)=>void;undo:()=>void;redo:()=>void;retry:()=>void;newPerson:()=>void;editObservation:(label:string,fn:(o:Observation)=>void,propagate?:boolean)=>void;setBox:(geometry:Geometry,box:Observation['person_ext'],proposal?:Proposal,context?:{videoId:string;frame:number;activeId:string})=>void;equal:()=>void;copyPrevious:()=>void;approve:()=>boolean;rename:(id:string,n:number|null)=>void;toast:(message:string)=>void;};
 let pumpRunning=false;let persistChain=Promise.resolve();
 const clone=<T,>(x:T):T=>structuredClone(x);
 const same=(a:any,b:any)=>JSON.stringify(a)===JSON.stringify(b);
@@ -47,7 +47,7 @@ function invalidate(before:Domain,after:Domain){
 export const useStore=create<Store>((set,get)=>({
  forgetProject:async(id)=>{await persistChain;if(get().project?.id===id)set({project:null,videoId:'',activeId:'',pending:[],history:[],redoStack:[],saveStatus:'Saved',saveError:''});await dbDelete(journalKey(id));for(const key of [positionKey(id),'frameinsight:visibility:'+id])localStorage.removeItem(key);},
  saveNow:async()=>{await persist();await pump();const deadline=Date.now()+30000;while(get().pending.length){if(get().saveStatus==='Save failed')throw new Error(get().saveError||'Saving failed. Your edits are kept locally.');if(Date.now()>deadline)throw new Error('Still saving. Keep this tab open and try again.');await new Promise(resolve=>setTimeout(resolve,50));if(!pumpRunning)await pump();}set({saveStatus:'Saved',saveError:''});},
- markHiddenRange:(start,end)=>{const s=get();let removed=0;const ok=s.commit(`Delete person boxes: frames ${start}–${end}`,d=>{removed=markHiddenRangeInDomain(d,s.videoId,s.activeId,start,end,s.project!.videos[s.videoId].frame_count)});if(ok)s.toast(`${removed} boxes deleted. Automatically not visible on frames ${start}–${end}. Ctrl+Z undoes this.`);return ok;},
+ markHiddenRange:(start,end)=>{const s=get();let removed=0;const ok=s.commit(`Delete person boxes: frames ${start}–${end}`,d=>{removed=deleteGeometryRange(d,s.videoId,s.activeId,start,end,s.project!.videos[s.videoId].frame_count,s.geometry)});if(ok)s.toast(`${removed} boxes deleted. Selected box type absent on frames ${start}–${end}. Ctrl+Z undoes this.`);return ok;},
  hiddenIds:{},
  togglePersonVisibility:(id)=>{const s=get(),hidden=!s.hiddenIds[id];set({hiddenIds:{...s.hiddenIds,[id]:hidden},...(hidden&&s.activeId===id?{activeId:''}:{})});},
  focusPerson:(id)=>{const s=get();if(!s.project?.state.identities[id])return;set({activeId:id,hiddenIds:Object.fromEntries(Object.keys(s.project.state.identities).map(key=>[key,key!==id]))});},
@@ -56,7 +56,7 @@ export const useStore=create<Store>((set,get)=>({
  deletePerson:(id)=>{const s=get();const ok=s.commit('Delete person and all their annotations',d=>{if(!d.identities[id])throw new Error('Person not found');for(const col of ['observations','segments','intervals'] as const)for(const row of Object.values(d[col]))if(row.identity_uuid===id)delete d[col][row.id];for(const link of Object.values(d.links))if(link.source===id||link.target===id)delete d.links[link.id];delete d.identities[id];});if(ok){set({activeId:s.activeId===id?'':s.activeId});s.toast('Person deleted. Press Ctrl+Z to undo.');}return ok;},
  autoInterpolate:(()=>{try{return localStorage.getItem('frameinsight:interpolate')!=='off'}catch{return true}})(),frameTimes:{},
  toggleInterpolation:()=>{const enabled=!get().autoInterpolate;set({autoInterpolate:enabled});try{localStorage.setItem('frameinsight:interpolate',enabled?'on':'off')}catch{}},
- fillInterpolation:()=>{const s=get();if(!s.activeId)return s.toast('Select a person first');let count=0;const ok=s.commit('Interpolate between keyframes',d=>{count=interpolatePerson(d,s.videoId,s.activeId,s.frameTimes[s.videoId],undefined,VISIBLE_ONLY)});if(ok)s.toast(count?`${count} interpolated frames. Drag any box to correct it; changes save automatically.`:'No frames to fill. Draw two keyframes in the same visible segment; gaps and reviewed work are preserved.');},
+ fillInterpolation:()=>{const s=get();if(!s.activeId)return s.toast('Select a person first');let count=0;const ok=s.commit('Interpolate between keyframes',d=>{count=interpolatePerson(d,s.videoId,s.activeId,s.frameTimes[s.videoId],undefined,s.geometry)});if(ok)s.toast(count?`${count} interpolated frames. Drag any box to correct it; changes save automatically.`:'No frames to fill. Draw two keyframes in the same visible segment; gaps and reviewed work are preserved.');},
  project:null,videoId:'',frame:0,activeId:'',geometry:VISIBLE_ONLY?'person_visible':'person_ext',saveStatus:'Saved',saveError:'',notice:'',pending:[],history:[],redoStack:[],ready:false,
  toast:(notice)=>{set({notice});window.setTimeout(()=>{if(get().notice===notice)set({notice:''})},5500)},
  load:async(id)=>{
@@ -64,12 +64,12 @@ export const useStore=create<Store>((set,get)=>({
   const [remote,local]=await Promise.all([api<Project>('/projects/'+id),getJournal(id)]);
   let position:any=null;try{position=JSON.parse(localStorage.getItem(positionKey(id))||'null')}catch{}
   if(local?.pending?.length){set({...local,ready:true,saveStatus:'Saved locally',saveError:''});void pump();}
-  else{set({project:remote,pending:[],history:local?.history||[],redoStack:local?.redoStack||[],videoId:local?.videoId&&remote.videos[local.videoId]?local.videoId:Object.keys(remote.videos)[0]||'',frame:local?.frame||0,activeId:local?.activeId||'',geometry:local?.geometry||'person_ext',ready:true,saveStatus:'Saved',saveError:''});}
+  else{set({project:remote,pending:[],history:local?.history||[],redoStack:local?.redoStack||[],videoId:local?.videoId&&remote.videos[local.videoId]?local.videoId:Object.keys(remote.videos)[0]||'',frame:local?.frame||0,activeId:local?.activeId||'',geometry:local?.geometry||'person_visible',ready:true,saveStatus:'Saved',saveError:''});}
   const loaded=get().project;const positionVideo=loaded?.videos[position?.videoId];
   if(positionVideo&&Number.isSafeInteger(position.frame))set({videoId:position.videoId,frame:Math.max(0,Math.min(positionVideo.frame_count-1,position.frame)),activeId:loaded?.state.identities[position.activeId]?position.activeId:'',geometry:position.geometry==='person_visible'?'person_visible':'person_ext'});
   let hiddenIds:Record<string,boolean>={};try{const saved=JSON.parse(localStorage.getItem('frameinsight:visibility:'+id)||'{}');hiddenIds=Object.fromEntries(Object.keys(loaded?.state.identities||{}).map(key=>[key,saved[key]===true]));}catch{}
   set({hiddenIds,...(hiddenIds[get().activeId]?{activeId:''}:{})});
-  if(VISIBLE_ONLY)set({geometry:'person_visible'});
+
   localStorage.setItem('frameinsight:lastProject',id);
  },
  commit:(label,fn)=>{
@@ -86,30 +86,29 @@ export const useStore=create<Store>((set,get)=>({
  undo:()=>compensate(false),redo:()=>compensate(true),retry:()=>void durableAndPump(),
  newPerson:()=>{
   const s=get();if(!s.videoId)return;
-  const id=uuid(),seg=uuid();s.commit('New person',d=>{d.identities[id]={id,person_id:null,name:'Person '+(Object.keys(d.identities).length+1),class_name:s.project?.classes?.[0]||'Person'};d.segments[seg]={id:seg,video_id:s.videoId,identity_uuid:id,start:s.frame,end:null,status:'verified'};});set({activeId:id,geometry:VISIBLE_ONLY?'person_visible':'person_ext'});
+  const id=uuid(),seg=uuid();s.commit('New person',d=>{d.identities[id]={id,person_id:null,name:'Person '+(Object.keys(d.identities).length+1),class_name:s.project?.classes?.[0]||'Person',box_styles:{[s.geometry]:{class_name:s.geometry==='person_ext'?'person_extended':s.project?.classes?.[0]||'Person',color:s.geometry==='person_ext'?'#67e2b1':'#baa7ff'}}};d.segments[seg]={id:seg,video_id:s.videoId,identity_uuid:id,start:s.frame,end:null,status:'verified'};});set({activeId:id});
  },
  editObservation:(label,fn,propagate=true)=>{
   const s=get();if(!s.activeId||s.hiddenIds[s.activeId]){s.toast('Select a visible person or press N first');return;}
   s.commit(label,d=>{let o=currentObservation(s.project,s.videoId,s.frame,s.activeId);if(o)o=d.observations[o.id];
-   else{const segment=prepareVisibleFrame(d,s.videoId,s.activeId,s.frame);
+   else{const segment=prepareGeometryFrame(d,s.videoId,s.activeId,s.frame,s.geometry);
     o=emptyObservation(s.videoId,s.frame,s.activeId,segment.id);d.observations[o.id]=o;
    }
-   markCorrected(o);o.review_state='draft';fn(o);
-   if(s.autoInterpolate&&propagate)interpolatePerson(d,s.videoId,s.activeId,s.frameTimes[s.videoId],s.frame,VISIBLE_ONLY);
+   prepareGeometryFrame(d,s.videoId,s.activeId,s.frame,s.geometry);markCorrected(o,s.geometry);o.review_state='draft';fn(o);
+   if(s.autoInterpolate&&propagate)interpolatePerson(d,s.videoId,s.activeId,s.frameTimes[s.videoId],s.frame,s.geometry);
   });
  },
  setBox:(geometry,box,proposal,context)=>{
-  const s=get();if(VISIBLE_ONLY&&geometry!=='person_visible')return;if(context&&(context.videoId!==s.videoId||context.frame!==s.frame||context.activeId!==s.activeId)){s.toast('Gesture frame changed; edit cancelled for safety');return;}
+  const s=get();if(context&&(context.videoId!==s.videoId||context.frame!==s.frame||context.activeId!==s.activeId)){s.toast('Gesture frame changed; edit cancelled for safety');return;}
   if(box===null&&VISIBLE_ONLY){s.markHiddenRange(s.frame,s.frame);return;}
   const old=currentObservation(s.project,s.videoId,s.frame,s.activeId);
   const broken=old?.geometry_link==='equal'&&geometry==='person_visible';
   s.editObservation('Edit '+geometry,o=>{
    if(geometry==='person_visible'&&o.geometry_link==='equal'){o.geometry_link='independent';o.full_quality='unset';o.occluded=null;}
-   o[geometry]=box;
+   o.geometry_link='independent';o[geometry]=box;
    const previous=o.provenance[geometry];
    o.provenance[geometry]=proposal?{origin:'model',proposal_id:proposal.id,human_corrected:false}:{origin:previous?.origin||'manual',proposal_id:previous?.proposal_id||null,human_corrected:!!previous?.proposal_id||previous?.origin==='interpolated'};
-   if(geometry==='person_ext'&&box&&o.full_quality==='unknown')o.full_quality='unset';
-   if(geometry==='person_ext'&&o.geometry_link==='equal'){if(box){o.person_visible=box;o.provenance.person_visible={...o.provenance.person_ext!};}else{o.geometry_link='independent';o.full_quality='unset';}}
+   if(geometry==='person_ext'&&box)o.full_quality='estimated';
   },box!==null);
   if(broken&&!VISIBLE_ONLY)s.toast('Equal link released. Review full extent quality and occlusion.');
   if(!VISIBLE_ONLY&&geometry==='person_ext'&&box&&!old?.person_visible)set({geometry:'person_visible'});
@@ -119,16 +118,16 @@ export const useStore=create<Store>((set,get)=>({
   s.editObservation('Clear person · A = B',n=>{n.person_ext=[...box];n.person_visible=[...box];n.geometry_link='equal';n.full_quality='observed';n.occluded=false;n.provenance.person_ext=n.provenance.person_ext||{origin:'manual',proposal_id:null,human_corrected:false};n.provenance.person_visible={origin:'manual',proposal_id:null,human_corrected:false};});s.toast((o[s.geometry]?s.geometry==='person_ext'?'A':'B':o.person_ext?'A':'B')+' is authoritative. A = B; review truncation before approval.');
  },
  copyPrevious:()=>{
-  const s=get(),o=currentObservation(s.project,s.videoId,s.frame-1,s.activeId);
-  if(!o)return s.toast('No same-person observation on the immediately previous frame');
-  if(currentObservation(s.project,s.videoId,s.frame,s.activeId))return s.toast('Current observation exists; copying will not replace it');
-  s.editObservation('Copy previous box',n=>{if(n.segment_id!==o.segment_id)throw new Error('Cannot copy across segment boundaries');const id=n.id;Object.assign(n,clone(o),{id,frame_index:s.frame,review_state:'draft'});if(VISIBLE_ONLY){n.person_ext=null;n.full_quality='unknown';n.geometry_link='independent';delete n.provenance.person_ext;}for(const g of ['person_ext','person_visible'] as Geometry[])if(n[g])n.provenance[g]={origin:'copied',proposal_id:o.provenance[g]?.proposal_id||null,human_corrected:false};});
+  const s=get(),o=currentObservation(s.project,s.videoId,s.frame-1,s.activeId),g=s.geometry;
+  if(!o?.[g])return s.toast('No box of this type on the previous frame');
+  if(currentObservation(s.project,s.videoId,s.frame,s.activeId)?.[g])return s.toast('This box type already exists on the current frame');
+  s.editObservation('Copy previous '+g,n=>{n[g]=[...o[g]!];n.geometry_link='independent';if(g==='person_ext')n.full_quality='estimated';n.provenance[g]={origin:'copied',proposal_id:null,human_corrected:false};});
  },
  approve:()=>{
   const s=get(),o=currentObservation(s.project,s.videoId,s.frame,s.activeId);if(!o){s.toast('Draw the observation first');return false;}const errors=observationIssues(o);if(s.project!.state.segments[o.segment_id].status!=='verified')errors.push('Resolve the returning identity first');if(errors.length){s.toast(errors.join(' · '));return false;}
   return s.commit('Approve observation',d=>{d.observations[o.id].review_state='approved';});
  },
- assignPerson:(target,personId,className,color)=>{const s=get();const ok=s.commit('Assign existing person / class / color',d=>{assignPersonInDomain(d,s.activeId,target,s.videoId,s.frame,personId,className,color);if(s.autoInterpolate)interpolatePerson(d,s.videoId,target,s.frameTimes[s.videoId],s.frame,VISIBLE_ONLY)});if(ok)get().selectPerson(target);return ok;},
+ assignPerson:(target,personId,className,color,chosenGeometry)=>{const s=get(),g=chosenGeometry||(s.project&&legacyExtended(s.project.state.identities[s.activeId])?'person_ext':s.geometry);const reconnect=s.activeId!==target&&s.project&&!legacyExtended(s.project.state.identities[s.activeId])&&!legacyExtended(s.project.state.identities[target])&&Object.values(s.project.state.observations).some(o=>o.identity_uuid===target&&o[g]);const ok=s.commit('Assign existing person / class / color',d=>{assignPersonInDomain(d,s.activeId,target,s.videoId,s.frame,personId,className,color,g);if(s.autoInterpolate&&reconnect)interpolatePerson(d,s.videoId,target,s.frameTimes[s.videoId],s.frame,g)});if(ok){get().selectPerson(target);set({geometry:g});}return ok;},
  rename:(id,n)=>{const s=get();if(n!==null&&(!Number.isSafeInteger(n)||n<=0)){s.toast('Person ID must be a positive integer');return;}s.commit('Rename person ID',d=>{if(n!==null&&Object.values(d.identities).some(i=>i.id!==id&&i.person_id===n))throw new Error('That ID is already assigned. Resolve or merge identities explicitly.');d.identities[id].person_id=n;});},
 }));
 async function getJournal(id:string){return get<any>(journalKey(id));}
