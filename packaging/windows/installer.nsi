@@ -3,7 +3,7 @@ Unicode true
 !include "x64.nsh"
 !include "WinVer.nsh"
 Name "Frameinsight"
-OutFile "output/Frameinsight-Setup-1.2.1-win64.exe"
+OutFile "output/Window_setup.exe"
 InstallDir "$LOCALAPPDATA\Programs\Frameinsight"
 InstallDirRegKey HKCU "Software\Frameinsight" "InstallDir"
 RequestExecutionLevel user
@@ -12,7 +12,7 @@ SetCompressor /SOLID lzma
 !define MUI_UNICON "frameinsight.ico"
 !define MUI_ABORTWARNING
 !define MUI_WELCOMEPAGE_TITLE "Install Frameinsight"
-!define MUI_WELCOMEPAGE_TEXT "Annotate people in videos with editable interpolation.$\r$\n$\r$\nEverything needed is included. No Python, Node, GPU setup or internet connection is required.$\r$\n$\r$\nWindows 10 or 11 (64-bit). Your saved projects stay separate from the app."
+!define MUI_WELCOMEPAGE_TEXT "Annotate people in videos with editable interpolation.$\r$\n$\r$\nEverything needed is included. No Python, Node, GPU setup or internet connection is required.$\r$\n$\r$\nWindows 11 (64-bit). Your saved projects stay separate from the app."
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
@@ -22,18 +22,18 @@ SetCompressor /SOLID lzma
 !insertmacro MUI_UNPAGE_CONFIRM
 !insertmacro MUI_UNPAGE_INSTFILES
 !insertmacro MUI_LANGUAGE "English"
-VIProductVersion "1.2.1.0"
+VIProductVersion "1.3.0.0"
 VIAddVersionKey /LANG=1033 "ProductName" "Frameinsight"
 VIAddVersionKey /LANG=1033 "FileDescription" "Frameinsight offline annotation installer"
-VIAddVersionKey /LANG=1033 "FileVersion" "1.2.1"
+VIAddVersionKey /LANG=1033 "FileVersion" "1.3.0"
 VIAddVersionKey /LANG=1033 "LegalCopyright" "Frameinsight project"
 Function .onInit
   ${IfNot} ${RunningX64}
-    MessageBox MB_ICONSTOP "Frameinsight requires 64-bit Windows 10 or 11."
+    MessageBox MB_ICONSTOP "Frameinsight requires 64-bit Windows 11."
     Abort
   ${EndIf}
   ${IfNot} ${AtLeastWin10}
-    MessageBox MB_ICONSTOP "Frameinsight requires Windows 10 or 11."
+    MessageBox MB_ICONSTOP "Frameinsight requires Windows 11."
     Abort
   ${EndIf}
   System::Call 'kernel32::OpenMutexW(i 0x100000, i 0, w "Local\Frameinsight.Desktop.v1") p.r0'
@@ -54,7 +54,7 @@ Section "Frameinsight"
   WriteRegStr HKCU "Software\Frameinsight" "InstallDir" "$INSTDIR"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Frameinsight" "DisplayName" "Frameinsight"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Frameinsight" "UninstallString" '"$INSTDIR\Uninstall.exe"'
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Frameinsight" "DisplayVersion" "1.2.1"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Frameinsight" "DisplayVersion" "1.3.0"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Frameinsight" "DisplayIcon" "$INSTDIR\Frameinsight.exe"
   WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Frameinsight" "NoModify" 1
   WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Frameinsight" "NoRepair" 1

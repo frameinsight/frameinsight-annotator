@@ -1,6 +1,6 @@
 # Windows installation
 
-Give the annotator `Frameinsight-Setup-1.2.1-win64.exe` and `START-HERE.txt`.
+Give the annotator `Window_setup.exe` and `START-HERE.txt`.
 Double-click the installer, follow its pages, then use the desktop shortcut.
 Windows 10 or 11, **64-bit**, is required. A normal browser such as Edge or
 Chrome is sufficient. Python, Node, AI models and GPU setup are not required.
@@ -48,7 +48,7 @@ Ubuntu. The bundled Windows runtime, native launcher and installer are tested
 under Wine in an isolated container using a synthetic video. This exercises
 imports, frame decoding, annotation persistence, JSON export, graceful exit,
 relaunch, upgrade, shortcuts and preservation of data during uninstall.
-**This does not substitute for a test on an actual Windows 10/11 laptop.**
+**This does not substitute for a test on an actual Windows 11 laptop.**
 No physical Windows machine was available for this build. SmartScreen,
 Antivirus behavior, the native browser picker and performance on the recipient's
 hardware remain to be checked there. See the machine-readable verification

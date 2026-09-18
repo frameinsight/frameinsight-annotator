@@ -45,7 +45,7 @@ Export captures all saved annotations from all videos in the selected project, a
 
 This example is a generated box that a person corrected; it is now a protected annotation keyframe. `annotation_type` can be `keyframe`, `interpolated` or `missing_box`. `origin` separately retains `manual`, `copied`, `model`, `interpolated`, or null when not recorded. Geometry is in unrounded original-image pixels, not screen coordinates or normalized fractions. A null box is not a positive label. `frames[].key_frame` is a video-codec property, not an annotation keyframe.
 
-Frame numbers start at zero. Timestamps come from the actual source ledger, not frame/FPS estimates; unavailable timestamps remain null. Intervals include both endpoints; a null end is still open. An absent observation is not proof of absence. Explicit gap intervals record complete invisibility and its reason. Null occlusion/truncation values mean unspecified, not false. Historical `draft` flags are retained without adding a per-person approval requirement.
+Frame numbers start at zero. Timestamps come from the actual source ledger, not frame/FPS estimates; unavailable timestamps remain null. Intervals include both endpoints; a null end is still open. An absent observation now produces a derived `not_visible` label under the no-box visibility policy; it is not proof of physical absence or completed review. Explicit gap intervals record complete invisibility and its reason. Null occlusion/truncation values mean unspecified, not false. Historical `draft` flags are retained without adding a per-person approval requirement.
 
 ## Media, portability and limits
 
@@ -62,9 +62,25 @@ entities; cross-video restored history is omitted. Native project backups
 retain the complete project and full replayable history. Finishing records the
 user's confirmation and revision in video metadata without inventing frame reviews.
 
-A **Mark hidden range** action removes that person's observations in the inclusive
-range and saves an `intervals` record with `reason: occlusion`. Surviving visible
-segments are trimmed/split and retain the same identity. Generated boxes retained
-at the cut boundaries become protected draft keyframes, not approved observations.
-The complete action is recorded as one operation, so Undo restores boxes, segments,
-gaps and affected review states together.
+## Automatic visibility
+
+`visibility_intervals` covers every source frame for each person associated with
+that video, using compact inclusive runs rather than repeating empty boxes:
+
+- `status`: `visible` when a box is present, otherwise `not_visible`.
+- `basis`: `box_present`, `no_box`, or `explicit_gap`.
+- `reason`: null for visible boxes, `unknown` for automatically missing/deleted
+  boxes, or a previously recorded explicit cause such as `occlusion` or `outside`.
+- `video_id`, `identity_uuid`, `person_id`, `start`, and `end` identify the run.
+
+No-box runs include frames before the first appearance and after the last.
+These are derived annotation labels, not proof of physical occlusion or exhaustive
+human review. They update automatically when boxes are added, removed, or
+interpolated. Eye/Focus do not alter them.
+
+Delete (one frame) and Delete boxes in range also store an explicit interval
+with reason `unknown`, preventing interpolation from restoring deleted boxes.
+Drawing inside that interval restores the drawn frame and trims/splits the
+interval automatically. Undo restores the boxes, segments, gaps, and review
+states together. `annotation_index` also includes a `visibility` field; empty
+frames without observations are represented by `visibility_intervals`.

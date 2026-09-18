@@ -2,7 +2,7 @@
 import hashlib,json,os,subprocess,sys,time
 from pathlib import Path
 build=Path(__file__).resolve().parent
-installer=build/'output/Frameinsight-Setup-1.2.1-win64.exe'
+installer=build/'output/Window_setup.exe'
 root=Path(os.environ['LOCALAPPDATA'])/'Programs/Frameinsight'
 def install():
  result=subprocess.run([str(installer),'/S'],timeout=90);assert result.returncode==0

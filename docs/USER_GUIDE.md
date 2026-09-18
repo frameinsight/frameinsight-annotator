@@ -38,10 +38,7 @@ judge whether your boxes are correct. If you have more work to do, choose
 | Enter | Next frame |
 | C | Copy the previous frame's box |
 | K | Fill between drawn boxes |
-| Shift+G | Delete boxes in a hidden frame range and prevent interpolation there |
-| G | Start a gap when the person disappears |
-| H | Resume when they return |
-| T | End this person's track at the current frame |
+| Shift+Delete | Delete this person’s boxes over a frame range |
 | Delete | Remove the selected box on this frame |
 | Ctrl+Z / Ctrl+Shift+Z | Undo / redo |
 | Ctrl+S | Save |
@@ -61,28 +58,29 @@ change key bindings.
 - **Trash:** remove that person and all their annotations. Read the dialog before
   deleting. **Ctrl+Z** restores an accidental deletion.
 
-# Removing boxes while a person is completely hidden
+# Visibility is automatic
 
-You can draw before and after the hidden section, let interpolation fill the
-middle, then remove the hidden frames in one action:
+**A box means Visible. No box means Not visible.** This applies to every frame
+for the selected person, including frames before their first box and after
+their last box. There is no separate visibility or occlusion button to press.
 
-1. Select the person on the left.
-2. Click **Mark hidden range** above the video, or press **Shift+G**.
-3. Enter the **first hidden frame** and **last hidden frame**. Both are included.
-4. Check the person and number of boxes shown, then click
-   **Delete boxes & mark hidden**.
+- **Delete** removes the selected person's box on the current frame.
+- For several frames, click **Delete boxes in range** or press **Shift+Delete**.
+  Enter the first and last frame, then click **Delete boxes**. Both are included.
+- Deleted frames stay empty when interpolation runs again.
+- If you deleted too much, draw a box again on the frame to make the person
+  visible. This restores that frame without filling other deleted frames.
+- **Ctrl+Z** undoes the entire action; **Ctrl+Shift+Z** redoes it.
 
-For example, keep the last visible box at **39** and the first returning box at
-**60**, then mark **40–59** hidden. Only this person's boxes in that range are
-removed. Their ID stays the same, and interpolation cannot refill the gap.
-You do not need to press G/H separately for this workflow. Drawing resumes
-outside the range; **Go to frame 60** on the gap banner jumps to its end.
+Example: keep boxes at **39 and 60**, and delete **40–59**. The same person ID
+is kept on both sides. No G/H steps are needed. When no deletion was recorded,
+normal interpolation can still fill between your drawn keyframes.
 
-**Ctrl+Z** restores the entire change, including removed boxes; **Ctrl+Shift+Z**
-reapplies it. Correcting the range can be done by Undo followed by marking the
-right range. Use this only when the person is completely hidden; keep a box
-around visible parts when they are partly visible. Eye/Focus only change what
-you see and do not create hidden intervals in the annotations.
+The app does not guess why a person has no box. Their visibility is Not visible
+and the cause is Unknown unless previously recorded. While you are still working,
+Not visible can also mean you have not drawn that box yet: check the whole video
+before finishing. Eye/Focus only change your display; a hidden-on-screen box
+still counts as Visible in the exported annotations.
 
 # Returning to an earlier frame
 
@@ -104,3 +102,11 @@ box coordinates, frame times, gaps, corrections and relevant edit history.
 videos in older multi-video projects), without copying the video files. JSON
 is for annotation delivery; it is not a project-restore format. Back up the app's
 data directory with the app closed to preserve everything, including video caches.
+
+# Deleting an old video
+
+Open **All videos**, then click **Delete video** below the video's card. Check
+the filename in the confirmation and click **Delete video and annotations**.
+This permanently removes its working annotations and cached frames from the app;
+your original video file and previously downloaded exports are kept. Download a
+backup first if needed. Processing/export jobs must finish before deletion.

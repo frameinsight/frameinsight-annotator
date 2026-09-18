@@ -4,11 +4,11 @@ Local video annotation for person detection and tracking. Draw boxes, keep consi
 
 ## Current workflow
 
-1. Open the video library and choose **New video**.
+1. Open the video library and choose **New video**. Use **Delete video** on a card to remove an old video and its annotations from the app.
 2. Enter your class names, upload a video, and wait for preparation.
 3. Press **N** and draw a box. Press **I** to assign/reuse a person ID, class, and color.
 4. Move forward and adjust the same person's box. Auto-interpolation fills eligible frames between keyframes; inspect and correct the results.
-5. Use hide/focus controls for overlapping people. **Mark hidden range (Shift+G)** removes boxes between inclusive frame bounds and prevents interpolation through the hidden section.
+5. Use hide/focus controls for overlapping people. **Delete** or **Delete boxes in range (Shift+Delete)** removes boxes and automatically records Not visible. Drawing again restores visibility without G/H steps.
 6. Changes save automatically; **Save** and **Ctrl+S** are also available.
 7. Click **Finish**, confirm your annotation coverage, and download annotation-only JSON or a native project backup.
 
@@ -51,7 +51,7 @@ npm --prefix frontend run test:e2e -- editor.spec.ts
 
 Use a separate `FRAMEINSIGHT_DATA` directory for the test server: browser tests create synthetic projects in whichever server they target. The optional real-video performance test needs locally supplied footage and is not a clean-checkout acceptance test.
 
-The v1.2.1 verification passed 34 backend tests, 23 frontend unit tests, and 9 editor browser tests, plus manual Chrome checks. Windows packaging was tested under Wine; native Windows 10/11 validation remains outstanding.
+The v1.3.0 verification passed 41 backend tests, 26 frontend unit tests, and 11 editor browser tests, plus manual Chrome checks. Windows packaging was tested under Wine; native Windows 10/11 validation remains outstanding.
 
 ## Windows packaging
 

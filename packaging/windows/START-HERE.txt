@@ -1,6 +1,6 @@
-FRAMEINSIGHT — WINDOWS 10 / 11 (64-bit)
+FRAMEINSIGHT — WINDOWS 11 (64-bit)
 
-Double-click Frameinsight on your desktop. Your normal browser will open.
+Install Window_setup.exe, then double-click Frameinsight on your desktop. Your normal browser will open.
 No terminal, Python, Node, internet connection or GPU setup is needed.
 
 1. The opening screen shows your videos. Click one to continue your work.
@@ -19,9 +19,12 @@ No terminal, Python, Node, internet connection or GPU setup is needed.
 F = next frame. D = previous frame. Shift+F / Shift+D = jump 10 frames.
 N = new person. I = choose ID, class and color. Ctrl+Z = undo.
 Drag inside a selected box to move it; drag its edge/corner to resize.
-For an already interpolated hidden section, press Shift+G, enter the first
-and last hidden frames, then Delete boxes & mark hidden. Ctrl+Z restores it.
-G/H also support disappearance and return as you go. T ends their track.
+Box present = Visible. No box = Not visible, automatically.
+Press Delete to remove the selected person's box on this frame.
+For several frames, press Shift+Delete, enter the first and last frame,
+then click Delete boxes. Deleted frames will not be filled by interpolation.
+Draw a box again to make the person visible; no G/H steps are needed.
+Ctrl+Z restores a deletion. The cause of missing boxes remains unspecified.
 Each person has Eye (hide/show), Focus (show only them), and Trash (delete).
 Hidden boxes stay saved and exported. Ctrl+Z restores a deleted person.
 Useful shortcuts are shown on the right side of the editor.
@@ -35,3 +38,7 @@ Logs: %LOCALAPPDATA%\Frameinsight\Logs\server.log
 Updating or uninstalling keeps your saved work. Keep the original videos
 and back up your data directory while the app is closed.
 The installer is unsigned; Windows may show an unknown-publisher warning.
+
+To remove old work, open All videos and click Delete video under its card.
+Confirm the filename, then Delete video and annotations. This cannot be undone.
+Your original file and downloaded exports are not deleted.

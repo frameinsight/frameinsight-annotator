@@ -2,11 +2,11 @@ import {create} from 'zustand';
 import {interpolatePerson,markCorrected} from './interpolation';
 import {assignPerson as assignPersonInDomain} from './identity';
 import {VISIBLE_ONLY} from './types';
-import {markHiddenRange as markHiddenRangeInDomain} from './hidden-range';
-import {get,set as dbSet} from 'idb-keyval';
+import {markHiddenRange as markHiddenRangeInDomain,prepareVisibleFrame} from './hidden-range';
+import {get,set as dbSet,del as dbDelete} from 'idb-keyval';
 import {api,post} from './api';
 import {type Domain,type Project,type Operation,type Change,type Geometry,type Observation,type Proposal,uuid,currentObservation,emptyObservation,observationIssues,validateDomain} from './types';
-type Store={markHiddenRange:(start:number,end:number)=>boolean;saveNow:()=>Promise<void>;hiddenIds:Record<string,boolean>;togglePersonVisibility:(id:string)=>void;focusPerson:(id:string)=>void;showAllPeople:()=>void;selectPerson:(id:string)=>void;deletePerson:(id:string)=>boolean;assignPerson:(target:string,personId:number|null,className:string,color:string)=>boolean;autoInterpolate:boolean;frameTimes:Record<string,(number|null)[]>;toggleInterpolation:()=>void;fillInterpolation:()=>void;project:Project|null;videoId:string;frame:number;activeId:string;geometry:Geometry;saveStatus:string;saveError:string;notice:string;pending:Operation[];history:Operation[];redoStack:Operation[];ready:boolean;load:(id:string)=>Promise<void>;commit:(label:string,fn:(d:Domain)=>void)=>boolean;navigate:(n:number)=>void;undo:()=>void;redo:()=>void;retry:()=>void;newPerson:()=>void;editObservation:(label:string,fn:(o:Observation)=>void,propagate?:boolean)=>void;setBox:(geometry:Geometry,box:Observation['person_ext'],proposal?:Proposal,context?:{videoId:string;frame:number;activeId:string})=>void;equal:()=>void;copyPrevious:()=>void;approve:()=>boolean;rename:(id:string,n:number|null)=>void;toast:(message:string)=>void;};
+type Store={forgetProject:(id:string)=>Promise<void>;markHiddenRange:(start:number,end:number)=>boolean;saveNow:()=>Promise<void>;hiddenIds:Record<string,boolean>;togglePersonVisibility:(id:string)=>void;focusPerson:(id:string)=>void;showAllPeople:()=>void;selectPerson:(id:string)=>void;deletePerson:(id:string)=>boolean;assignPerson:(target:string,personId:number|null,className:string,color:string)=>boolean;autoInterpolate:boolean;frameTimes:Record<string,(number|null)[]>;toggleInterpolation:()=>void;fillInterpolation:()=>void;project:Project|null;videoId:string;frame:number;activeId:string;geometry:Geometry;saveStatus:string;saveError:string;notice:string;pending:Operation[];history:Operation[];redoStack:Operation[];ready:boolean;load:(id:string)=>Promise<void>;commit:(label:string,fn:(d:Domain)=>void)=>boolean;navigate:(n:number)=>void;undo:()=>void;redo:()=>void;retry:()=>void;newPerson:()=>void;editObservation:(label:string,fn:(o:Observation)=>void,propagate?:boolean)=>void;setBox:(geometry:Geometry,box:Observation['person_ext'],proposal?:Proposal,context?:{videoId:string;frame:number;activeId:string})=>void;equal:()=>void;copyPrevious:()=>void;approve:()=>boolean;rename:(id:string,n:number|null)=>void;toast:(message:string)=>void;};
 let pumpRunning=false;let persistChain=Promise.resolve();
 const clone=<T,>(x:T):T=>structuredClone(x);
 const same=(a:any,b:any)=>JSON.stringify(a)===JSON.stringify(b);
@@ -45,8 +45,9 @@ function invalidate(before:Domain,after:Domain){
  for(const r of Object.values(after.reviews))if(frames.has(r.video_id+':'+r.frame_index)){r.complete=false;r.checked_all_people=false;}
 }
 export const useStore=create<Store>((set,get)=>({
+ forgetProject:async(id)=>{await persistChain;if(get().project?.id===id)set({project:null,videoId:'',activeId:'',pending:[],history:[],redoStack:[],saveStatus:'Saved',saveError:''});await dbDelete(journalKey(id));for(const key of [positionKey(id),'frameinsight:visibility:'+id])localStorage.removeItem(key);},
  saveNow:async()=>{await persist();await pump();const deadline=Date.now()+30000;while(get().pending.length){if(get().saveStatus==='Save failed')throw new Error(get().saveError||'Saving failed. Your edits are kept locally.');if(Date.now()>deadline)throw new Error('Still saving. Keep this tab open and try again.');await new Promise(resolve=>setTimeout(resolve,50));if(!pumpRunning)await pump();}set({saveStatus:'Saved',saveError:''});},
- markHiddenRange:(start,end)=>{const s=get();let removed=0;const ok=s.commit(`Mark person hidden: frames ${start}–${end}`,d=>{removed=markHiddenRangeInDomain(d,s.videoId,s.activeId,start,end,s.project!.videos[s.videoId].frame_count)});if(ok)s.toast(`${removed} boxes removed. Frames ${start}–${end} stay hidden. Ctrl+Z undoes this.`);return ok;},
+ markHiddenRange:(start,end)=>{const s=get();let removed=0;const ok=s.commit(`Delete person boxes: frames ${start}–${end}`,d=>{removed=markHiddenRangeInDomain(d,s.videoId,s.activeId,start,end,s.project!.videos[s.videoId].frame_count)});if(ok)s.toast(`${removed} boxes deleted. Automatically not visible on frames ${start}–${end}. Ctrl+Z undoes this.`);return ok;},
  hiddenIds:{},
  togglePersonVisibility:(id)=>{const s=get(),hidden=!s.hiddenIds[id];set({hiddenIds:{...s.hiddenIds,[id]:hidden},...(hidden&&s.activeId===id?{activeId:''}:{})});},
  focusPerson:(id)=>{const s=get();if(!s.project?.state.identities[id])return;set({activeId:id,hiddenIds:Object.fromEntries(Object.keys(s.project.state.identities).map(key=>[key,key!==id]))});},
@@ -90,9 +91,7 @@ export const useStore=create<Store>((set,get)=>({
  editObservation:(label,fn,propagate=true)=>{
   const s=get();if(!s.activeId||s.hiddenIds[s.activeId]){s.toast('Select a visible person or press N first');return;}
   s.commit(label,d=>{let o=currentObservation(s.project,s.videoId,s.frame,s.activeId);if(o)o=d.observations[o.id];
-   else{const gap=Object.values(d.intervals).find(g=>g.video_id===s.videoId&&g.identity_uuid===s.activeId&&g.start<=s.frame&&(g.end===null||s.frame<=g.end));if(gap)throw new Error('This frame is in a gap. Press H at the visible return before drawing.');
-    const segment=Object.values(d.segments).filter(v=>v.video_id===s.videoId&&v.identity_uuid===s.activeId&&v.start<=s.frame&&(v.end===null||s.frame<=v.end)).sort((a,b)=>b.start-a.start)[0];
-    if(!segment)throw new Error('No active visible segment. Use Resume / new segment.');
+   else{const segment=prepareVisibleFrame(d,s.videoId,s.activeId,s.frame);
     o=emptyObservation(s.videoId,s.frame,s.activeId,segment.id);d.observations[o.id]=o;
    }
    markCorrected(o);o.review_state='draft';fn(o);
@@ -101,6 +100,7 @@ export const useStore=create<Store>((set,get)=>({
  },
  setBox:(geometry,box,proposal,context)=>{
   const s=get();if(VISIBLE_ONLY&&geometry!=='person_visible')return;if(context&&(context.videoId!==s.videoId||context.frame!==s.frame||context.activeId!==s.activeId)){s.toast('Gesture frame changed; edit cancelled for safety');return;}
+  if(box===null&&VISIBLE_ONLY){s.markHiddenRange(s.frame,s.frame);return;}
   const old=currentObservation(s.project,s.videoId,s.frame,s.activeId);
   const broken=old?.geometry_link==='equal'&&geometry==='person_visible';
   s.editObservation('Edit '+geometry,o=>{

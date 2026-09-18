@@ -18,6 +18,7 @@ from .schema import Operation
 from .video import import_video, new_job, POOL, sha256
 from .worker import Worker
 from .formats import export_project, parse_cvat
+from .delete_video import delete_video
 worker=Worker(); exports_pool=ThreadPoolExecutor(max_workers=1,thread_name_prefix='export')
 @asynccontextmanager
 async def lifespan(app):
@@ -115,6 +116,11 @@ def add_class(pid:str,body:NewClass):
             classes.append(name)
             c.execute('UPDATE projects SET classes=? WHERE id=?',(json.dumps(classes),pid))
     return {'classes':classes}
+
+@app.delete('/api/videos/{vid}')
+def remove_video(vid:str,confirmed:bool=False):
+    if not confirmed:raise ValueError('Confirm deletion of this video and its annotations')
+    return delete_video(vid)
 
 @app.post('/api/videos/{vid}/finish')
 def finish_video(vid:str,body:FinishVideo):
@@ -279,6 +285,9 @@ async def events(ws:WebSocket,pid:str):
             else:
                 await ws.send_json({'project_id':pid,'sequence':seq,'heartbeat':True})
             await asyncio.sleep(1)
+    except KeyError:
+        # Deleting the last video removes its project while this stream may be open.
+        await ws.close(code=1008,reason='Project no longer exists')
     except (WebSocketDisconnect,RuntimeError):pass
 
 DIST=ROOT/'frontend'/'dist'

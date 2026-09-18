@@ -1,6 +1,7 @@
 """Versioned, media-free annotation document from one consistent SQLite snapshot."""
 import json
 from .db import connect, get_state, now
+from .visibility import visibility_intervals
 
 
 def annotation_document(pid, video_id=None):
@@ -64,6 +65,7 @@ def annotation_document(pid, video_id=None):
             'geometry_name': 'person_visible', 'color': state['identities'][o['identity_uuid']].get('color', '#baa7ff'),
             'box_xyxy': box,
             'box_xywh': [box[0], box[1], box[2]-box[0], box[3]-box[1]] if box else None,
+            'visibility': 'visible' if box else 'not_visible',
             'annotation_type': 'missing_box' if box is None else 'interpolated' if generated else 'keyframe',
             'origin': provenance.get('origin'), 'human_corrected': provenance.get('human_corrected', False),
             'protected_from_interpolation': o['review_state'] == 'approved' or not generated,
@@ -81,7 +83,7 @@ def annotation_document(pid, video_id=None):
             'timestamps': 'seconds in source stream; pts * time_base_num / time_base_den',
             'null_values': 'unknown or not specified; never inferred as false',
             'scope': 'All saved project annotations, including drafts and incomplete or single-person work.',
-            'absence': 'A missing observation is not proof that no person is present. Only intervals explicitly declare gaps.',
+            'absence': 'Under the no-box visibility policy, any frame without this person’s box is labelled not_visible, including before/after appearances. This is annotation state, not proof of physical occlusion or exhaustive review; reason stays unknown unless explicitly recorded.',
             'review': 'Individual approvals are not required in the visible-only workflow; reviews record separate whole-frame checks.',
             'legacy_full_extent': 'Historical person_ext fields are retained in state and history; no new full boxes are inferred.',
             'source_references': 'Video names, hashes and paths are metadata only. No video, image, thumbnail or binary media is embedded.',
@@ -95,7 +97,7 @@ def annotation_document(pid, video_id=None):
                     'whole_frames_checked': sum(bool(r['complete']) for r in state['reviews'].values()),
                     'operations': len(operations)},
         'videos': project['videos'], 'frames': frames,
-        'annotation_index': annotation_index,
+        'annotation_index': annotation_index, 'visibility_intervals': visibility_intervals(state, project['videos']),
         'state': state, 'operations': operations, 'restored_history': restored_history,
         'detector': {'proposals': proposals, 'processed_frames': proposal_frames, 'jobs': detector_jobs},
     }

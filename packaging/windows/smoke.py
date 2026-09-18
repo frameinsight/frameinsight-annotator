@@ -5,9 +5,9 @@ root=Path(sys.argv[1]).resolve();fixture=Path(sys.argv[2]).resolve()
 k=ctypes.WinDLL('kernel32',use_last_error=True)
 k.OpenEventW.argtypes=[ctypes.c_ulong,ctypes.c_int,ctypes.c_wchar_p];k.OpenEventW.restype=ctypes.c_void_p
 k.SetEvent.argtypes=k.CloseHandle.argtypes=[ctypes.c_void_p]
-def request(path,data=None,raw=False,headers=None):
+def request(path,data=None,raw=False,headers=None,method=None):
  body=json.dumps(data).encode() if data is not None else None
- req=urllib.request.Request('http://127.0.0.1:8765'+path,body,headers=headers or ({'Content-Type':'application/json'} if body else {}))
+ req=urllib.request.Request('http://127.0.0.1:8765'+path,body,headers=headers or ({'Content-Type':'application/json'} if body else {}),method=method)
  with urllib.request.urlopen(req,timeout=10) as r:return r.read() if raw else json.load(r)
 def wait(fn,seconds=90):
  deadline=time.time()+seconds
@@ -50,11 +50,14 @@ try:
  job=request('/api/projects/'+pid+'/exports',{'format':'annotations_json','video_id':vid})
  job=wait(lambda:(j if (j:=request('/api/jobs/'+job['id']))['status']=='completed' else False))
  export=request('/api/exports/'+job['export_id']);assert export['media_included'] is False and export['annotation_index'][0]['color']=='#ff7700'
+ assert [(r['start'],r['end'],r['status']) for r in export['visibility_intervals']]==[(0,9,'not_visible'),(10,10,'visible'),(11,23,'not_visible')]
  stop(p)
  p=subprocess.Popen([str(root/'Frameinsight.exe')]);wait(lambda:request('/api/projects/'+pid)['revision']==1)
  assert request('/api/projects/'+pid)['state']['identities'][who]==identity
+ assert request('/api/videos/'+vid+'?confirmed=true',method='DELETE')['deleted']
+ assert request('/api/video-library')==[] and fixture.exists()
  stop(p)
- report={'runtime':'Windows embedded Python 3.13.12','environment':'Wine on Linux' if 'WINEPREFIX' in os.environ else 'Windows','checks':['native launcher','single instance','HTTP frontend','multipart video import','24 exact frames','PNG decoding','annotation save with class/color','class catalog','video library','finish confirmation','annotations-only export','graceful shutdown','relaunch persistence'],'project_id':pid}
+ report={'runtime':'Windows embedded Python 3.13.12','environment':'Wine on Linux' if 'WINEPREFIX' in os.environ else 'Windows','checks':['native launcher','single instance','HTTP frontend','multipart video import','24 exact frames','PNG decoding','annotation save with class/color','class catalog','video library','finish confirmation','annotations-only export','automatic visibility export','delete video preserves original file','graceful shutdown','relaunch persistence'],'project_id':pid}
  Path('windows-smoke-report.json').write_text(json.dumps(report,indent=2));print(json.dumps(report),flush=True)
 finally:
  if p.poll() is None:
