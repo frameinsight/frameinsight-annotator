@@ -142,6 +142,12 @@ for interval in data.get("visibility_intervals", []):
 
 For field-level details, see the [annotation JSON reference](docs/ANNOTATION_JSON.md). To reopen editable work in this app, keep a **Project backup ZIP** and the original video: direct import of this custom JSON is not implemented yet.
 
+## Copy Visible to Extended
+
+Select a person with a Visible box and click **Copy Visible → Extended** above the video. The new box keeps the same identity and coordinates and is selected for immediate resizing. Drag its bottom edge to the estimated feet. The first Extended copy gives this person cyan Visible and orange Extended colors; later copies retain any class/color changes made with **I**.
+
+Copying creates only the current frame. Subsequent Extended edits interpolate that box type independently. Existing Extended boxes are never overwritten, deleted ranges remain empty except for the explicitly restored frame, and **Ctrl+Z** undoes the copy and its color changes. The annotations-only JSON keeps the shared person ID, both class/color styles and copied provenance.
+
 ## Tests
 
 ```bash
@@ -159,7 +165,7 @@ npm --prefix frontend run test:e2e -- editor.spec.ts
 
 Use a separate `FRAMEINSIGHT_DATA` directory for the test server: browser tests create synthetic projects in whichever server they target. The optional real-video performance test needs locally supplied footage and is not a clean-checkout acceptance test.
 
-The v1.5.0 verification passed 45 backend tests, 32 frontend unit tests, and 16 editor browser tests. These cover saved class palettes, grouped class labels, zoom/pan stability, database migration, paired editing, independent interpolation, legacy-track linking, scoped deletion, JSON v2, and undo/reload, plus manual Chrome checks. Windows packaging was tested under Wine; native Windows 10/11 validation remains outstanding.
+The v1.6.0 verification passed 45 backend tests, 37 frontend unit tests, and 18 editor browser tests. These cover current-frame Visible-to-Extended copying, independent resizing, copied colors and identity in JSON, saved class palettes, grouped class labels, zoom/pan stability, database migration, paired editing, independent interpolation, legacy-track linking, scoped deletion, JSON v2, and undo/reload, plus manual Chrome checks. Windows packaging was tested under Wine; native Windows 10/11 validation remains outstanding.
 
 ## Windows packaging
 

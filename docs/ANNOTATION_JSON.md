@@ -56,7 +56,7 @@ Each `annotation_index` row includes:
 - `box_xyxy`: `[left, top, right, bottom]`; `box_xywh`: `[left, top, width, height]`. Both use unrounded original-image pixels, with origin at the upper-left, x rightwards and y downwards.
 - `frame_index`: zero-based source frame; `timestamp_seconds`: actual source time, or `null` when unavailable. Use the ledger rather than estimating from nominal FPS.
 - `annotation_type`: `keyframe` or `interpolated`, independently for each type. There are no `missing_box` rows in the v2 flat index.
-- `origin`: manual, copied, model, interpolated, or null if not recorded. `human_corrected` preserves corrections; corrected interpolation becomes a keyframe while retaining its origin.
+- `origin`: manual, copied, model, interpolated, or null if not recorded. `human_corrected` preserves corrections; corrected interpolation becomes a keyframe while retaining its origin. **Copy Visible → Extended** records `copied` on the new Extended box, keeps the same identity/ID, and leaves Visible coordinates and provenance unchanged. Class colors are saved per person and box type.
 - `protected_from_interpolation`: whether this box is an anchor or part of a historical approved observation.
 - `visibility`: based on the presence of **visible** geometry on that frame. An extended-only row can therefore have `visibility: "not_visible"` while still containing a valid extended box.
 

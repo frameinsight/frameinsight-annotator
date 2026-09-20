@@ -3,10 +3,11 @@ import {interpolatePerson,markCorrected} from './interpolation';
 import {assignPerson as assignPersonInDomain} from './identity';
 import {VISIBLE_ONLY,legacyExtended,boxStyle,classColor} from './types';
 import {deleteGeometryRange,prepareGeometryFrame} from './hidden-range';
+import {copyVisibleToExtended} from './copy-visible';
 import {get,set as dbSet,del as dbDelete} from 'idb-keyval';
 import {api,post} from './api';
 import {type Domain,type Project,type Operation,type Change,type Geometry,type Observation,type Proposal,uuid,currentObservation,emptyObservation,observationIssues,validateDomain} from './types';
-type Store={forgetProject:(id:string)=>Promise<void>;markHiddenRange:(start:number,end:number)=>boolean;saveNow:()=>Promise<void>;hiddenIds:Record<string,boolean>;togglePersonVisibility:(id:string)=>void;focusPerson:(id:string)=>void;showAllPeople:()=>void;selectPerson:(id:string)=>void;deletePerson:(id:string)=>boolean;assignPerson:(target:string,personId:number|null,className:string,color:string,geometry?:Geometry)=>boolean;autoInterpolate:boolean;frameTimes:Record<string,(number|null)[]>;toggleInterpolation:()=>void;fillInterpolation:()=>void;project:Project|null;videoId:string;frame:number;activeId:string;geometry:Geometry;saveStatus:string;saveError:string;notice:string;pending:Operation[];history:Operation[];redoStack:Operation[];ready:boolean;load:(id:string)=>Promise<void>;commit:(label:string,fn:(d:Domain)=>void)=>boolean;navigate:(n:number)=>void;undo:()=>void;redo:()=>void;retry:()=>void;newPerson:()=>void;editObservation:(label:string,fn:(o:Observation)=>void,propagate?:boolean)=>void;setBox:(geometry:Geometry,box:Observation['person_ext'],proposal?:Proposal,context?:{videoId:string;frame:number;activeId:string})=>void;equal:()=>void;copyPrevious:()=>void;approve:()=>boolean;rename:(id:string,n:number|null)=>void;toast:(message:string)=>void;};
+type Store={copyVisibleToExtended:()=>void;forgetProject:(id:string)=>Promise<void>;markHiddenRange:(start:number,end:number)=>boolean;saveNow:()=>Promise<void>;hiddenIds:Record<string,boolean>;togglePersonVisibility:(id:string)=>void;focusPerson:(id:string)=>void;showAllPeople:()=>void;selectPerson:(id:string)=>void;deletePerson:(id:string)=>boolean;assignPerson:(target:string,personId:number|null,className:string,color:string,geometry?:Geometry)=>boolean;autoInterpolate:boolean;frameTimes:Record<string,(number|null)[]>;toggleInterpolation:()=>void;fillInterpolation:()=>void;project:Project|null;videoId:string;frame:number;activeId:string;geometry:Geometry;saveStatus:string;saveError:string;notice:string;pending:Operation[];history:Operation[];redoStack:Operation[];ready:boolean;load:(id:string)=>Promise<void>;commit:(label:string,fn:(d:Domain)=>void)=>boolean;navigate:(n:number)=>void;undo:()=>void;redo:()=>void;retry:()=>void;newPerson:()=>void;editObservation:(label:string,fn:(o:Observation)=>void,propagate?:boolean)=>void;setBox:(geometry:Geometry,box:Observation['person_ext'],proposal?:Proposal,context?:{videoId:string;frame:number;activeId:string})=>void;equal:()=>void;copyPrevious:()=>void;approve:()=>boolean;rename:(id:string,n:number|null)=>void;toast:(message:string)=>void;};
 let pumpRunning=false;let persistChain=Promise.resolve();
 const clone=<T,>(x:T):T=>structuredClone(x);
 const same=(a:any,b:any)=>JSON.stringify(a)===JSON.stringify(b);
@@ -45,6 +46,13 @@ function invalidate(before:Domain,after:Domain){
  for(const r of Object.values(after.reviews))if(frames.has(r.video_id+':'+r.frame_index)){r.complete=false;r.checked_all_people=false;}
 }
 export const useStore=create<Store>((set,get)=>({
+ copyVisibleToExtended:()=>{
+  const s=get();if(!s.activeId||s.hiddenIds[s.activeId])return s.toast('Select a visible person first');
+  if(s.commit('Copy Visible to Extended',d=>copyVisibleToExtended(d,s.videoId,s.activeId,s.frame))){
+   set({geometry:'person_ext'});void durableAndPump();
+   s.toast('Extended copied on this frame. Drag its bottom edge or corners to resize. Ctrl+Z undoes this.');
+  }
+ },
  forgetProject:async(id)=>{await persistChain;if(get().project?.id===id)set({project:null,videoId:'',activeId:'',pending:[],history:[],redoStack:[],saveStatus:'Saved',saveError:''});await dbDelete(journalKey(id));for(const key of [positionKey(id),'frameinsight:visibility:'+id])localStorage.removeItem(key);},
  saveNow:async()=>{await persist();await pump();const deadline=Date.now()+30000;while(get().pending.length){if(get().saveStatus==='Save failed')throw new Error(get().saveError||'Saving failed. Your edits are kept locally.');if(Date.now()>deadline)throw new Error('Still saving. Keep this tab open and try again.');await new Promise(resolve=>setTimeout(resolve,50));if(!pumpRunning)await pump();}set({saveStatus:'Saved',saveError:''});},
  markHiddenRange:(start,end)=>{const s=get();let removed=0;const ok=s.commit(`Delete person boxes: frames ${start}–${end}`,d=>{removed=deleteGeometryRange(d,s.videoId,s.activeId,start,end,s.project!.videos[s.videoId].frame_count,s.geometry)});if(ok)s.toast(`${removed} boxes deleted. Selected box type absent on frames ${start}–${end}. Ctrl+Z undoes this.`);return ok;},
