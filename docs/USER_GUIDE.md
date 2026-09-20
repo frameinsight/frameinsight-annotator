@@ -50,6 +50,17 @@ unchanged, and frames without either box stay empty. Clicking copy again also
 restores deleted Extended boxes wherever Visible still exists. **Ctrl+Z** undoes
 the whole copy, including its color changes. Changes save automatically.
 
+## Dim the background while annotating
+
+Select a person, then enable **Dim outside boxes** above the video. Pixels inside
+that person's displayed boxes stay at their normal brightness; the surrounding
+image becomes slightly darker. Box borders and resize handles stay clear.
+The bright area follows drawing, moving, resizing, zooming and frame changes.
+**Show both** keeps both Visible and Extended interiors bright. With no selected
+box on the frame, the image stays normal. Turn the checkbox off to restore the
+normal view. This preference is remembered on this browser and does not change
+annotations, interpolation, the source video or exports.
+
 # Useful keys
 
 | Key | Action |

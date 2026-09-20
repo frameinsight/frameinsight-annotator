@@ -148,6 +148,10 @@ Select a person and click **Copy Visible → Extended (all frames)** once. It fi
 
 Switch to Extended and resize its bottom edge at a few keyframes. With Auto-interpolate enabled, the unadjusted copies between those corrections update automatically. Visible coordinates never change. Frames without Visible or existing Extended boxes remain empty, including during later interpolation. Clicking copy again fills missing Extended boxes, including previously deleted Extended boxes where Visible still exists. One **Ctrl+Z** undoes the entire copy. Save and export work as usual.
 
+## Dim outside boxes
+
+Enable **Dim outside boxes** above the video to keep the selected person's displayed box interiors at their original brightness and dim the surrounding image by 38%. The mask follows live drawing, movement, resizing, pan/zoom and frame navigation; Show both reveals the union of Visible and Extended interiors. Without a selected box, the image stays normal. This browser preference changes no annotation data, source pixels, interpolation or exports.
+
 ## Tests
 
 ```bash
@@ -165,7 +169,7 @@ npm --prefix frontend run test:e2e -- editor.spec.ts
 
 Use a separate `FRAMEINSIGHT_DATA` directory for the test server: browser tests create synthetic projects in whichever server they target. The optional real-video performance test needs locally supplied footage and is not a clean-checkout acceptance test.
 
-The v1.7.0 verification passed 45 backend tests, 40 frontend unit tests, and 18 editor browser tests. These cover whole-video Visible-to-Extended copying for one person, independent resizing, copied colors and identity in JSON, saved class palettes, grouped class labels, zoom/pan stability, database migration, paired editing, independent interpolation, legacy-track linking, scoped deletion, JSON v2, and undo/reload, plus manual Chrome checks. Windows packaging was tested under Wine; native Windows 10/11 validation remains outstanding.
+The v1.7.1 verification passed 40 frontend unit tests and 19 editor browser tests; the unchanged backend passed 45 tests in v1.7.0. These cover display-only dimming with pixel checks and unchanged annotation data, whole-video Visible-to-Extended copying for one person, independent resizing, copied colors and identity in JSON, saved class palettes, grouped class labels, zoom/pan stability, database migration, paired editing, independent interpolation, legacy-track linking, scoped deletion, JSON v2, and undo/reload, plus manual Chrome checks. Windows packaging was tested under Wine; native Windows 10/11 validation remains outstanding.
 
 ## Windows packaging
 

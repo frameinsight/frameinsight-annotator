@@ -10,7 +10,7 @@ type Gesture={kind:'draw'|'move'|'resize'|'pan'|'click';start:[number,number];sc
 const colors={person_ext:'#67e2b1',person_visible:'#baa7ff'};
 const imageCache=new Map<string,HTMLImageElement>();
 function fetchImage(key:string,url:string):Promise<HTMLImageElement>{const cached=imageCache.get(key);if(cached)return Promise.resolve(cached);return new Promise((resolve,reject)=>{const img=new Image();img.onload=()=>{imageCache.set(key,img);while(imageCache.size>15)imageCache.delete(imageCache.keys().next().value!);resolve(img)};img.onerror=()=>reject(new Error('Exact frame unavailable'));img.src=url;});}
-export const EditorCanvas=forwardRef<CanvasHandle,{proposals:Proposal[];showGhosts:boolean;showProposals:boolean;showBoth:boolean}>(({proposals,showGhosts,showProposals,showBoth},ref)=>{
+export const EditorCanvas=forwardRef<CanvasHandle,{proposals:Proposal[];showGhosts:boolean;showProposals:boolean;showBoth:boolean;dimOutside:boolean}>(({proposals,showGhosts,showProposals,showBoth,dimOutside},ref)=>{
  const {project,videoId,frame,activeId,geometry,hiddenIds}=useStore();const video=project?.videos[videoId];
  const host=useRef<HTMLDivElement>(null),gesture=useRef<Gesture|null>(null),spaceDown=useRef(false),panned=useRef(false),cycle=useRef(0);
  const [size,setSize]=useState({w:800,h:600}),[view,setView]=useState<View>({x:0,y:0,scale:1}),[image,setImage]=useState<{key:string;image:HTMLImageElement}|null>(null),[error,setError]=useState(''),[preview,setPreview]=useState<Box|null>(null),[cursor,setCursor]=useState('crosshair');
@@ -30,6 +30,13 @@ export const EditorCanvas=forwardRef<CanvasHandle,{proposals:Proposal[];showGhos
  const active=currentObservation(project,videoId,frame,activeId);
  const ghost=showGhosts&&!hiddenIds[activeId]?currentObservation(project,videoId,frame-1,activeId):null;
  const boxEntries=observations.flatMap(o=>displayedGeometries.flatMap(g=>o[g]?[{o,g,box:o[g]!}]:[])).sort((a,b)=>Number(b.o.identity_uuid===activeId&&b.g===geometry)-Number(a.o.identity_uuid===activeId&&a.g===geometry));
+ // Display-only mask. Follow live gesture coordinates without editing the domain.
+ const focusBoxes:Box[]=dimOutside&&activeId&&!hiddenIds[activeId]?displayedGeometries.flatMap(g=>{
+  const editing=preview&&gesture.current?.activeId===activeId&&gesture.current.videoId===videoId&&gesture.current.frame===frame;
+  const linked=active?.geometry_link==='equal'&&gesture.current?.geometry==='person_ext';
+  const box=editing&&(gesture.current?.geometry===g||linked)?preview:active?.[g];
+  return box?[box]:[];
+ }):[];
  const point=(e:{clientX:number;clientY:number}):[number,number]=>{const r=host.current!.getBoundingClientRect();return [e.clientX-r.left,e.clientY-r.top]};
  function finish(){
   const g=gesture.current;if(!g)return;gesture.current=null;setPreview(null);
@@ -74,7 +81,10 @@ export const EditorCanvas=forwardRef<CanvasHandle,{proposals:Proposal[];showGhos
   const [x1,y1,x2,y2]=box;return <Group key={key} opacity={opacity}><Rect x={x1} y={y1} width={x2-x1} height={y2-y1} stroke={color} strokeWidth={(selected?2:1.3)/view.scale} dash={(!VISIBLE_ONLY&&g==='person_visible')||dashed?[6/view.scale,4/view.scale]:undefined}/>{label&&<><Rect x={x1} y={y1-19/view.scale} width={Math.max(34,label.length*6.1+10)/view.scale} height={18/view.scale} fill={selected?color:'#151d24'}/><Text x={x1+4/view.scale} y={y1-16/view.scale} text={label} fontFamily="monospace" fontSize={11/view.scale} fill={selected?(parseInt(color.slice(1,3),16)*.299+parseInt(color.slice(3,5),16)*.587+parseInt(color.slice(5,7),16)*.114>145?'#10161b':'#ffffff'):color}/></>}{selected&&[[x1,y1],[x2,y1],[x1,y2],[x2,y2],[(x1+x2)/2,y1],[(x1+x2)/2,y2],[x1,(y1+y2)/2],[x2,(y1+y2)/2]].map(([x,y],i)=><Rect key={i} x={x-3/view.scale} y={y-3/view.scale} width={6/view.scale} height={6/view.scale} fill="#10161b" stroke={color} strokeWidth={1/view.scale}/>)}</Group>;
  };
  return <div className="canvas-host" ref={host} tabIndex={0} role="application" aria-label="Video annotation canvas" data-testid="canvas" data-frame={ready?frame:'loading'} data-scale={view.scale} data-offset-x={view.x} data-offset-y={view.y} onPointerDown={down} onPointerMove={move} onPointerUp={finish} onPointerCancel={()=>{gesture.current=null;setPreview(null)}} onWheel={wheel} style={{cursor}}>
-  {ready?<Stage width={size.w} height={size.h} listening={false}><Layer listening={false}><Group x={view.x} y={view.y} scaleX={view.scale} scaleY={view.scale}><KImage image={displayedImage} width={video.width} height={video.height}/></Group></Layer><Layer listening={false}><Group x={view.x} y={view.y} scaleX={view.scale} scaleY={view.scale}>
+  {ready?<Stage width={size.w} height={size.h} listening={false}><Layer listening={false}><Group x={view.x} y={view.y} scaleX={view.scale} scaleY={view.scale}><KImage image={displayedImage} width={video.width} height={video.height}/></Group></Layer>{focusBoxes.length>0&&<Layer listening={false}><Group x={view.x} y={view.y} scaleX={view.scale} scaleY={view.scale}>
+   <Rect width={video.width} height={video.height} fill="black" opacity={.38}/>
+   {focusBoxes.map(([x1,y1,x2,y2],i)=><Rect key={i} x={x1} y={y1} width={x2-x1} height={y2-y1} fill="black" globalCompositeOperation="destination-out"/>)}
+  </Group></Layer>}<Layer listening={false}><Group x={view.x} y={view.y} scaleX={view.scale} scaleY={view.scale}>
    {ghost&&displayedGeometries.map(g=>ghost[g]&&drawBox(ghost[g]!,g,'ghost'+g,'',false,.22,true,boxStyle(project?.state.identities[ghost.identity_uuid],g).color))}
    {showProposals&&proposals.map((p,i)=><Group key={p.id} opacity={.55}><Rect x={p.box[0]} y={p.box[1]} width={p.box[2]-p.box[0]} height={p.box[3]-p.box[1]} stroke="#f2bd6b" strokeWidth={1/view.scale} dash={[2/view.scale,5/view.scale]}/><Text text={`? ${Math.round(p.confidence*100)}`} x={p.box[0]} y={p.box[1]+3/view.scale} fontSize={10/view.scale} fill="#ffcf87"/></Group>)}
    {boxEntries.slice().reverse().map(({o,g,box})=>{const selected=o.identity_uuid===activeId&&g===geometry;const editing=gesture.current?.activeId===o.identity_uuid&&gesture.current.geometry===g;const linkedPreview=preview&&o.geometry_link==='equal'&&gesture.current?.geometry==='person_ext'&&gesture.current.activeId===o.identity_uuid;const b=editing&&preview?preview:linkedPreview?preview:box;const person=project!.state.identities[o.identity_uuid];return drawBox(b,g,o.id+g,`${boxStyle(person,g).class_name} · ${person?.person_id??person?.name??'Draft'}${!VISIBLE_ONLY&&o.review_state==='approved'?' ✓':''}`,selected,g===geometry?1:.45,false,boxStyle(person,g).color);})}

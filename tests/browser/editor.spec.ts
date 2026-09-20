@@ -181,3 +181,25 @@ test('one click copies all visible frames from anywhere; spaced corrections inte
  const corrected=at(await state(request),10).person_ext;await copy.click();await saved(page);p=await state(request);for(const f of [3,4,5,6,7])expect(at(p,f).person_ext).toEqual(at(p,f).person_visible);expect(at(p,10).person_ext).toEqual(corrected);
  const persisted=p.state;await reopen(page);await ready(page,10);expect((await state(request)).state).toEqual(persisted);
 });
+
+test('dimming is display-only, keeps overlapping box interiors bright and follows resize, zoom and frames',async({page,request})=>{
+ const canvas=page.getByTestId('canvas'),toggle=page.getByLabel('Dim outside boxes');
+ await expect(toggle).not.toBeChecked();await canvas.press('n');await drag(page,[100,100],[220,240]);await canvas.press('2');await drag(page,[130,130],[260,310]);await saved(page);
+ const pixels=async(points:number[][])=>canvas.evaluate((host,points)=>{
+  const layers=Array.from(host.querySelectorAll('canvas')),first=layers[0],combined=document.createElement('canvas');combined.width=first.width;combined.height=first.height;const ctx=combined.getContext('2d')!;
+  for(const layer of layers)ctx.drawImage(layer,0,0);const ratio=first.width/host.clientWidth,s=Number(host.getAttribute('data-scale')),x=Number(host.getAttribute('data-offset-x')),y=Number(host.getAttribute('data-offset-y'));
+  return points.map(([px,py])=>Array.from(ctx.getImageData(Math.round((x+px*s)*ratio),Math.round((y+py*s)*ratio),1,1).data));
+ },points);
+ const points=[[150,150],[240,280],[190,190],[400,180]],normal=await pixels(points),before=await state(request);
+ await toggle.check();await expect.poll(async()=> (await pixels(points))[3][2]).toBeLessThan(normal[3][2]*.8);
+ const dimmed=await pixels(points);expect(dimmed.slice(0,3)).toEqual(normal.slice(0,3));expect((await state(request)).state).toEqual(before.state);expect((await state(request)).revision).toBe(before.revision);
+ await page.getByLabel('Show both box types').uncheck();await expect.poll(async()=> (await pixels([[110,160]]))[0][2]).toBeLessThan(normal[0][2]*.8);await page.getByLabel('Show both box types').check();
+ // The mask follows the live bottom-edge preview, before the edit is saved.
+ const view=await canvas.evaluate(e=>{const r=e.getBoundingClientRect();return {x:r.x+Number(e.getAttribute('data-offset-x')),y:r.y+Number(e.getAttribute('data-offset-y')),s:Number(e.getAttribute('data-scale'))}});
+ const originalPixel=(await pixels([[190,320]]))[0][2];await page.mouse.move(view.x+195*view.s,view.y+310*view.s);await page.mouse.down();await page.mouse.move(view.x+195*view.s,view.y+335*view.s,{steps:8});await expect.poll(async()=> (await pixels([[190,320]]))[0][2]).toBeGreaterThan(originalPixel);await page.mouse.up();await saved(page);
+ let p=await state(request);expect(at(p,0).person_ext[3]).toBeCloseTo(335,0);expect(at(p,0).person_visible).toEqual(at(before,0).person_visible);
+ const rect=(await canvas.boundingBox())!;await page.mouse.move(rect.x+rect.width/2,rect.y+rect.height/2);await page.mouse.wheel(0,-100);await expect.poll(async()=>Number(await canvas.getAttribute('data-scale'))).toBeGreaterThan(view.s);const zoom=await canvas.getAttribute('data-scale');
+ await toggle.uncheck();const zoomNormal=await pixels(points);await toggle.check();await expect.poll(async()=> (await pixels(points))[3][2]).toBeLessThan(zoomNormal[3][2]*.8);expect((await pixels(points)).slice(0,3)).toEqual(zoomNormal.slice(0,3));await expect(canvas).toHaveAttribute('data-scale',zoom!);
+ p=await state(request);await reopen(page);await ready(page,0);await expect(toggle).toBeChecked();expect((await state(request)).state).toEqual(p.state);
+ await page.getByLabel('Go to frame').fill('10');await ready(page,10);await expect(canvas.locator('canvas')).toHaveCount(2);await toggle.uncheck();expect((await state(request)).revision).toBe(p.revision);
+});
