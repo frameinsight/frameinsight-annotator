@@ -19,8 +19,6 @@ from .video import import_video, new_job, POOL, sha256
 from .worker import Worker
 from .formats import export_project, parse_cvat
 from .delete_video import delete_video
-from .assistance import router as assistance_router
-from .annotation_import import router as annotation_import_router
 worker=Worker(); exports_pool=ThreadPoolExecutor(max_workers=1,thread_name_prefix='export')
 @asynccontextmanager
 async def lifespan(app):
@@ -38,10 +36,7 @@ async def lifespan(app):
                 c.execute('UPDATE videos SET data=? WHERE id=?',(json.dumps(v),row['id']))
     yield
     worker.stop()
-app=FastAPI(title='Frameinsight',version='1.8.0',lifespan=lifespan)
-app.state.assistance_worker=worker
-app.include_router(assistance_router)
-app.include_router(annotation_import_router)
+app=FastAPI(title='Frameinsight',version='1.0.0',lifespan=lifespan)
 
 @app.middleware('http')
 async def local_only(request:Request,call_next):
@@ -202,13 +197,9 @@ def annotations(vid:str,start:int=0,end:int=100):
     v=video_get(vid);s=db.snapshot(v['project_id'])['state']
     return [o for o in s['observations'].values() if o['video_id']==vid and start<=o['frame_index']<=end]
 @app.get('/api/videos/{vid}/proposals')
-def proposals(vid:str,start:int=0,end:int=100,cache_key:str|None=None):
+def proposals(vid:str,start:int=0,end:int=100):
     video_get(vid)
-    query='SELECT data FROM proposals WHERE video_id=? AND frame_index BETWEEN ? AND ?'
-    args=[vid,start,min(end,start+1000)]
-    if cache_key is not None:
-        query+=' AND cache_key=?';args.append(cache_key)
-    with db.connect() as c:return [json.loads(r['data']) for r in c.execute(query,args)]
+    with db.connect() as c:return [json.loads(r['data']) for r in c.execute('SELECT data FROM proposals WHERE video_id=? AND frame_index BETWEEN ? AND ?',(vid,start,min(end,start+1000)))]
 @app.get('/api/models')
 def models():return [{'name':p.name,'bytes':p.stat().st_size} for p in MODELS.glob('*.pt')]
 @app.post('/api/videos/{vid}/proposal-jobs')

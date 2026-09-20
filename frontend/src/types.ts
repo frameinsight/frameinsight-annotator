@@ -16,7 +16,7 @@ export type Video={id:string;name:string;width:number;height:number;frame_count:
 export type Project={class_colors?:Record<string,string>;classes?:string[];id:string;name:string;revision:number;state:Domain;videos:Record<string,Video>};
 export type Change={collection:Collection;id:string;before:any;after:any};
 export type Operation={id:string;base_revision:number;label:string;video_id:string|null;frame_index:number|null;changes:Change[];compensates?:string|null};
-export type Proposal={id:string;video_id:string;frame_index:number;geometry:Geometry;box:Box;confidence:number;class_name:string;cache_key:string;track_id?:string|null;track_issue?:string};
+export type Proposal={id:string;video_id:string;frame_index:number;geometry:Geometry;box:Box;confidence:number;class_name:string;cache_key:string};
 export type Job={id:string;kind:string;status:string;video_id?:string;progress:number;total?:number;error?:string;phase?:string;export_id?:string;settings?:any;cache_key?:string};
 export type FrameInfo={frame_index:number;pts:number|null;seconds:number|null;time_base_num:number;time_base_den:number};
 export const uuid=()=>crypto.randomUUID();

@@ -24,7 +24,7 @@ class Worker:
             self.process = self.ctx.Process(target=run_worker, args=(self.queue,), daemon=True)
             self.process.start()
     def enqueue(self, pid, vid, settings):
-        if settings.get('mode') != 'tracking': safe_path(settings['model'], MODELS)
+        safe_path(settings['model'], MODELS)
         self.start()
         job = new_job(pid, 'proposals', video_id=vid, settings=settings)
         try: self.queue.put_nowait(job['id'])
@@ -62,13 +62,6 @@ def run_worker(work_queue):
             job = job_get(jid)
             if job['status'] == 'cancelled': continue
             job_update(jid, status='running', phase='Loading trusted model')
-            if job['settings'].get('mode') == 'tracking':
-                from .tracking import run_tracking_job
-                # Each pass owns fresh tracker memory. Keeping the legacy detector
-                # alive as well would waste GPU memory on smaller annotation PCs.
-                model = None; loaded = None
-                run_tracking_job(job)
-                continue
             from ultralytics import YOLO
             import torch
             settings = job['settings']
@@ -125,8 +118,4 @@ def run_worker(work_queue):
                 job_update(jid, progress=len(done), effective_batch_size=batch_size)
             else: job_update(jid, status='completed', phase='Cached proposals ready')
         except Exception as e:
-            try:
-                if job_get(jid)['status'] != 'cancelled':
-                    job_update(jid, status='failed', error=f'{type(e).__name__}: {e}')
-            except KeyError:
-                pass  # Video deletion can remove the active job during inference.
+            job_update(jid, status='failed', error=f'{type(e).__name__}: {e}')

@@ -3,19 +3,14 @@ import {interpolatePerson,markCorrected} from './interpolation';
 import {assignPerson as assignPersonInDomain} from './identity';
 import {VISIBLE_ONLY,legacyExtended,boxStyle,classColor} from './types';
 import {deleteGeometryRange,prepareGeometryFrame} from './hidden-range';
-import {applySuggestedTrack} from './assistance';
 import {copyVisibleToExtended} from './copy-visible';
 import {get,set as dbSet,del as dbDelete} from 'idb-keyval';
 import {api,post} from './api';
 import {type Domain,type Project,type Operation,type Change,type Geometry,type Observation,type Proposal,uuid,currentObservation,emptyObservation,observationIssues,validateDomain} from './types';
-type Store={remoteBusy:boolean;adoptImport:(project:Project,operation:Operation|null)=>Promise<void>;acceptTrack:(proposals:Proposal[],targetId:string|null,className:string)=>boolean;copyVisibleToExtended:()=>void;forgetProject:(id:string)=>Promise<void>;markHiddenRange:(start:number,end:number)=>boolean;saveNow:()=>Promise<void>;hiddenIds:Record<string,boolean>;togglePersonVisibility:(id:string)=>void;focusPerson:(id:string)=>void;showAllPeople:()=>void;selectPerson:(id:string)=>void;deletePerson:(id:string)=>boolean;assignPerson:(target:string,personId:number|null,className:string,color:string,geometry?:Geometry)=>boolean;autoInterpolate:boolean;frameTimes:Record<string,(number|null)[]>;toggleInterpolation:()=>void;fillInterpolation:()=>void;project:Project|null;videoId:string;frame:number;activeId:string;geometry:Geometry;saveStatus:string;saveError:string;notice:string;pending:Operation[];history:Operation[];redoStack:Operation[];ready:boolean;load:(id:string)=>Promise<void>;commit:(label:string,fn:(d:Domain)=>void)=>boolean;navigate:(n:number)=>void;undo:()=>void;redo:()=>void;retry:()=>void;newPerson:()=>void;editObservation:(label:string,fn:(o:Observation)=>void,propagate?:boolean)=>void;setBox:(geometry:Geometry,box:Observation['person_ext'],proposal?:Proposal,context?:{videoId:string;frame:number;activeId:string})=>void;equal:()=>void;copyPrevious:()=>void;approve:()=>boolean;rename:(id:string,n:number|null)=>void;toast:(message:string)=>void;};
+type Store={copyVisibleToExtended:()=>void;forgetProject:(id:string)=>Promise<void>;markHiddenRange:(start:number,end:number)=>boolean;saveNow:()=>Promise<void>;hiddenIds:Record<string,boolean>;togglePersonVisibility:(id:string)=>void;focusPerson:(id:string)=>void;showAllPeople:()=>void;selectPerson:(id:string)=>void;deletePerson:(id:string)=>boolean;assignPerson:(target:string,personId:number|null,className:string,color:string,geometry?:Geometry)=>boolean;autoInterpolate:boolean;frameTimes:Record<string,(number|null)[]>;toggleInterpolation:()=>void;fillInterpolation:()=>void;project:Project|null;videoId:string;frame:number;activeId:string;geometry:Geometry;saveStatus:string;saveError:string;notice:string;pending:Operation[];history:Operation[];redoStack:Operation[];ready:boolean;load:(id:string)=>Promise<void>;commit:(label:string,fn:(d:Domain)=>void)=>boolean;navigate:(n:number)=>void;undo:()=>void;redo:()=>void;retry:()=>void;newPerson:()=>void;editObservation:(label:string,fn:(o:Observation)=>void,propagate?:boolean)=>void;setBox:(geometry:Geometry,box:Observation['person_ext'],proposal?:Proposal,context?:{videoId:string;frame:number;activeId:string})=>void;equal:()=>void;copyPrevious:()=>void;approve:()=>boolean;rename:(id:string,n:number|null)=>void;toast:(message:string)=>void;};
 let pumpRunning=false;let persistChain=Promise.resolve();
 const clone=<T,>(x:T):T=>structuredClone(x);
-const same=(a:any,b:any):boolean=>{
- if(Object.is(a,b))return true;
- if(!a||!b||typeof a!=='object'||typeof b!=='object'||Array.isArray(a)!==Array.isArray(b))return false;
- const keys=Object.keys(a);return keys.length===Object.keys(b).length&&keys.every(k=>Object.hasOwn(b,k)&&same(a[k],b[k]));
-};
+const same=(a:any,b:any)=>JSON.stringify(a)===JSON.stringify(b);
 const journalKey=(id:string)=>'frameinsight:journal:'+id;
 const positionKey=(id:string)=>'frameinsight:position:'+id;
 function persist(){
@@ -51,18 +46,6 @@ function invalidate(before:Domain,after:Domain){
  for(const r of Object.values(after.reviews))if(frames.has(r.video_id+':'+r.frame_index)){r.complete=false;r.checked_all_people=false;}
 }
 export const useStore=create<Store>((set,get)=>({
- remoteBusy:false,
- adoptImport:async(project,operation)=>{
-  const s=get();if(s.project?.id!==project.id||s.pending.length)throw new Error('Project changed during import. Reopen the video to load the saved import.');
-  const matches=operation&&project.revision===operation.base_revision+1&&operation.changes.every(c=>same(project.state[c.collection][c.id]??null,c.after));
-  const history=operation&&matches&&!s.history.some(op=>op.id===operation.id)?[...s.history,operation].slice(-200):s.history;
-  set({project,history,redoStack:[],saveStatus:'Saved',saveError:''});await persist();
- },
- acceptTrack:(proposals,targetId,className)=>{
-  const s=get();let result={identityId:'',added:0,skipped:0};
-  const ok=s.commit('Use AI track as editable Visible boxes',d=>{result=applySuggestedTrack(d,s.videoId,proposals,targetId,{class_name:className,color:classColor(s.project,className)})});
-  if(ok){if(result.identityId)s.selectPerson(result.identityId);set({geometry:'person_visible'});void durableAndPump();s.toast(`${result.added} AI boxes added; ${result.skipped} existing or excluded boxes kept. Review the track and adjust where needed.`);}return ok;
- },
  copyVisibleToExtended:()=>{
   const s=get();if(!s.activeId||s.hiddenIds[s.activeId])return s.toast('Select a visible person first');
   let count=0;
@@ -105,7 +88,6 @@ export const useStore=create<Store>((set,get)=>({
   const changes:Change[]=[];
   for(const col of Object.keys(before) as (keyof Domain)[])for(const id of new Set([...Object.keys(before[col]),...Object.keys(after[col])]))if(!same(before[col][id],after[col][id]))changes.push({collection:col,id,before:before[col][id]??null,after:after[col][id]??null});
   if(!changes.length)return true;
-  if(changes.length>50000){s.toast('This action exceeds the 50,000-change limit. Use individual-frame suggestions or a shorter video. Nothing was changed.');return false;}
   const op:Operation={id:uuid(),label,base_revision:s.project.revision,video_id:s.videoId||null,frame_index:s.frame,changes,compensates:null};
   queue(op,after,[...s.history,op].slice(-200),[]);return true;
  },

@@ -1,7 +1,7 @@
 import {type Box,type Domain,type Observation,type Geometry,geometries,emptyObservation} from './types';
 
 export function isGeometryInterpolated(o:Observation,g:Geometry){return !!o[g]&&o.provenance[g]?.origin==='interpolated'&&!o.provenance[g]?.human_corrected;}
-// Unadjusted copies are starting boxes, not fixed keyframes at every frame.
+// Unadjusted copies and legacy AI boxes remain editable starting boxes.
 function isGeometryGenerated(o:Observation,g:Geometry){return !!o[g]&&['model_track','copied_track','interpolated'].includes(o.provenance[g]?.origin||'')&&!o.provenance[g]?.human_corrected;}
 export function isInterpolated(o:Observation){
  const present=geometries.filter(g=>o[g]);
@@ -38,7 +38,7 @@ export function interpolatePerson(d:Domain,videoId:string,identity:string,times:
     if(g==='person_ext')o.full_quality='estimated';
     if(!old){o.occluded=left.occluded===right.occluded?left.occluded:null;o.truncated=left.truncated===right.truncated?left.truncated:null;}
     if(!old||isInterpolated(old))o.evidence_note=`Interpolated ${g} between source frames ${start} and ${end} using ${useTime?'source timestamps':'source frame indices'}. Review against the image.`;
-    o.review_state='draft';o.provenance[g]={origin:'interpolated',proposal_id:old?.provenance[g]?.proposal_id??null,human_corrected:false};
+    o.review_state='draft';o.provenance[g]={origin:'interpolated',proposal_id:null,human_corrected:false};
     d.observations[o.id]=o;existing.set(f,o);changed.add(f);
    }
   }

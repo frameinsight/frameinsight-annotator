@@ -36,50 +36,6 @@ again. The Finish confirmation records your own check; it does not automatically
 judge whether your boxes are correct. If you have more work to do, choose
 **Keep annotating**.
 
-## Let AI make the starting boxes
-
-1. Open your video. On the right, choose **AI assistance**.
-2. Click **Detect all people** and wait until the pass is ready. You can keep
-   drawing while it processes. This needs an AI-enabled computer.
-3. Move **Display confidence** to hide weak yellow suggestions or show more.
-   This changes only the display. Your saved annotations stay unchanged.
-4. Click a yellow box around the person, or choose their suggested track from
-   **Tracks across the video**. The list includes people who appear later.
-5. Click **Use track as new person**. To attach it to someone you already
-   started, first select that person on the left, then click **Use track for…**.
-   This adds the complete track, including weaker boxes hidden by the slider.
-6. Play through that person's track. Check that it follows the same person.
-   Use **Next issue** to visit likely problems, but inspect the rest too.
-   Drag or resize incorrect boxes. Correct at two frames to update generated
-   boxes between them. Draw any missed person yourself. AI can make mistakes
-   at crossings, disappearances and reappearances.
-7. If the AI track follows the wrong person, undo its adoption, or delete its
-   incorrect frame range. Use **Use only this frame** on individual suggestions
-   to make your own keyframes for the correct person. Keep using the same ID.
-8. Review Visible before copying it to Extended. AI person boxes sometimes
-   include hidden body parts; adjust them to your annotation rules.
-9. Save and finish normally. Yellow suggestions are not exported as annotations
-   until you use them. No extra approval button is required on each frame.
-
-A missing detection is marked as unavailable for review. It is not proof that
-someone is hidden. The app avoids interpolating across that gap. Draw or accept
-individual detections on missed frames to restore them.
-
-Choose the **Shortcuts** tab in the same panel whenever you need the key list.
-If AI is not installed, manual drawing and JSON import still work.
-
-## Open annotations someone sent you
-
-1. Load the same original video in Frameinsight. Do not use a trimmed or
-   re-encoded copy; the file fingerprint must match.
-2. In the right panel, choose **AI assistance → Import annotations (.json)**.
-3. Choose the Frameinsight JSON file. Wait for **Source video matched**.
-4. Read the people/box counts and any person-number changes, then click
-   **Import annotations**. Existing work is kept; imported people are added
-   separately. Two classes for the same person stay under one ID.
-5. Inspect and edit the boxes. **Ctrl+Z** undoes the entire import if needed.
-   Save and export a new JSON when finished. Keep the original video separately.
-
 ## Copying and adjusting Extended
 
 Select a person and click **Copy Visible → Extended (all frames)** once. It fills
@@ -127,7 +83,7 @@ annotations, interpolation, the source video or exports.
 | Alt + drag | Replace a box with a new rectangle |
 | Mouse wheel | Zoom |
 
-The **Shortcuts** tab on the right also lists the useful shortcuts. **Help** lets you
+The right side of the editor also lists the useful shortcuts. **Help** lets you
 change key bindings.
 
 # Working with overlapping people
@@ -213,8 +169,7 @@ corrections and relevant edit history. JSON v2 has a paired `frame_annotations`
 list and a per-box `annotation_index`. See the README for a Python example.
 **Project backup ZIP** preserves the complete project data (including all related
 videos in older multi-video projects), without copying the video files. JSON
-can be imported onto the matching video to continue annotation; unlike a native
-backup, it does not restore the old project history or completion checks. Back up the app's
+is for annotation delivery; it is not a project-restore format. Back up the app's
 data directory with the app closed to preserve everything, including video caches.
 
 # Deleting an old video
