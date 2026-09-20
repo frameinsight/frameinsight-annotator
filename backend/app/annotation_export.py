@@ -66,6 +66,7 @@ def annotation_document(pid, video_id=None):
                 continue
             provenance = o.get('provenance', {}).get(geometry, {})
             generated = provenance.get('origin') == 'interpolated' and not provenance.get('human_corrected')
+            replaceable = provenance.get('origin') in ('interpolated', 'copied_track', 'model_track') and not provenance.get('human_corrected')
             style = identity.get('box_styles', {}).get(geometry, {})
             annotation_index.append({
                 **common, 'box_type': box_type, 'geometry_name': geometry,
@@ -75,7 +76,7 @@ def annotation_document(pid, video_id=None):
                 'visibility': 'visible' if o.get('person_visible') else 'not_visible',
                 'annotation_type': 'interpolated' if generated else 'keyframe',
                 'origin': provenance.get('origin'), 'human_corrected': provenance.get('human_corrected', False),
-                'protected_from_interpolation': o['review_state'] == 'approved' or not generated,
+                'protected_from_interpolation': o['review_state'] == 'approved' or not replaceable,
             })
     return {
         'format': 'frameinsight.annotations', 'schema_version': 2, 'exported_at': now(),

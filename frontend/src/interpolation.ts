@@ -2,14 +2,14 @@ import {type Box,type Domain,type Observation,type Geometry,geometries,emptyObse
 
 export function isGeometryInterpolated(o:Observation,g:Geometry){return !!o[g]&&o.provenance[g]?.origin==='interpolated'&&!o.provenance[g]?.human_corrected;}
 // Unadjusted copies are starting boxes, not fixed keyframes at every frame.
-function isGeometryGenerated(o:Observation,g:Geometry){return !!o[g]&&['copied_track','interpolated'].includes(o.provenance[g]?.origin||'')&&!o.provenance[g]?.human_corrected;}
+function isGeometryGenerated(o:Observation,g:Geometry){return !!o[g]&&['model_track','copied_track','interpolated'].includes(o.provenance[g]?.origin||'')&&!o.provenance[g]?.human_corrected;}
 export function isInterpolated(o:Observation){
  const present=geometries.filter(g=>o[g]);
  return present.length>0&&present.every(g=>isGeometryInterpolated(o,g));
 }
 export function replaceableDraft(o:Observation){return o.review_state!=='approved'&&isInterpolated(o);}
 export function markCorrected(o:Observation,geometry?:Geometry){
- for(const g of geometry?[geometry]:geometries)if(['interpolated','copied','copied_track'].includes(o.provenance[g]?.origin||''))o.provenance[g]={...o.provenance[g]!,human_corrected:true};
+ for(const g of geometry?[geometry]:geometries)if(['model_track','interpolated','copied','copied_track'].includes(o.provenance[g]?.origin||''))o.provenance[g]={...o.provenance[g]!,human_corrected:true};
 }
 const lerp=(a:Box,b:Box,t:number):Box=>a.map((x,i)=>x+(b[i]-x)*t) as Box;
 
@@ -38,7 +38,7 @@ export function interpolatePerson(d:Domain,videoId:string,identity:string,times:
     if(g==='person_ext')o.full_quality='estimated';
     if(!old){o.occluded=left.occluded===right.occluded?left.occluded:null;o.truncated=left.truncated===right.truncated?left.truncated:null;}
     if(!old||isInterpolated(old))o.evidence_note=`Interpolated ${g} between source frames ${start} and ${end} using ${useTime?'source timestamps':'source frame indices'}. Review against the image.`;
-    o.review_state='draft';o.provenance[g]={origin:'interpolated',proposal_id:null,human_corrected:false};
+    o.review_state='draft';o.provenance[g]={origin:'interpolated',proposal_id:old?.provenance[g]?.proposal_id??null,human_corrected:false};
     d.observations[o.id]=o;existing.set(f,o);changed.add(f);
    }
   }

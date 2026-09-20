@@ -3,7 +3,7 @@
 Give the annotator `Window_setup.exe` and `START-HERE.txt`.
 Double-click the installer, follow its pages, then use the desktop shortcut.
 Windows 10 or 11, **64-bit**, is required. A normal browser such as Edge or
-Chrome is sufficient. Python, Node, AI models and GPU setup are not required.
+Chrome is sufficient. Python, Node, AI models and GPU setup are not required for manual annotation or JSON import.
 The app runs locally and opens in the default browser. Internet is not needed
 after installation. This is an unsigned installer, so Windows may identify its
 publisher as unknown.
@@ -11,7 +11,7 @@ publisher as unknown.
 The installation is per user, without administrator rights. It includes the
 Python runtime, CPU video decoding, annotation UI and editable interpolation.
 The app starts with a video library, asks for classes before upload, shows a
-shortcut guide while drawing, and uses Save and Finish for completion. No user videos, annotations, projects,
+right panel with AI assistance status, annotation import and a Shortcuts tab, and uses Save and Finish for completion. No user videos, annotations, projects,
 model weights or test fixtures are included in the installer.
 
 Closing the browser leaves the local server running. Use the tray icon near
@@ -26,9 +26,18 @@ Log: `%LOCALAPPDATA%\Frameinsight\Logs\server.log`
 
 Updates and uninstalling preserve the data directory. Back it up while the
 app is closed, or keep native project archives together with source videos.
-Annotations JSON exports contain no video/images and are not a restore format.
+Annotations JSON exports contain no video/images. Import them through the right panel after loading the exact original video to continue editing; use a native backup to retain the original project history.
 The app itself retains imported videos and decoded frame caches locally to
 support exact-frame editing. Leave sufficient disk space for these files.
+
+# AI processing
+
+This installer does **not** bundle Torch, Ultralytics or model weights. It shows
+AI as unavailable when those optional dependencies are absent. Manual editing,
+interpolation and JSON import continue to work offline. For the intended split
+workflow, run detection/tracking on the configured GPU computer, export annotation
+JSON after selecting the tracks, and import it on this laptop with the same video.
+The source application's GPU setup is documented in the README.
 
 # Building from Ubuntu
 

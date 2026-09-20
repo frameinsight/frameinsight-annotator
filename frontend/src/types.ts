@@ -5,7 +5,7 @@ export type Geometry='person_ext'|'person_visible';
 export type BoxStyle={class_name:string;color:string};
 export type Identity={id:string;person_id:number|null;name:string;class_name?:string;color?:string;box_styles?:Partial<Record<Geometry,BoxStyle>>};
 export type Segment={id:string;video_id:string;identity_uuid:string;start:number;end:number|null;status:'verified'|'unresolved'};
-export type Observation={id:string;video_id:string;frame_index:number;identity_uuid:string;segment_id:string;person_ext:Box|null;person_visible:Box|null;full_quality:'unset'|'observed'|'estimated'|'unknown';occluded:boolean|null;truncated:boolean|null;geometry_link:'independent'|'equal';review_state:'draft'|'needs_review'|'approved';evidence_note:string;provenance:Partial<Record<Geometry,{origin:'manual'|'model'|'copied'|'copied_track'|'interpolated';proposal_id:string|null;human_corrected:boolean}>>};
+export type Observation={id:string;video_id:string;frame_index:number;identity_uuid:string;segment_id:string;person_ext:Box|null;person_visible:Box|null;full_quality:'unset'|'observed'|'estimated'|'unknown';occluded:boolean|null;truncated:boolean|null;geometry_link:'independent'|'equal';review_state:'draft'|'needs_review'|'approved';evidence_note:string;provenance:Partial<Record<Geometry,{origin:'manual'|'model'|'model_track'|'copied'|'copied_track'|'interpolated';proposal_id:string|null;human_corrected:boolean}>>};
 export type Interval={geometry?:Geometry|null;id:string;video_id:string;identity_uuid:string;start:number;end:number|null;reason:'occlusion'|'outside'|'unavailable'|'unknown';evidence_note:string};
 export type Link={id:string;source:string;target:string;relation:'same'|'different'|'unresolved';evidence_note:string};
 export type Review={id:string;video_id:string;frame_index:number;complete:boolean;checked_all_people:boolean;note:string};
@@ -16,7 +16,7 @@ export type Video={id:string;name:string;width:number;height:number;frame_count:
 export type Project={class_colors?:Record<string,string>;classes?:string[];id:string;name:string;revision:number;state:Domain;videos:Record<string,Video>};
 export type Change={collection:Collection;id:string;before:any;after:any};
 export type Operation={id:string;base_revision:number;label:string;video_id:string|null;frame_index:number|null;changes:Change[];compensates?:string|null};
-export type Proposal={id:string;video_id:string;frame_index:number;geometry:Geometry;box:Box;confidence:number;class_name:string;cache_key:string};
+export type Proposal={id:string;video_id:string;frame_index:number;geometry:Geometry;box:Box;confidence:number;class_name:string;cache_key:string;track_id?:string|null;track_issue?:string};
 export type Job={id:string;kind:string;status:string;video_id?:string;progress:number;total?:number;error?:string;phase?:string;export_id?:string;settings?:any;cache_key?:string};
 export type FrameInfo={frame_index:number;pts:number|null;seconds:number|null;time_base_num:number;time_base_den:number};
 export const uuid=()=>crypto.randomUUID();

@@ -16,7 +16,7 @@ test.beforeEach(async({page,request})=>{
 });
 test('simple workspace, explicit save and keyboard save retain annotations',async({page,request})=>{
  for(const name of ['Export','Manual ready','Visible person','Configure detector','Review / reject suggestions','New project'])await expect(page.getByRole('button',{name,exact:true})).toHaveCount(0);
- await expect(page.getByText('USEFUL SHORTCUTS',{exact:true})).toBeVisible();await page.getByTestId('canvas').press('n');await drag(page,[100,80],[220,310]);await page.getByRole('button',{name:'Save',exact:true}).click();await saved(page);
+ await page.getByRole('tab',{name:'Shortcuts',exact:true}).click();await expect(page.getByText('USEFUL SHORTCUTS',{exact:true})).toBeVisible();await page.getByTestId('canvas').press('n');await drag(page,[100,80],[220,310]);await page.getByRole('button',{name:'Save',exact:true}).click();await saved(page);
  let p=await state(request);expect(obs(p)).toHaveLength(1);expect(obs(p)[0].person_visible[0]).toBeCloseTo(100,0);expect(obs(p)[0].person_ext).toBeNull();
  await page.getByTestId('canvas').press('Control+s');await saved(page);expect((await state(request)).revision).toBe(p.revision);
  await reopen(page);await ready(page,0);expect((await state(request)).state).toEqual(p.state);
@@ -150,7 +150,7 @@ test('manual zoom and pan survive drawing, resizing panels and switching frames'
  // Pan with the key held, then draw in the central visible source region.
  await page.keyboard.down('Space');await page.mouse.move(rect.x+rect.width/2,rect.y+rect.height/2);await page.mouse.down();await page.mouse.move(rect.x+rect.width/2+20,rect.y+rect.height/2+10);await page.mouse.up();await page.keyboard.up('Space');
  const before=await view();await drag(page,[290,140],[350,220]);await saved(page);expect(await view()).toEqual(before);
- await page.getByRole('button',{name:'Toggle shortcuts',exact:true}).click();await expect(page.locator('.shortcut-panel')).toHaveCount(0);expect(await canvas.getAttribute('data-scale')).toBe(zoom);
+ await page.getByRole('button',{name:'Toggle right panel',exact:true}).click();await expect(page.locator('.right-panel')).toHaveCount(0);expect(await canvas.getAttribute('data-scale')).toBe(zoom);
  await page.getByRole('button',{name:'Toggle people panel',exact:true}).click();await expect(page.locator('.people-panel')).toHaveCount(0);expect(await view()).toEqual(before);
  await page.getByLabel('Go to frame').fill('10');await ready(page,10);await drag(page,[300,140],[360,220]);await saved(page);expect(await view()).toEqual(before);
  expect(at(await state(request),0).person_visible[0]).toBeCloseTo(290,0);expect(at(await state(request),5).person_visible[0]).toBeCloseTo(295,0);

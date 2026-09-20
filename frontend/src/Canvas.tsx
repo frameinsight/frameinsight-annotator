@@ -10,7 +10,7 @@ type Gesture={kind:'draw'|'move'|'resize'|'pan'|'click';start:[number,number];sc
 const colors={person_ext:'#67e2b1',person_visible:'#baa7ff'};
 const imageCache=new Map<string,HTMLImageElement>();
 function fetchImage(key:string,url:string):Promise<HTMLImageElement>{const cached=imageCache.get(key);if(cached)return Promise.resolve(cached);return new Promise((resolve,reject)=>{const img=new Image();img.onload=()=>{imageCache.set(key,img);while(imageCache.size>15)imageCache.delete(imageCache.keys().next().value!);resolve(img)};img.onerror=()=>reject(new Error('Exact frame unavailable'));img.src=url;});}
-export const EditorCanvas=forwardRef<CanvasHandle,{proposals:Proposal[];showGhosts:boolean;showProposals:boolean;showBoth:boolean;dimOutside:boolean}>(({proposals,showGhosts,showProposals,showBoth,dimOutside},ref)=>{
+export const EditorCanvas=forwardRef<CanvasHandle,{proposals:Proposal[];showGhosts:boolean;showProposals:boolean;showBoth:boolean;dimOutside:boolean;selectedProposal:Proposal|null;onSelectProposal:(p:Proposal)=>void}>(({proposals,showGhosts,showProposals,showBoth,dimOutside,selectedProposal,onSelectProposal},ref)=>{
  const {project,videoId,frame,activeId,geometry,hiddenIds}=useStore();const video=project?.videos[videoId];
  const host=useRef<HTMLDivElement>(null),gesture=useRef<Gesture|null>(null),spaceDown=useRef(false),panned=useRef(false),cycle=useRef(0);
  const [size,setSize]=useState({w:800,h:600}),[view,setView]=useState<View>({x:0,y:0,scale:1}),[image,setImage]=useState<{key:string;image:HTMLImageElement}|null>(null),[error,setError]=useState(''),[preview,setPreview]=useState<Box|null>(null),[cursor,setCursor]=useState('crosshair');
@@ -47,10 +47,10 @@ export const EditorCanvas=forwardRef<CanvasHandle,{proposals:Proposal[];showGhos
   }
   if(g.moved)return;
   const candidates=showProposals?proposals.filter(p=>contains(p.box,g.start)):[];
-  if(g.alt&&candidates.length){cycle.current=(cycle.current+1)%candidates.length;s.toast(`Proposal ${cycle.current+1} / ${candidates.length} · ${candidates[cycle.current].geometry} · ${Math.round(candidates[cycle.current].confidence*100)}%. Click to attach.`);return;}
+  if(g.alt&&candidates.length){cycle.current=(cycle.current+1)%candidates.length;s.toast(`Proposal ${cycle.current+1} / ${candidates.length} · ${candidates[cycle.current].geometry} · ${Math.round(candidates[cycle.current].confidence*100)}%. Click to preview track.`);return;}
   const hit=boxEntries.find(b=>b.g===geometry&&edgeHit(b.box,g.start,7/view.scale));
   if(hit){useStore.setState({activeId:hit.o.identity_uuid,geometry:hit.g});return;}
-  if(candidates.length){if(!activeId){s.toast('Press N or select a person before accepting a suggestion');return;}const p=candidates[cycle.current%candidates.length];s.setBox(p.geometry,p.box,p);cycle.current=0;return;}
+  if(candidates.length){onSelectProposal(candidates[cycle.current%candidates.length]);cycle.current=0;return;}
  }
  useImperativeHandle(ref,()=>({finish,cancel:()=>{gesture.current=null;setPreview(null)},fit,space:(down)=>{spaceDown.current=down;if(down){panned.current=false;setCursor('grab');return false;}setCursor('crosshair');return panned.current;},isReady:()=>ready}));
  function down(e:React.PointerEvent){
@@ -86,7 +86,7 @@ export const EditorCanvas=forwardRef<CanvasHandle,{proposals:Proposal[];showGhos
    {focusBoxes.map(([x1,y1,x2,y2],i)=><Rect key={i} x={x1} y={y1} width={x2-x1} height={y2-y1} fill="black" globalCompositeOperation="destination-out"/>)}
   </Group></Layer>}<Layer listening={false}><Group x={view.x} y={view.y} scaleX={view.scale} scaleY={view.scale}>
    {ghost&&displayedGeometries.map(g=>ghost[g]&&drawBox(ghost[g]!,g,'ghost'+g,'',false,.22,true,boxStyle(project?.state.identities[ghost.identity_uuid],g).color))}
-   {showProposals&&proposals.map((p,i)=><Group key={p.id} opacity={.55}><Rect x={p.box[0]} y={p.box[1]} width={p.box[2]-p.box[0]} height={p.box[3]-p.box[1]} stroke="#f2bd6b" strokeWidth={1/view.scale} dash={[2/view.scale,5/view.scale]}/><Text text={`? ${Math.round(p.confidence*100)}`} x={p.box[0]} y={p.box[1]+3/view.scale} fontSize={10/view.scale} fill="#ffcf87"/></Group>)}
+   {showProposals&&proposals.map((p,i)=><Group key={p.id} opacity={selectedProposal?.id===p.id||selectedProposal?.track_id&&selectedProposal.track_id===p.track_id?1:.65}><Rect x={p.box[0]} y={p.box[1]} width={p.box[2]-p.box[0]} height={p.box[3]-p.box[1]} stroke="#f2bd6b" strokeWidth={(selectedProposal?.id===p.id?2.5:1.2)/view.scale} dash={[4/view.scale,4/view.scale]}/><Text text={`AI ${p.track_id?.split(':').at(-1)||"?"} · ${Math.round(p.confidence*100)}%`} x={p.box[0]} y={p.box[1]+3/view.scale} fontSize={10/view.scale} fill="#ffcf87"/></Group>)}
    {boxEntries.slice().reverse().map(({o,g,box})=>{const selected=o.identity_uuid===activeId&&g===geometry;const editing=gesture.current?.activeId===o.identity_uuid&&gesture.current.geometry===g;const linkedPreview=preview&&o.geometry_link==='equal'&&gesture.current?.geometry==='person_ext'&&gesture.current.activeId===o.identity_uuid;const b=editing&&preview?preview:linkedPreview?preview:box;const person=project!.state.identities[o.identity_uuid];return drawBox(b,g,o.id+g,`${boxStyle(person,g).class_name} · ${person?.person_id??person?.name??'Draft'}${!VISIBLE_ONLY&&o.review_state==='approved'?' ✓':''}`,selected,g===geometry?1:.45,false,boxStyle(person,g).color);})}
    {preview&&gesture.current?.kind==='draw'&&!active?.[gesture.current.geometry]&&drawBox(preview,gesture.current.geometry,'drawing',geometryLabel(gesture.current.geometry),true,1,false,boxStyle(project?.state.identities[activeId],geometry).color)}
   </Group></Layer></Stage>:<div className="canvas-loading">{error|| (video?'Loading exact source frame…':'Import a video to begin')}</div>}
