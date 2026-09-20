@@ -158,7 +158,7 @@ test('manual zoom and pan survive drawing, resizing panels and switching frames'
 });
 
 test('copy Visible to Extended selects a separate colored box; resize, undo, reload and JSON retain the same ID',async({page,request})=>{
- const copy=page.getByRole('button',{name:'Copy Visible → Extended',exact:true});await expect(copy).toBeDisabled();
+ const copy=page.getByRole('button',{name:'Copy Visible → Extended (all frames)',exact:true});await expect(copy).toBeDisabled();
  await page.getByTestId('canvas').press('n');await drag(page,[120,100],[200,240]);await page.keyboard.press('i');await page.getByLabel('Person ID',{exact:true}).fill('7');await page.getByLabel('Class name',{exact:true}).fill('person_visible');await page.getByRole('button',{name:'Save ID',exact:true}).click();await expect(page.getByRole('dialog')).toHaveCount(0);await saved(page);
  const before=(await state(request)).state;const canvas=page.getByTestId('canvas');const scale=await canvas.getAttribute('data-scale');
  await copy.click();await saved(page);await expect(page.getByRole('button',{name:'Extended 2',exact:true})).toHaveAttribute('aria-pressed','true');await expect(copy).toBeDisabled();await expect(canvas).toHaveAttribute('data-scale',scale!);
@@ -170,11 +170,14 @@ test('copy Visible to Extended selects a separate colored box; resize, undo, rel
  await page.getByLabel('Go to frame').fill('1');await ready(page,1);await expect(copy).toBeDisabled();
 });
 
-test('copy only creates the selected frame and Extended corrections interpolate without touching Visible',async({page,request})=>{
+test('one click copies all visible frames from anywhere; spaced corrections interpolate and undo restores the whole copy',async({page,request})=>{
  await page.getByTestId('canvas').press('n');await drag(page,[100,100],[180,240]);await page.getByLabel('Go to frame').fill('10');await ready(page,10);await drag(page,[200,100],[280,240]);await saved(page);
- const visible=obs(await state(request)).map(o=>({frame:o.frame_index,box:o.person_visible,provenance:o.provenance.person_visible})).sort((a,b)=>a.frame-b.frame);
- const copy=page.getByRole('button',{name:'Copy Visible → Extended',exact:true});await page.getByLabel('Go to frame').fill('0');await ready(page,0);await copy.click();await saved(page);await page.getByLabel('Go to frame').fill('10');await ready(page,10);await copy.click();await saved(page);expect(at(await state(request),5).person_ext).toBeNull();
- await drag(page,[240,240],[240,320]);await saved(page);let p=await state(request);expect(at(p,5).person_ext[3]).toBeCloseTo(280,0);expect(obs(p).map(o=>({frame:o.frame_index,box:o.person_visible,provenance:o.provenance.person_visible})).sort((a,b)=>a.frame-b.frame)).toEqual(visible);
+ const before=(await state(request)).state;const visible=obs(await state(request)).map(o=>({frame:o.frame_index,box:o.person_visible,provenance:o.provenance.person_visible})).sort((a,b)=>a.frame-b.frame);
+ const copy=page.getByRole('button',{name:'Copy Visible → Extended (all frames)',exact:true});
+ await page.getByLabel('Go to frame').fill('20');await ready(page,20);await expect(copy).toBeEnabled();await copy.click();await saved(page);await expect(copy).toBeDisabled();let p=await state(request);expect(obs(p).filter(o=>o.person_ext)).toHaveLength(11);for(const o of obs(p))expect(o.person_ext).toEqual(o.person_visible);expect(at(p,20)).toBeUndefined();
+ await page.getByTestId('canvas').press('Control+z');await saved(page);expect((await state(request)).state).toEqual(before);await page.getByTestId('canvas').press('Control+Shift+z');await saved(page);
+ await page.getByLabel('Go to frame').fill('0');await ready(page,0);await drag(page,[140,240],[140,280]);await page.getByLabel('Go to frame').fill('10');await ready(page,10);await drag(page,[240,240],[240,320]);await saved(page);p=await state(request);expect(at(p,5).person_ext[3]).toBeCloseTo(300,0);expect(at(p,10).provenance.person_ext.human_corrected).toBe(true);expect(obs(p).map(o=>({frame:o.frame_index,box:o.person_visible,provenance:o.provenance.person_visible})).sort((a,b)=>a.frame-b.frame)).toEqual(visible);
  await page.getByRole('button',{name:'Delete boxes in range',exact:true}).click();await page.getByLabel('First frame to delete').fill('3');await page.getByLabel('Last frame to delete').fill('7');await page.getByRole('button',{name:'Delete boxes',exact:true}).click();await expect(page.getByRole('dialog')).toHaveCount(0);await saved(page);
- await page.getByLabel('Go to frame').fill('5');await ready(page,5);await copy.click();await saved(page);p=await state(request);expect(at(p,5).person_ext).toEqual(at(p,5).person_visible);for(const f of [3,4,6,7])expect(at(p,f).person_ext).toBeNull();
+ const corrected=at(await state(request),10).person_ext;await copy.click();await saved(page);p=await state(request);for(const f of [3,4,5,6,7])expect(at(p,f).person_ext).toEqual(at(p,f).person_visible);expect(at(p,10).person_ext).toEqual(corrected);
+ const persisted=p.state;await reopen(page);await ready(page,10);expect((await state(request)).state).toEqual(persisted);
 });

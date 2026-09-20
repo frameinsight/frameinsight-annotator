@@ -144,9 +144,9 @@ For field-level details, see the [annotation JSON reference](docs/ANNOTATION_JSO
 
 ## Copy Visible to Extended
 
-Select a person with a Visible box and click **Copy Visible → Extended** above the video. The new box keeps the same identity and coordinates and is selected for immediate resizing. Drag its bottom edge to the estimated feet. The first Extended copy gives this person cyan Visible and orange Extended colors; later copies retain any class/color changes made with **I**.
+Select a person and click **Copy Visible → Extended (all frames)** once. It fills every missing Extended box wherever that person has a Visible box in the current video, including interpolated Visible boxes. You can click from any frame. Existing Extended boxes are preserved, and both classes keep the same person ID. New pairs use cyan Visible and orange Extended; later copies retain your class/color choices.
 
-Copying creates only the current frame. Subsequent Extended edits interpolate that box type independently. Existing Extended boxes are never overwritten, deleted ranges remain empty except for the explicitly restored frame, and **Ctrl+Z** undoes the copy and its color changes. The annotations-only JSON keeps the shared person ID, both class/color styles and copied provenance.
+Switch to Extended and resize its bottom edge at a few keyframes. With Auto-interpolate enabled, the unadjusted copies between those corrections update automatically. Visible coordinates never change. Frames without Visible or existing Extended boxes remain empty, including during later interpolation. Clicking copy again fills missing Extended boxes, including previously deleted Extended boxes where Visible still exists. One **Ctrl+Z** undoes the entire copy. Save and export work as usual.
 
 ## Tests
 
@@ -165,7 +165,7 @@ npm --prefix frontend run test:e2e -- editor.spec.ts
 
 Use a separate `FRAMEINSIGHT_DATA` directory for the test server: browser tests create synthetic projects in whichever server they target. The optional real-video performance test needs locally supplied footage and is not a clean-checkout acceptance test.
 
-The v1.6.0 verification passed 45 backend tests, 37 frontend unit tests, and 18 editor browser tests. These cover current-frame Visible-to-Extended copying, independent resizing, copied colors and identity in JSON, saved class palettes, grouped class labels, zoom/pan stability, database migration, paired editing, independent interpolation, legacy-track linking, scoped deletion, JSON v2, and undo/reload, plus manual Chrome checks. Windows packaging was tested under Wine; native Windows 10/11 validation remains outstanding.
+The v1.7.0 verification passed 45 backend tests, 40 frontend unit tests, and 18 editor browser tests. These cover whole-video Visible-to-Extended copying for one person, independent resizing, copied colors and identity in JSON, saved class palettes, grouped class labels, zoom/pan stability, database migration, paired editing, independent interpolation, legacy-track linking, scoped deletion, JSON v2, and undo/reload, plus manual Chrome checks. Windows packaging was tested under Wine; native Windows 10/11 validation remains outstanding.
 
 ## Windows packaging
 

@@ -48,9 +48,10 @@ function invalidate(before:Domain,after:Domain){
 export const useStore=create<Store>((set,get)=>({
  copyVisibleToExtended:()=>{
   const s=get();if(!s.activeId||s.hiddenIds[s.activeId])return s.toast('Select a visible person first');
-  if(s.commit('Copy Visible to Extended',d=>copyVisibleToExtended(d,s.videoId,s.activeId,s.frame))){
+  let count=0;
+  if(s.commit('Copy Visible to Extended across video',d=>{count=copyVisibleToExtended(d,s.videoId,s.activeId)})){
    set({geometry:'person_ext'});void durableAndPump();
-   s.toast('Extended copied on this frame. Drag its bottom edge or corners to resize. Ctrl+Z undoes this.');
+   s.toast(count?`${count} Extended boxes copied across this video. Resize at keyframes; Ctrl+Z undoes the whole copy.`:'All available Visible boxes already have Extended boxes.');
   }
  },
  forgetProject:async(id)=>{await persistChain;if(get().project?.id===id)set({project:null,videoId:'',activeId:'',pending:[],history:[],redoStack:[],saveStatus:'Saved',saveError:''});await dbDelete(journalKey(id));for(const key of [positionKey(id),'frameinsight:visibility:'+id])localStorage.removeItem(key);},
@@ -118,7 +119,7 @@ export const useStore=create<Store>((set,get)=>({
    if(geometry==='person_visible'&&o.geometry_link==='equal'){o.geometry_link='independent';o.full_quality='unset';o.occluded=null;}
    o.geometry_link='independent';o[geometry]=box;
    const previous=o.provenance[geometry];
-   o.provenance[geometry]=proposal?{origin:'model',proposal_id:proposal.id,human_corrected:false}:{origin:previous?.origin||'manual',proposal_id:previous?.proposal_id||null,human_corrected:!!previous?.proposal_id||previous?.origin==='interpolated'};
+   o.provenance[geometry]=proposal?{origin:'model',proposal_id:proposal.id,human_corrected:false}:{origin:previous?.origin||'manual',proposal_id:previous?.proposal_id||null,human_corrected:!!previous?.proposal_id||previous?.origin==='interpolated'||previous?.origin==='copied'||previous?.origin==='copied_track'};
    if(geometry==='person_ext'&&box)o.full_quality='estimated';
   },box!==null);
   if(broken&&!VISIBLE_ONLY)s.toast('Equal link released. Review full extent quality and occlusion.');

@@ -25,7 +25,7 @@ class Segment(Strict):
     end: int | None = Field(default=None, ge=0)
     status: Literal['verified', 'unresolved'] = 'verified'
 class Provenance(Strict):
-    origin: Literal['manual', 'model', 'copied', 'interpolated'] = 'manual'
+    origin: Literal['manual', 'model', 'copied', 'copied_track', 'interpolated'] = 'manual'
     proposal_id: str | None = None
     human_corrected: bool = False
 class Observation(Strict):

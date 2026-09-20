@@ -9,8 +9,9 @@
    rectangle around the visible part of them (**1 / Visible**).
 4. Press **I**. Assign a person number, choose/type a class name, and choose
    a box color. Click **Save ID**. Keep the same number for the same person.
-   For their full/extended rectangle, click **Copy Visible → Extended** above
-   the video. It copies the current frame and selects Extended: drag the
+   For their full/extended rectangle, click **Copy Visible → Extended (all frames)** above
+   the video once. It copies all Visible boxes for this person throughout the
+   video and selects Extended. On a few keyframes, drag the
    bottom edge down to the estimated feet, adjusting other edges as needed.
    Both boxes keep the same person ID; do not press N again. The first copy
    gives this person cyan Visible and orange Extended colors across their track.
@@ -37,13 +38,17 @@ judge whether your boxes are correct. If you have more work to do, choose
 
 ## Copying and adjusting Extended
 
-Copy works only when the selected person has a Visible box on the current frame
-and no Extended box there. If Extended already exists, press **2** and resize it.
-Copying adds only the current frame; resizing or drawing an Extended keyframe
-then fills between Extended keyframes when **Auto-interpolate** is checked.
-Visible coordinates stay unchanged. Deleted ranges stay empty except for a
-frame you explicitly copy/draw again. **Ctrl+Z** undoes a copy, including its
-color changes. Copies and corrections save automatically.
+Select a person and click **Copy Visible → Extended (all frames)** once. It fills
+missing Extended boxes across this video, wherever that person has a Visible box.
+Existing Extended boxes are kept. You can click from any frame, including one
+where that person is absent. The button is disabled when nothing needs copying.
+
+Press **2** and resize the Extended box at spaced keyframes. With
+**Auto-interpolate** checked, copies between your corrections update automatically.
+Go back to check them and make more corrections as needed. Visible boxes stay
+unchanged, and frames without either box stay empty. Clicking copy again also
+restores deleted Extended boxes wherever Visible still exists. **Ctrl+Z** undoes
+the whole copy, including its color changes. Changes save automatically.
 
 # Useful keys
 
