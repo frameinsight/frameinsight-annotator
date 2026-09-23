@@ -47,7 +47,7 @@ FunctionEnd
 Section "Frameinsight"
   SetShellVarContext current
   SetOutPath "$INSTDIR"
-  File /r "payload/*"
+  File /r "payload\*"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
   CreateDirectory "$SMPROGRAMS\Frameinsight"
   CreateShortcut "$SMPROGRAMS\Frameinsight\Frameinsight.lnk" "$INSTDIR\Frameinsight.exe"
