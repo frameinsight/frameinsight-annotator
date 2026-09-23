@@ -23,10 +23,10 @@ test('startup update can be inspected and skipped without changing work or trigg
 });
 
 test('download waits for real pending saves, shows progress and saves a verified installer in manual mode',async({page,request})=>{
- let downloads=0,polls=0,installs=0,releaseSave!:()=>void;
+ let downloads=0,installs=0,finishDownload=false,releaseSave!:()=>void;
  await page.route('**/api/updates/check*',route=>route.fulfill({json:release()}));
  await page.route('**/api/updates/download',async route=>{downloads++;expect(route.request().postDataJSON()).toEqual({version:'3.1.0'});await route.fulfill({json:{status:'downloading',progress:.1,version:'3.1.0',can_install:false}})});
- await page.route('**/api/updates/status',route=>{if(!downloads)return route.fulfill({json:{status:'idle',progress:0}});polls++;return route.fulfill({json:polls===1?{status:'downloading',progress:.5,version:'3.1.0',can_install:false}:{status:'ready',progress:1,version:'3.1.0',can_install:false}})});
+ await page.route('**/api/updates/status',route=>{if(!downloads)return route.fulfill({json:{status:'idle',progress:0}});return route.fulfill({json:finishDownload?{status:'ready',progress:1,version:'3.1.0',can_install:false}:{status:'downloading',progress:.5,version:'3.1.0',can_install:false}})});
  await page.route('**/api/updates/install',async route=>{installs++;await route.fulfill({json:{action:'download',download_url:'/test-update-installer.exe'}})});
  await page.route('**/test-update-installer.exe',route=>route.fulfill({status:200,headers:{'Content-Type':'application/octet-stream','Content-Disposition':'attachment; filename="Window_setup.exe"'},body:'playwright fixture, not executable'}));
  await open(page);await page.getByTestId('canvas').press('n');await draw(page);await expect(page.locator('.save-status')).toHaveText('Saved');const before=await state(request);
@@ -34,7 +34,7 @@ test('download waits for real pending saves, shows progress and saves a verified
  await page.route(`**/api/projects/${projectId}/operations`,async route=>{if(route.request().method()==='POST'){saving=true;await gate;}await route.continue()});
  try{
   await draw(page,[150,190],[160,190]);await expect.poll(()=>saving).toBe(true);await page.getByRole('button',{name:'View update',exact:true}).click();await page.getByRole('button',{name:/^Update ·/}).click();await expect(page.getByRole('dialog')).toContainText('Saving…');expect(downloads).toBe(0);
-  releaseSave();await expect.poll(()=>downloads).toBe(1);await expect(page.getByRole('status')).toContainText('Downloading and verifying');await expect(page.getByRole('status')).toContainText('50%');await expect(page.getByRole('button',{name:'Save installer',exact:true})).toBeEnabled();expect((await state(request)).revision).toBeGreaterThan(before.revision);
+  releaseSave();await expect.poll(()=>downloads).toBe(1);await expect(page.getByRole('status')).toContainText('Downloading and verifying');await expect(page.getByRole('status')).toContainText('50%');finishDownload=true;await expect(page.getByRole('button',{name:'Save installer',exact:true})).toBeEnabled();expect((await state(request)).revision).toBeGreaterThan(before.revision);
   const event=page.waitForEvent('download');await page.getByRole('button',{name:'Save installer',exact:true}).click();expect((await event).suggestedFilename()).toBe('Window_setup.exe');expect(installs).toBe(1);await expect(page.getByTestId('canvas')).toBeVisible();
  }finally{releaseSave();}
 });
