@@ -1,0 +1,229 @@
+name: Desktop release
+
+on:
+  push:
+    tags: ['v*.*.*']
+  workflow_dispatch:
+    inputs:
+      publish:
+        description: Publish this existing version tag after all checks pass
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: desktop-release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - id: version
+        name: Verify release versions
+        shell: bash
+        run: |
+          version=$(python packaging/release_manifest.py)
+          if [[ "$GITHUB_REF_TYPE" == tag ]]; then python packaging/release_manifest.py --tag "$GITHUB_REF_NAME"; fi
+          printf 'version=%s\n' "$version" >> "$GITHUB_OUTPUT"
+
+  checks:
+    needs: version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13.12'
+          cache: pip
+          cache-dependency-path: |
+            requirements.txt
+            packaging/windows/requirements.txt
+      - run: python -m pip install -r requirements.txt -r packaging/windows/requirements.txt
+      - run: npm --prefix frontend ci
+      - run: npm --prefix frontend test
+      - run: npm --prefix frontend run build
+      - run: python -m pytest tests -q
+      - name: Browser prerequisites
+        working-directory: frontend
+        run: npx playwright install --with-deps chrome
+      - name: Browser acceptance against isolated data
+        shell: bash
+        run: |
+          python packaging/make_smoke_fixture.py tests/fixtures/numbered.mp4
+          mkdir -p .frameinsight/ci-browser
+          export FRAMEINSIGHT_DATA="$RUNNER_TEMP/frameinsight-browser-data"
+          export FRAMEINSIGHT_WORKSPACE="$GITHUB_WORKSPACE"
+          python -m uvicorn backend.app.main:app --host 127.0.0.1 --port 5173 --no-access-log > .frameinsight/ci-browser/server.log 2>&1 &
+          server_pid=$!
+          trap 'kill "$server_pid" 2>/dev/null || true' EXIT
+          python - <<'PY'
+          import time,urllib.request
+          for _ in range(100):
+              try:
+                  urllib.request.urlopen('http://127.0.0.1:5173/api/projects',timeout=2).close()
+                  break
+              except OSError:time.sleep(.2)
+          else:raise SystemExit('Isolated browser server did not start')
+          PY
+          npm --prefix frontend run test:e2e
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        if: failure()
+        with:
+          name: failed-browser-evidence
+          path: |
+            test-results/
+            docs/browser-results.json
+            .frameinsight/ci-browser/server.log
+          include-hidden-files: true
+          retention-days: 7
+
+  windows:
+    needs: [version, checks]
+    runs-on: windows-2022
+    timeout-minutes: 30
+    steps:
+      - run: git config --global core.autocrlf input
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1 # v6
+        with:
+          python-version: '3.13.12'
+      - uses: msys2/setup-msys2@66cd2cce69caa17b53920067426061ca1de3a884 # v2
+        id: msys2
+        with:
+          msystem: UCRT64
+          update: true
+          install: mingw-w64-ucrt-x86_64-gcc
+      - run: choco install nsis --version=3.11 --yes --no-progress
+      - run: python -m pip install -r packaging/windows/requirements.txt
+      - run: npm --prefix frontend ci
+      - name: Build the native Windows installer
+        env:
+          MSYS2_LOCATION: ${{ steps.msys2.outputs.msys2-location }}
+        shell: pwsh
+        run: ./packaging/windows/build.ps1 -MingwBin "$env:MSYS2_LOCATION/ucrt64/bin"
+      - name: Installed Windows runtime, upgrade and uninstall acceptance
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $PSNativeCommandUseErrorActionPreference = $true
+          python packaging/make_smoke_fixture.py .frameinsight/windows-build/numbered.mp4
+          Copy-Item packaging/windows/smoke.py,packaging/windows/install_smoke.py .frameinsight/windows-build/
+          Push-Location .frameinsight/windows-build
+          try { & ./payload/runtime/python.exe -B install_smoke.py } finally { Pop-Location }
+          New-Item -ItemType Directory -Force .frameinsight/release-windows | Out-Null
+          Copy-Item deliverables/windows/Window_setup.exe .frameinsight/release-windows/
+          Copy-Item deliverables/windows/START-HERE.txt .frameinsight/release-windows/START-HERE-WINDOWS.txt
+          Copy-Item .frameinsight/windows-build/windows-smoke-report.json .frameinsight/release-windows/windows-runtime-verification.json
+          Copy-Item .frameinsight/windows-build/installer-smoke-report.json .frameinsight/release-windows/windows-installer-verification.json
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: release-windows
+          path: .frameinsight/release-windows/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+
+  debian:
+    needs: [version, checks]
+    runs-on: ubuntu-24.04
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/setup-node@249970729cb0ef3589644e2896645e5dc5ba9c38 # v6
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm --prefix frontend ci
+      - run: ./packaging/debian/build.sh
+      - name: Installed Debian runtime, upgrade and removal acceptance
+        env:
+          APP_VERSION: ${{ needs.version.outputs.version }}
+        shell: bash
+        run: |
+          docker run --rm -e FRAMEINSIGHT_DISPOSABLE_TEST=1 -e DEBIAN_FRONTEND=noninteractive \
+            -v "$PWD:/src:ro" -v "$PWD/.frameinsight/debian-build:/build" \
+            frameinsight-debian-builder:3 bash /src/packaging/debian/test-installed.sh "/build/frameinsight_${APP_VERSION}_amd64.deb"
+          mkdir -p .frameinsight/release-linux
+          cp "deliverables/linux/frameinsight_${APP_VERSION}_amd64.deb" .frameinsight/release-linux/
+          cp packaging/debian/START-HERE.txt .frameinsight/release-linux/START-HERE-LINUX.txt
+          cp .frameinsight/debian-build/debian-smoke-report.json .frameinsight/release-linux/debian-runtime-verification.json
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: release-linux
+          path: .frameinsight/release-linux/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+
+  sources:
+    needs: version
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - name: Collect checksum-verified corresponding video-library sources
+        run: python packaging/third_party_sources.py --directory .frameinsight/release-sources
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f # v6
+        with:
+          name: release-sources
+          path: .frameinsight/release-sources/
+          include-hidden-files: true
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    needs: [version, windows, debian, sources]
+    if: (github.event_name == 'push' && github.ref_type == 'tag') || (github.event_name == 'workflow_dispatch' && inputs.publish == true)
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@d23441a48e516b6c34aea4fa41551a30e30af803 # v6
+      - uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7
+        with:
+          pattern: release-*
+          merge-multiple: true
+          path: release-assets
+      - name: Verify version tag and build checksums
+        env:
+          APP_VERSION: ${{ needs.version.outputs.version }}
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          test "$GITHUB_REF_TYPE" = tag
+          test "$GITHUB_REF_NAME" = "v$APP_VERSION"
+          test -s "docs/releases/${GITHUB_REF_NAME}.md"
+          test "$(gh api "repos/$GITHUB_REPOSITORY" --jq '.private')" = false
+          test "$(gh api "repos/$GITHUB_REPOSITORY/commits/$GITHUB_REF_NAME" --jq '.sha')" = "$(git rev-parse HEAD)"
+          test -s "release-assets/frameinsight-${APP_VERSION}-third-party-sources.tar.gz"
+          python packaging/release_manifest.py --tag "$GITHUB_REF_NAME" --directory release-assets
+      - name: Publish immutable version assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          if gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            echo 'A release for this version already exists. Use a new patch version; existing installers are never overwritten.' >&2
+            exit 1
+          fi
+          gh release create "$GITHUB_REF_NAME" --verify-tag --draft --notes-file "docs/releases/${GITHUB_REF_NAME}.md" --title "Frameinsight $GITHUB_REF_NAME" release-assets/*
+          gh release edit "$GITHUB_REF_NAME" --draft=false --latest

@@ -43,7 +43,7 @@ def test_cvat_rejects_ambiguous_pair_and_entities(project):
 def test_native_export_carries_history_and_frame_mapping(project):
     p,v=project;j=new_job(p['id'],'export');export_project(p['id'],{'format':'native'},j['id']);job=db.job_get(j['id']);assert job['status']=='completed'
     with db.connect() as c:path=json.loads(c.execute('SELECT data FROM exports WHERE id=?',(job['export_id'],)).fetchone()['data'])['path']
-    with zipfile.ZipFile(path) as z:native=json.loads(z.read('native/project.json'));assert native['schema_version']==1 and v in native['frames'] and 'operations' in native
+    with zipfile.ZipFile(path) as z:native=json.loads(z.read('native/project.json'));assert native['schema_version']==2 and v in native['frames'] and 'operations' in native
 
 def test_incomplete_yolo_and_unreviewed_mot_block(project):
     p,v=project

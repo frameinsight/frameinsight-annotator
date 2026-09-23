@@ -1,14 +1,14 @@
-# Annotation JSON v2
+# Annotation JSON v3
 
-Wait for **Saved**, then choose **Finish → Prepare review video**. Watch the full annotated preview, choose coverage, confirm visual review, and **Run annotation validation**. After it passes and you acknowledge any review notes, choose **Prepare validated JSON → Download annotations (.json)**. The result is one UTF-8 JSON file with no embedded videos, frames, crops, thumbnails, or model weights. Keep the original footage separately.
+Choose **Finish → Prepare review video**, watch the annotated video, confirm coverage and visual review, then **Run annotation validation**. After a pass, **Prepare validated JSON → Download annotations (.json)** creates a UTF-8 file containing no embedded media. Keep the original video separately.
 
-The editor exports the selected video (`video_scope`) at one consistent saved revision. The public annotations-JSON route requires a video scope and matching completed review/validation proof. Project backup ZIPs can still include all videos and do not require final validation. Saved drafts and single-person work are retained; export does not invent whole-frame reviews.
+The selected-video export is one saved, reviewed snapshot. Its JSON includes `format: "frameinsight.annotations"`, `schema_version: 3`, `app_version`, `exported_at`, `video_scope`, `media_included: false`, project metadata, class catalog/colors, video metadata, exact frame ledgers, current annotations and relevant history.
 
-## One person, two box types
+## One object, many classes
 
-A physical person has one `identity_uuid` and numeric `person_id`. Older files may have a null number; new validated deliveries require positive unique numbers. Each frame can contain an independently drawn/interpolated **visible** and **extended** rectangle. The extended rectangle describes estimated full extent; it is not itself evidence that the person is visible.
+Every object has one `identity_uuid` and a positive numeric `track_id`. `person_id` is an equal compatibility alias. Any number of named classes can have independent rectangles under that identity. The app supports up to 100 project class names.
 
-`frame_annotations` gives one row per saved person/frame:
+For example, `frame_annotations` can contain:
 
 ```json
 {
@@ -16,75 +16,76 @@ A physical person has one `identity_uuid` and numeric `person_id`. Older files m
   "video_id": "example-video",
   "frame_index": 53,
   "timestamp_seconds": 2.85,
-  "identity_uuid": "example-person",
+  "identity_uuid": "example-object",
+  "track_id": 1,
   "person_id": 1,
   "boxes": {
-    "person_visible": [110, 100, 170, 180],
-    "person_extended": [100, 80, 180, 300]
+    "class:person_visible": [110, 100, 170, 180],
+    "class:person_extended": [100, 80, 180, 300],
+    "class:head": [120, 85, 155, 120]
   }
 }
 ```
 
-Either box slot can be `null`. Frames with neither box generally have no observation row; `visibility_intervals` covers their visible status. `state.intervals` preserves explicit deletion barriers for either type.
+Class names are examples, not reserved UI modes. An omitted class has no box on that frame. Frames with no boxes usually have no observation row; consult `presence_intervals` for absence. Never deduplicate by identity/frame alone: that would discard additional classes.
 
-`annotation_index` provides **one row per present box**, so both boxes can share an `observation_id`, person ID, and source frame. Use `(video_id, frame_index, identity_uuid, box_type)` as the unique box key. For a track, omit `frame_index`. Do not deduplicate by person/frame alone or feed both rectangles to a single-geometry tracker as if they were two people.
+## The flat index
 
-## Fields
+`annotation_index` contains one row per present box. Its unique key is `(video_id, frame_index, identity_uuid, class_key)`. For a rectangle’s track, omit the frame index.
 
 | Field | Meaning |
 |---|---|
-| `format`, `schema_version` | `frameinsight.annotations`, version `2` |
-| `app_version`, `validation` | Added in app 2.0.0: app version and the revision-bound validation report (see below) |
-| `exported_at`, `media_included` | UTC export time; media is always `false` |
-| `project`, `video_scope`, `classes`, `class_colors` | Project metadata/revision, selected video ID, saved class catalog, and persistent default class colors |
-| `videos` | Video metadata keyed by video ID: name, dimensions, nominal FPS, source hash and path references |
-| `frames` | Exact frame ledger keyed by video ID, including frame index, PTS, time base, seconds and decode status |
-| `frame_annotations` | Paired rectangles for each saved person/frame |
-| `annotation_index` | Flat per-box rows with geometry, class, color, identity, time and provenance |
-| `visibility_intervals` | Compact inclusive visible/not-visible runs for every frame of each associated identity |
-| `state` | Saved identities, segments, observations, intervals, links, reviews and proposal reviews |
-| `operations` | Historical edits and undo/redo links; these are not current labels |
-| `restored_history` | Historical imported records; omitted as `null` for scoped exports |
-| `detector` | Legacy suggestion data, separate from accepted annotations |
-| `summary` | Counts, including people, observations, visible boxes and extended boxes |
+| `observation_id` | Shared by all classes of the identity on this source frame. |
+| `class_key` | Persistent rectangle channel: new work uses `class:<name>`; legacy work retains `person_visible` or `person_ext`. |
+| `class_name`, `color` | Authoritative label and display color, including per-track overrides. Use the name for your training label, not a storage key. |
+| `track_id`, `person_id`, `identity_uuid` | Shared object identity. Display numbers are scoped to a project. |
+| `frame_index`, `timestamp_seconds` | Zero-based source frame and actual source time. Use the ledger rather than nominal FPS for variable-frame-rate footage. |
+| `box_xyxy` | `[left, top, right, bottom]`, unrounded original-image pixels. Origin is top-left, x right, y down. |
+| `box_xywh` | `[left, top, width, height]` in the same pixels. |
+| `annotation_type` | `keyframe`, `interpolated`, or `generated` (uncorrected copied/model track boxes). Manual corrections become anchors for the selected class only. |
+| `origin`, `human_corrected` | Provenance: manual, copied, copied_track, interpolated, historical model origins, or null. |
+| `protected_from_interpolation` | Whether the saved rectangle is protected as an anchor or historical approved observation. |
+| `presence` | `present`; absent classes have no positive row. |
+| `box_type`, `geometry_name`, `visibility` | Legacy compatibility fields. New readers should prefer `class_key` and per-class presence. Dynamic classes have no inferred physical `visibility`. |
 
-Each `annotation_index` row includes:
+`Copy to class…` creates `copied_track` rectangles throughout the selected video where source boxes exist and destination boxes are missing. Existing destination boxes stay. Unadjusted copies can adapt between later destination corrections; corrected boxes remain anchors. Source coordinates and identity stay unchanged. The whole copy is undoable.
 
-- `box_type`: `person_visible` or `person_extended`.
-- `geometry_name`: internal slot `person_visible` or `person_ext` (the latter means extended).
-- `class_colors` at the document root maps class names to saved default colors. Per-box `color` is authoritative when an annotator has customized a track.
-- `class_name`, `color`: settings for this box type, taken from `state.identities[identity_uuid].box_styles`. The same person can have different classes and colors for the two types. Older visible labels fall back to identity-level `class_name` and `color`.
-- `box_xyxy`: `[left, top, right, bottom]`; `box_xywh`: `[left, top, width, height]`. Both use unrounded original-image pixels, with origin at the upper-left, x rightwards and y downwards.
-- `frame_index`: zero-based source frame; `timestamp_seconds`: actual source time. Current validated deliveries require a complete exact timestamp ledger; older files may contain `null`. Use the ledger rather than estimating from nominal FPS.
-- `annotation_type`: `keyframe` or `interpolated`, independently for each type. There are no `missing_box` rows in the v2 flat index.
-- `origin`: manual, copied, copied_track, model, interpolated, or null if not recorded. `human_corrected` preserves corrections; corrected interpolation becomes a keyframe while retaining its origin. **Copy Visible → Extended (all frames)** records `copied_track` on each new Extended box, keeps the same identity/ID, and leaves Visible coordinates and provenance unchanged. Unadjusted `copied_track` boxes can be updated by interpolation between Extended corrections; resizing marks them `human_corrected: true`. Older `copied` boxes remain fixed anchors. Class colors are saved per person and box type.
-- `protected_from_interpolation`: whether this box is an anchor or part of a historical approved observation.
-- `visibility`: based on the presence of **visible** geometry on that frame. An extended-only row can therefore have `visibility: "not_visible"` while still containing a valid extended box.
+## Presence, deletion and display
 
-## Missing boxes and deletion
+`presence_intervals` contains inclusive `start`/`end` frame ranges per video, identity and class. Each row has the ID aliases, `class_key`, `class_name`, `status` (`present` or `absent`), `basis` (`box_present`, `no_box`, `explicit_gap`) and `reason` (null for present; normally unknown for absence).
 
-Visible status is derived from visible geometry: no visible box means `not_visible`, including before the first and after the last visible box. It does not establish physical occlusion, exhaustive review, or a verified negative training example. `visibility_intervals` runs include `start`, `end`, identity/video IDs, `status`, `basis` (`box_present`, `no_box`, `explicit_gap`) and `reason` (normally `unknown` for absence; null for visible).
+No box means no annotation of that class. It does **not** prove physical occlusion, absence from the scene or exhaustive negative review. Before/after appearances and unfinished work can all have absent annotations.
 
-**Delete** and **Shift+Delete** affect only the selected box type. A deletion creates a `state.intervals` record with `geometry: "person_visible"` or `"person_ext"` to prevent that type from being regenerated across the range. The other type can still exist and interpolate. Legacy intervals without a geometry apply to both types until scoped by editing/conversion. `start` and `end` are inclusive; legacy null ends are open.
+`state.intervals` preserves explicit interpolation barriers. `geometry` names the affected class key; a legacy null geometry applies to all classes. Bounds are inclusive; a null end is open. Delete/Shift+Delete affect only the selected class. Drawing again restores that single frame and trims its interval; it does not silently refill the deleted interior.
 
-Drawing a type again restores that frame and trims its deletion interval. Finite deleted ranges retain their other missing frames; drawing after an old open gap resumes the selected type. **Restore deleted range** can remove the selected type’s barrier and fill between current anchors, or recover original boxes from saved history without overwriting newer boxes. Any unrecoverable frames remain blocked. Undo restores boxes and intervals together. Eye/focus and **Show both** change display only.
+**Restore range** removes a selected barrier and fills between current anchors, or recovers original coordinates from history without overwriting newer boxes. Unrecoverable frames remain blocked. Undo restores the previous boxes and intervals together.
 
-## Final validation (app 2.0.0+)
+Class and track eyes, focus and dimming change only display. Full-video review and JSON include every saved class, including hidden boxes.
 
-`validation` includes `passed`, `checks`, `errors`, `warnings`, `summary`, `revision`, `video_id`, `project_id`, `validation_id`, `review_job_id`, `created_at`, `app_version`, snapshot/review hashes, `coverage`, `visual_confirmed`, and `limitation`. Coverage is `all_people` or `selected_people`. Treat visual confirmation as the annotator’s assertion, not an automatic identity or completeness judgment.
+## Validation and review
 
-The app checks JSON serialization, entity schemas and references, positive unique numeric IDs, box bounds and dimensions, complete frame/timestamp metadata, paired-box identity consistency, flat-index/count agreement, and successful rendering of every source frame. Notes flag visible boxes outside their extended estimates and unresolved identity segments/links. Missing annotations can be intentional: a blank or partially annotated video is not automatically an exhaustive negative-label dataset.
+`validation` records checks, errors, warnings, counts, the reviewed revision, video/project IDs, validation/review job IDs, app version, snapshot/review hashes, declared coverage and the annotator’s visual confirmation.
 
-A review uses a frozen annotation snapshot. Changes to the saved data or relevant class/source metadata invalidate that proof; the API rejects stale export requests and stale download links. Exported JSON adds the report to that reviewed snapshot, so `state` and the box indexes refer to the same data shown in the preview. Previous JSON v2 files without validation remain readable but do not have this proof. These added fields do not change the box schema version.
+Checks cover JSON serialization, entity schemas and references, unique positive track numbers, class-channel consistency, box bounds, frame timestamps, index/count agreement and successful rendering of every source frame. The computer cannot identify real objects, detect every missed object or judge box placement. Coverage values retain `all_people` / `selected_people` for compatibility; the UI labels these all objects / selected objects.
 
-The preview is a silent MP4 generated locally, with original frame timing and labels burned into the pixels. The delivery JSON does not contain that MP4 or any media. Keep backups separately; restoring a backup clears old validation status and requires a fresh review.
+The preview is a locally rendered silent MP4 with all saved boxes, class labels and track IDs. It is not embedded in delivery JSON. A changed saved annotation, relevant metadata, or incompatible app review version invalidates proof. Export and downloads reject stale validation. A restored project requires fresh review.
 
-## Reading earlier files and converting earlier work
+## Compatibility with earlier work
 
-Previously downloaded v1 files remain unchanged. V1's flat index used the single visible slot and could contain `missing_box` rows. V2 adds `frame_annotations`, emits one flat row per present geometry, and exports both types' independent provenance. Readers must check `schema_version`; the [README Python example](../README.md#read-it-with-python) reads v2.
+Existing saved legacy fields are retained without rewriting edit history. Legacy channels remain `person_visible` / `person_ext` in v3 indexes and `frame_annotations.boxes`; **v2** used `person_extended` as its paired-view extended key. Always check `schema_version`.
 
-In the older simplified editor, a track named `person_extended` still stored rectangles in `person_visible`. To convert that work, select that track in the app, press **I**, keep **Extended**, choose the matching existing person ID, and **Save ID**. Conversion moves those original coordinates and provenance to the extended slot and merges complementary boxes on matching frames. It does not guess identity matches. Same-type collisions are rejected without replacement, and the operation can be undone. Until that explicit conversion, the original saved geometry remains as recorded.
+- V1 used a single visible slot and could include `missing_box` rows.
+- V2 exported two independent geometry slots and a paired frame view.
+- V3 supports arbitrary named channels, adds `track_id`, `class_key` and `presence_intervals`, and makes the frame box map generic.
 
-## Media and restoration
+`visibility_intervals`, `visible_boxes` and `extended_boxes` remain legacy compatibility fields; they do not describe arbitrary named classes. `summary.boxes` and `summary.boxes_by_class` cover all present channels. `box_type: "person_extended"` remains an alias of legacy `person_ext` in flat rows.
 
-Names, SHA-256 hashes and source paths identify footage but do not embed it. Downloaded JSON is suitable for analysis or conversion to your trainer's dataset format; training still needs the matching source images. Class names are labels, not cross-camera identity evidence. The app restores **Project backup ZIP** files, not this custom JSON. Keep the ZIP plus original video for reopening work on another computer. Full edit history makes JSON larger than a minimal box list but adds no media.
+The app can explicitly join old separate tracks using **I → Existing track ID → Save ID**, including the old extended-class conversion. It never guesses which objects match. Conflicting boxes of the same class on one frame are rejected without replacement; merging can be undone.
+
+## Training and editable backups
+
+Use current `annotation_index`, not historical coordinates in `operations`, for positive training labels. Extract source images separately and convert labels to your trainer’s format. Choose one consistent class mapping across the dataset. Do not treat two classes of one identity as two objects, or a partially annotated frame as exhaustive detection ground truth. A numeric ID alone does not link unrelated projects or cameras.
+
+`videos` includes names, hashes and local path metadata, without binary footage. `frames` preserves source PTS/time bases/times. `state` includes saved entities; `operations` contains before/after values, undo links and recorded server times. `restored_history` is null in selected-video deliveries. Legacy detector data is separate from accepted labels.
+
+Custom annotation JSON is a delivery format. To reopen editable work elsewhere, keep a **Project backup ZIP** plus original videos. Native backup schema v2 supports named classes and restore accepts both v1 and v2. Legacy CVAT/YOLO/MOT profiles reject dynamic-class data rather than silently omitting it; use the v3 JSON for conversion.

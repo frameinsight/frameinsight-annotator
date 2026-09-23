@@ -2,11 +2,11 @@ import {describe,it,expect} from 'vitest';
 import {assignPerson} from './identity';
 import {interpolatePerson,markCorrected} from './interpolation';
 import {deleteGeometryRange,prepareGeometryFrame} from './hidden-range';
-import {type Domain,type Geometry,type Video,emptyObservation,validateDomain} from './types';
+import {type Domain,type Geometry,type Video,setBox,emptyObservation,validateDomain} from './types';
 const videos={v:{id:'v',frame_count:24,width:640,height:360} as Video};
 function setup(){
  const d:Domain={identities:{p:{id:'p',person_id:1,name:'Person 1',class_name:'person_visible'},q:{id:'q',person_id:null,name:'Legacy extended',class_name:'person_extended',color:'#123456'}},segments:{s:{id:'s',identity_uuid:'p',video_id:'v',start:0,end:null,status:'verified'},t:{id:'t',identity_uuid:'q',video_id:'v',start:0,end:null,status:'verified'}},observations:{},intervals:{},links:{},reviews:{},proposal_reviews:{}};
- const add=(f:number,g:Geometry,who='p',x=100+f)=>{const o=Object.values(d.observations).find(o=>o.identity_uuid===who&&o.frame_index===f)||emptyObservation('v',f,who,who==='p'?'s':'t');o[g]=[x,20,x+50,200];o.provenance[g]={origin:'manual',proposal_id:null,human_corrected:false};d.observations[o.id]=o;return o;};
+ const add=(f:number,g:Geometry,who='p',x=100+f)=>{const o=Object.values(d.observations).find(o=>o.identity_uuid===who&&o.frame_index===f)||emptyObservation('v',f,who,who==='p'?'s':'t');setBox(o,g,[x,20,x+50,200]);o.provenance[g]={origin:'manual',proposal_id:null,human_corrected:false};d.observations[o.id]=o;return o;};
  const at=(f:number)=>Object.values(d.observations).find(o=>o.identity_uuid==='p'&&o.frame_index===f)!;
  return {d,add,at};
 }

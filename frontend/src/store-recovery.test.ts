@@ -1,7 +1,7 @@
 import {beforeAll,beforeEach,afterAll,describe,it,expect,vi} from 'vitest';
 import {deleteGeometryRange} from './hidden-range';
 import {interpolatePerson} from './interpolation';
-import {emptyObservation,type Change,type Domain,type Operation,type Project,type Video} from './types';
+import {classKey,getBox,emptyObservation,type Change,type Domain,type Operation,type Project,type Video} from './types';
 
 const mocks=vi.hoisted(()=>({post:vi.fn(async()=>({})),set:vi.fn(async()=>{})}));
 vi.mock('./api',()=>({api:vi.fn(),post:mocks.post}));
@@ -52,8 +52,8 @@ describe('recovery as one saved undoable action',()=>{
  });
  it('assigns the smallest unused positive ID while preserving existing IDs and legacy drafts',async()=>{
   const project=clone(useStore.getState().project!);project.state.identities.three={id:'three',person_id:3,name:'Existing'};project.state.identities.draft={id:'draft',person_id:null,name:'Legacy draft'};useStore.setState({project});
-  useStore.getState().newPerson();const first=useStore.getState().activeId;expect(useStore.getState().project!.state.identities[first]).toMatchObject({person_id:1,name:'Person 1'});await useStore.getState().saveNow();
-  useStore.getState().newPerson();const second=useStore.getState().activeId;expect(useStore.getState().project!.state.identities[second]).toMatchObject({person_id:2,name:'Person 2'});await useStore.getState().saveNow();
+  useStore.getState().newPerson();const first=useStore.getState().activeId;expect(useStore.getState().project!.state.identities[first]).toMatchObject({person_id:1,name:'Track 1'});await useStore.getState().saveNow();
+  useStore.getState().newPerson();const second=useStore.getState().activeId;expect(useStore.getState().project!.state.identities[second]).toMatchObject({person_id:2,name:'Track 2'});await useStore.getState().saveNow();
   for(const id of ['p','three','draft'])expect(useStore.getState().project!.state.identities[id]).toEqual(project.state.identities[id]);
  });
  it('rejects an oversized recovery without stranding the save queue, then saves a small edit',async()=>{
@@ -63,5 +63,26 @@ describe('recovery as one saved undoable action',()=>{
   const gap=Object.values(project.state.intervals)[0];gap.start=1;gap.end=50000;useStore.setState({project});
   expect(useStore.getState().restoreRange(1,50000,'interpolate')).toBe(false);expect(useStore.getState().notice).toContain('50,000');expect(useStore.getState().project).toEqual(project);expect(useStore.getState().pending).toEqual([]);expect(useStore.getState().history).toEqual([]);expect(mocks.post).not.toHaveBeenCalled();
   useStore.getState().newPerson();await useStore.getState().saveNow();expect(useStore.getState().pending).toEqual([]);expect(useStore.getState().saveStatus).toBe('Saved');expect(mocks.post).toHaveBeenCalledTimes(1);expect(useStore.getState().project!.revision).toBe(project.revision+1);
+ });
+ it('creates dynamic class tracks, switches classes without writes and resolves legacy aliases when selecting tracks',async()=>{
+  const s=useStore.getState();s.newPerson();const id=useStore.getState().activeId;expect(useStore.getState().geometry).toBe(classKey('person_visible'));useStore.getState().setBox(classKey('person_visible'),[100,80,180,240]);useStore.getState().navigate(10);useStore.getState().setBox(classKey('person_visible'),[200,80,280,240]);await useStore.getState().saveNow();
+  const saved=clone(useStore.getState().project!),count=mocks.post.mock.calls.length;useStore.getState().selectClass('Head');expect(useStore.getState().geometry).toBe(classKey('Head'));expect(useStore.getState().project).toEqual(saved);expect(mocks.post).toHaveBeenCalledTimes(count);
+  useStore.getState().setBox(classKey('Head'),[220,70,260,120]);await useStore.getState().saveNow();const o=Object.values(useStore.getState().project!.state.observations).find(o=>o.identity_uuid===id&&o.frame_index===10)!;expect(o.person_visible).toBeNull();expect(o.person_ext).toBeNull();expect(Object.keys(o.boxes!)).toEqual([classKey('person_visible'),classKey('Head')]);
+  useStore.getState().selectClass('person_visible');useStore.getState().selectPerson('p');expect(useStore.getState().geometry).toBe('person_visible');useStore.getState().selectPerson(id);expect(useStore.getState().geometry).toBe(classKey('person_visible'));
+  useStore.getState().focusPerson('p');expect(useStore.getState().geometry).toBe('person_visible');expect(useStore.getState().hiddenIds[id]).toBe(true);
+  expect(mocks.set.mock.calls.some((args:any[])=>args[1]?.project?.state?.observations&&Object.values(args[1].project.state.observations).some((row:any)=>row.boxes?.[classKey('Head')]))).toBe(true);
+ });
+ it('keeps the chosen catalog class for new tracks and falls back when it is absent',async()=>{
+  const project=clone(useStore.getState().project!);project.classes=['Torso','Face'];useStore.setState({project});useStore.getState().selectClass('Face');useStore.getState().newPerson();expect(useStore.getState().geometry).toBe(classKey('Face'));expect(useStore.getState().project!.state.identities[useStore.getState().activeId].name).toBe('Track 1');await useStore.getState().saveNow();
+  useStore.getState().selectClass('Unlisted');useStore.getState().newPerson();expect(useStore.getState().geometry).toBe(classKey('Torso'));await useStore.getState().saveNow();
+ });
+ it('copies a selected class as one undoable save and never replaces current target corrections',async()=>{
+  useStore.getState().newPerson();const id=useStore.getState().activeId,g=classKey('person_visible');useStore.getState().setBox(g,[100,80,180,240]);useStore.getState().navigate(10);useStore.getState().setBox(g,[200,80,280,240]);await useStore.getState().saveNow();const before=clone(useStore.getState().project!.state),history=useStore.getState().history.length;
+  expect(useStore.getState().copyClassTrack(g,'Outline')).toBe(true);expect(useStore.getState().geometry).toBe(classKey('Outline'));expect(useStore.getState().history).toHaveLength(history+1);await useStore.getState().saveNow();expect(Object.values(useStore.getState().project!.state.observations).filter(o=>o.identity_uuid===id&&getBox(o,classKey('Outline')))).toHaveLength(6);
+  useStore.getState().undo();await useStore.getState().saveNow();expect(useStore.getState().project!.state).toEqual(before);
+ });
+ it('changing the selected class through ID Save moves only that class and is exactly undoable',async()=>{
+  useStore.getState().newPerson();const id=useStore.getState().activeId;useStore.getState().setBox(classKey('person_visible'),[100,80,180,240]);useStore.getState().selectClass('Head');useStore.getState().setBox(classKey('Head'),[110,70,150,120]);await useStore.getState().saveNow();const before=clone(useStore.getState().project!.state);
+  expect(useStore.getState().assignPerson(id,useStore.getState().project!.state.identities[id].person_id,'Face','#aabbcc')).toBe(true);await useStore.getState().saveNow();const o=Object.values(useStore.getState().project!.state.observations).find(o=>o.identity_uuid===id)!;expect(getBox(o,classKey('Head'))).toBeNull();expect(getBox(o,classKey('Face'))).toEqual([110,70,150,120]);expect(getBox(o,classKey('person_visible'))).toEqual([100,80,180,240]);useStore.getState().undo();await useStore.getState().saveNow();expect(useStore.getState().project!.state).toEqual(before);
  });
 });

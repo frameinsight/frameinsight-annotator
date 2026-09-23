@@ -81,13 +81,13 @@ export function RestoreRange({
       className="restore-range-form"
     >
       <p>
-        Restore <strong>{geometryLabel(s.geometry)}</strong> boxes for{" "}
+        Restore <strong>{geometryLabel(s.geometry, identity)}</strong> boxes for{" "}
         <strong>
           {identity?.person_id
-            ? `Person ${identity.person_id}`
+            ? `Track ${identity.person_id}`
             : identity?.name}
         </strong>
-        . Existing boxes and other people stay unchanged.
+        . Existing boxes and other tracks stay unchanged.
       </p>
       <div className="form-grid">
         <label>

@@ -19,7 +19,7 @@ def restore_archive(path, jid):
             info=archive.getinfo('native/project.json')
             if info.file_size>200*1024**2:raise ValueError('Native metadata exceeds 200 MB limit')
             original=json.loads(archive.read(info))
-            if original.get('format')!='frameinsight' or original.get('schema_version')!=1:raise ValueError('Unsupported native schema')
+            if original.get('format')!='frameinsight' or original.get('schema_version') not in (1,2):raise ValueError('Unsupported native schema')
             classes=original.get('classes',[])
             if not isinstance(classes,list) or len(classes)>100 or any(not isinstance(name,str) or not name.strip() or len(name)>80 for name in classes):raise ValueError('Invalid class catalog in backup')
             pid=str(uuid.uuid4());mapping={};videos={}

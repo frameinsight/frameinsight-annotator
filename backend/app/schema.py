@@ -1,7 +1,9 @@
 """Authoritative domain validation; containment tolerance is 0.01 source pixels."""
 import math
 from typing import Literal
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator, field_validator
+
+from .geometry import box_items, get_box, validate_key
 
 TOLERANCE = 0.01
 Geometry = tuple[float, float, float, float]
@@ -11,12 +13,20 @@ class BoxStyle(Strict):
     class_name: str = Field(min_length=1, max_length=80, pattern=r'.*\S.*')
     color: str = Field(pattern=r'^#[0-9a-fA-F]{6}$')
 class Identity(Strict):
-    box_styles: dict[Literal['person_ext', 'person_visible'], BoxStyle] = Field(default_factory=dict)
+    box_styles: dict[str, BoxStyle] = Field(default_factory=dict)
     id: str
     person_id: int | None = Field(default=None, gt=0)
     name: str = ''
     class_name: str = Field(default='person_visible', min_length=1, max_length=80, pattern=r'.*\S.*')
     color: str = Field(default='#baa7ff', pattern=r'^#[0-9a-fA-F]{6}$')
+    @field_validator('box_styles')
+    @classmethod
+    def valid_styles(cls, styles):
+        for key, style in styles.items():
+            validate_key(key)
+            if key.startswith('class:') and style.class_name != key[6:]:
+                raise ValueError('Named class style must match its class channel')
+        return styles
 class Segment(Strict):
     id: str
     video_id: str
@@ -34,6 +44,7 @@ class Observation(Strict):
     frame_index: int = Field(ge=0)
     identity_uuid: str
     segment_id: str
+    boxes: dict[str, Geometry] = Field(default_factory=dict, max_length=100)
     person_ext: Geometry | None = None
     person_visible: Geometry | None = None
     full_quality: Literal['unset', 'observed', 'estimated', 'unknown'] = 'unset'
@@ -43,8 +54,24 @@ class Observation(Strict):
     review_state: Literal['draft', 'needs_review', 'approved'] = 'draft'
     evidence_note: str = ''
     provenance: dict[str, Provenance] = Field(default_factory=dict)
+    @field_validator('boxes')
+    @classmethod
+    def valid_boxes(cls, boxes):
+        for key in boxes:
+            validate_key(key, dynamic_only=True)
+        return boxes
+    @field_validator('provenance')
+    @classmethod
+    def valid_provenance(cls, value):
+        for key in value:
+            validate_key(key)
+        return value
 class Interval(Strict):
-    geometry: Literal['person_ext', 'person_visible'] | None = None
+    geometry: str | None = None
+    @field_validator('geometry')
+    @classmethod
+    def valid_geometry(cls, value):
+        return validate_key(value) if value is not None else None
     id: str
     video_id: str
     identity_uuid: str
@@ -91,8 +118,8 @@ class Operation(Strict):
 def issues(o: dict, *, visible_only: bool = False) -> list[str]:
     result = []
     a, b = o.get('person_ext'), o.get('person_visible')
-    if visible_only:
-        return ['Missing box'] if a is None and b is None else []
+    if visible_only or o.get('boxes'):
+        return [] if any(box_items(o)) else ['Missing box']
     if b is None: result.append('Missing B (visible extent)')
     if o['full_quality'] == 'unknown':
         if a is not None: result.append('Unknown full extent must have no A')
@@ -133,11 +160,10 @@ def validate_state(state: dict, videos: dict, *, visible_only: bool = False):
             raise ValueError('Observation lies outside its visible segment')
         for gap in state['intervals'].values():
             if gap['identity_uuid'] == o['identity_uuid'] and gap['video_id'] == o['video_id'] and gap['start'] <= o['frame_index'] and (gap['end'] is None or o['frame_index'] <= gap['end']):
-                if (o.get(gap['geometry']) if gap.get('geometry') else (o.get('person_ext') or o.get('person_visible'))):
+                if (get_box(o, gap['geometry']) if gap.get('geometry') else any(box_items(o))):
                     raise ValueError('A missing-box gap cannot contain that box type')
         v = videos[o['video_id']]
-        for name in ('person_ext', 'person_visible'):
-            box = o.get(name)
+        for name, box in box_items(o):
             if box and (not all(math.isfinite(x) for x in box) or not (0 <= box[0] < box[2] <= v['width'] and 0 <= box[1] < box[3] <= v['height'])):
                 raise ValueError('Box must have positive area within source-image boundaries')
         if o['review_state'] == 'approved' and issues(o, visible_only=visible_only): raise ValueError('; '.join(issues(o, visible_only=visible_only)))

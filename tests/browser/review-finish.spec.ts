@@ -14,6 +14,7 @@ test.beforeEach(async({page,request})=>{
  projectId=(await(await request.post('/api/projects',{data:{name:'UX review acceptance '+Date.now(),classes:['person_visible','person_extended']}})).json()).id;
  videoId=(await(await request.post(`/api/projects/${projectId}/videos/local`,{data:{path:'tests/fixtures/numbered.mp4'}})).json()).video_id;
  await expect.poll(async()=>(await state(request)).videos[videoId].status).toBe('ready');
+ await page.route('**/api/updates/check*',route=>route.fulfill({json:{status:'current',current_version:'test',can_install:false}}));
  await page.goto('/');await page.getByTestId('open-video-'+videoId).click();await ready(page,0);
 });
 
@@ -27,7 +28,7 @@ test('deleted range explains why filling stops and can be refilled with one undo
  await expect(page.getByRole('dialog')).toContainText('5 boxes to restore');
  await page.getByRole('button',{name:'Remove gap & fill boxes'}).click();await saved(page);
  const restored=(await state(request)).state;expect(Object.values(restored.intervals)).toHaveLength(0);
- expect((Object.values(restored.observations) as any[]).filter(o=>o.frame_index>=8&&o.frame_index<=12&&o.person_visible)).toHaveLength(5);
+ expect((Object.values(restored.observations) as any[]).filter(o=>o.frame_index>=8&&o.frame_index<=12&&o.boxes?.['class:person_visible'])).toHaveLength(5);
  await page.getByTestId('canvas').press('Control+z');await saved(page);expect((await state(request)).state).toEqual(deleted);
  await page.getByTestId('canvas').press('Control+Shift+z');await saved(page);expect((await state(request)).state).toEqual(restored);
 });

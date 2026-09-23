@@ -1,4 +1,4 @@
-import type {Domain,Geometry} from './types';
+import {type Domain,type Geometry,boxKeys,getBox} from './types';
 export function timelineBins(state:Domain|null,videoId:string,count:number,activeId:string,geometry?:Geometry){
  const length=Math.min(count,240);
  const bins=Array.from({length},(_,i)=>({start:Math.floor(i*count/length),end:Math.floor((i+1)*count/length),complete:false,draft:false,manual:false,generated:false,gap:false,reviewed:0}));
@@ -9,8 +9,8 @@ export function timelineBins(state:Domain|null,videoId:string,count:number,activ
  for(const o of Object.values(state.observations)){
   if(activeId&&o.identity_uuid!==activeId)continue;
   const bin=o.video_id===videoId?binFor(o.frame_index):undefined;
-  for(const g of geometry?[geometry]:['person_visible','person_ext'] as Geometry[]){
-   if(!bin||!o[g])continue;
+  for(const g of geometry?[geometry]:boxKeys(o)){
+   if(!bin||!getBox(o,g))continue;
    bin.draft=true;
    const provenance=o.provenance[g];
    if(provenance&&!provenance.human_corrected&&['interpolated','copied_track','model_track'].includes(provenance.origin))bin.generated=true;

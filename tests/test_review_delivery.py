@@ -120,7 +120,7 @@ def test_validated_json_exact_snapshot_coverage_metadata_and_backup_without_proo
         assert done['status']=='completed',done
         response=client.get('/api/exports/'+done['export_id']);assert response.status_code==200,response.text
         doc=response.json()
-        assert doc['validation']['validation_id']==report['validation_id'] and doc['app_version']=='2.0.0'
+        assert doc['validation']['validation_id']==report['validation_id'] and doc['app_version']==review.APP_VERSION
         assert doc['state']==before and doc['media_included'] is False
         assert 'Selected people only' in doc['conventions']['scope']
         edit_identity(pid,ident)

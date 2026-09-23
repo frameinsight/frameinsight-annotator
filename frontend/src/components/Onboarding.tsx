@@ -3,11 +3,11 @@ import {ArrowLeft, ArrowRight, Check, Download, MousePointer2, ScanLine, Users, 
 import {Button} from './ui/button';
 
 const steps = [
-  {title: 'Start with one person', icon: Users, text: 'Choose New person, then draw a box around the part of that person you can see.', tip: 'Keep the same person selected while you move through the video.', action: 'New person', key: 'N'},
+  {title: 'Start with one object', icon: Users, text: 'Choose New track, select a class, then draw a box around your object.', tip: 'Keep the same track selected as you move through the video. Each object has one ID.', action: 'New track', key: 'N'},
   {title: 'Move forward and adjust', icon: MousePointer2, text: 'Skip a few frames and move or resize the box. Interpolation fills the frames between your corrections.', tip: 'Go back and check the in-between frames. Drag any box that needs a correction.', action: 'Next frame', key: 'F'},
-  {title: 'Keep one ID for both boxes', icon: ScanLine, text: 'Use Visible for what you can see. If you also need the estimated full body, copy Visible to Extended, then resize the Extended box.', tip: 'The second box belongs to the same person. You do not need New person again.', action: 'ID, class & color', key: 'I'},
-  {title: 'Remove boxes during hiding', icon: WandSparkles, text: 'When the person is hidden, select the box type and delete its boxes for that frame range.', tip: 'Deleted ranges stop interpolation. To fill a range again, choose Restore deleted range, then Fill between my boxes.', action: 'Delete boxes in range', key: 'Shift + Delete'},
-  {title: 'Save, review and share', icon: Download, text: 'Your edits save automatically. Check the frames between corrections, then download your annotations when you are ready.', tip: 'An annotation download contains boxes and IDs. Keep the original video separately.', action: 'Save', key: 'Ctrl + S'},
+  {title: 'Add classes to the same ID', icon: ScanLine, text: 'Choose another class in the class bar and draw its box. You can also copy a whole class track, then resize the copies.', tip: 'One object can have any number of classes. The eye beside a class hides it from view without deleting anything.', action: 'ID, class & color', key: 'I'},
+  {title: 'Delete or restore a range', icon: WandSparkles, text: 'When a box should be absent, choose its class and delete the boxes for that frame range.', tip: 'Deleted ranges pause interpolation. Choose Restore range to fill them between your boxes or recover their original coordinates.', action: 'Delete boxes in range', key: 'Shift + Delete'},
+  {title: 'Review, validate and export', icon: Download, text: 'Choose Finish to render and watch the complete annotated video, including slow playback. Confirm your visual check, then run validation.', tip: 'After validation passes, export the annotation JSON. The JSON contains annotations and metadata, without video or images.', action: 'Save', key: 'Ctrl + S'},
 ];
 
 export function Onboarding({onDone}: {onDone: () => void}) {

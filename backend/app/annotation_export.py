@@ -1,7 +1,9 @@
 """Versioned, media-free annotation document from one consistent SQLite snapshot."""
 import json
 from .db import connect, get_state, now
-from .visibility import visibility_intervals
+from .visibility import visibility_intervals, presence_intervals
+from .geometry import box_items, box_style
+from .version import APP_VERSION
 
 
 def annotation_document(pid, video_id=None):
@@ -58,27 +60,26 @@ def annotation_document(pid, video_id=None):
         identity = state['identities'][o['identity_uuid']]
         common = {'observation_id': o['id'], 'video_id': o['video_id'], 'frame_index': o['frame_index'],
                   'timestamp_seconds': timings.get(o['video_id'], {}).get(o['frame_index'], {}).get('seconds'),
-                  'identity_uuid': o['identity_uuid'], 'person_id': identity['person_id']}
-        frame_annotations.append({**common, 'boxes': {'person_visible': o.get('person_visible'), 'person_extended': o.get('person_ext')}})
-        for geometry, box_type in [('person_visible', 'person_visible'), ('person_ext', 'person_extended')]:
-            box = o.get(geometry)
-            if box is None:
-                continue
+                  'identity_uuid': o['identity_uuid'], 'person_id': identity['person_id'], 'track_id': identity['person_id']}
+        frame_annotations.append({**common, 'boxes': dict(box_items(o))})
+        for geometry, box in box_items(o):
+            box_type = 'person_extended' if geometry == 'person_ext' else geometry
             provenance = o.get('provenance', {}).get(geometry, {})
-            generated = provenance.get('origin') == 'interpolated' and not provenance.get('human_corrected')
-            style = identity.get('box_styles', {}).get(geometry, {})
+            generated = provenance.get('origin') in ('interpolated', 'model_track', 'copied_track') and not provenance.get('human_corrected')
+            style = box_style(identity, geometry, project.get('class_colors'))
             annotation_index.append({
-                **common, 'box_type': box_type, 'geometry_name': geometry,
-                'class_name': style.get('class_name', identity.get('class_name', 'person_visible') if geometry == 'person_visible' else 'person_extended'),
-                'color': style.get('color', identity.get('color', '#baa7ff') if geometry == 'person_visible' else '#67e2b1'),
+                **common, 'box_type': box_type, 'geometry_name': geometry, 'class_key': geometry,
+                'class_name': style['class_name'],
+                'color': style['color'],
                 'box_xyxy': box, 'box_xywh': [box[0], box[1], box[2]-box[0], box[3]-box[1]],
-                'visibility': 'visible' if o.get('person_visible') else 'not_visible',
-                'annotation_type': 'interpolated' if generated else 'keyframe',
+                'presence': 'present',
+                'visibility': ('visible' if o.get('person_visible') else 'not_visible') if geometry in ('person_visible', 'person_ext') else None,
+                'annotation_type': ('interpolated' if provenance.get('origin') == 'interpolated' else 'generated') if generated else 'keyframe',
                 'origin': provenance.get('origin'), 'human_corrected': provenance.get('human_corrected', False),
-                'protected_from_interpolation': o['review_state'] == 'approved' or not (generated or provenance.get('origin') == 'model_track' and not provenance.get('human_corrected')),
+                'protected_from_interpolation': o['review_state'] == 'approved' or not generated,
             })
     return {
-        'format': 'frameinsight.annotations', 'schema_version': 2, 'exported_at': now(),
+        'format': 'frameinsight.annotations', 'schema_version': 3, 'app_version': APP_VERSION, 'exported_at': now(),
         'media_included': False, 'video_scope': video_id, 'classes': project.get('classes', []), 'class_colors': project.get('class_colors', {}),
         'project': {k: project[k] for k in ('id', 'name', 'revision', 'created_at')},
         'conventions': {
@@ -90,24 +91,25 @@ def annotation_document(pid, video_id=None):
             'timestamps': 'seconds in source stream; pts * time_base_num / time_base_den',
             'null_values': 'unknown or not specified; never inferred as false',
             'scope': 'All saved project annotations, including drafts and incomplete or single-person work.',
-            'absence': 'Under the no-box visibility policy, any frame without this person’s box is labelled not_visible, including before/after appearances. This is annotation state, not proof of physical occlusion or exhaustive review; reason stays unknown unless explicitly recorded.',
+            'absence': 'Per-class presence_intervals record present or absent annotation boxes, including before/after appearances. Absence does not prove physical occlusion or exhaustive review; reason stays unknown unless explicitly recorded. Legacy visibility_intervals describe only the legacy person_visible channel.',
             'review': 'Individual approvals are not required in the visible-only workflow; reviews record separate whole-frame checks.',
-            'box_types': 'person_visible and person_extended are independently annotated rectangles of one identity. Internal person_ext stores the extended rectangle. Extended boxes do not establish visible evidence.',
-            'annotation_index_key': 'video_id, frame_index, identity_uuid, box_type; observation_id is shared by paired boxes',
-            'frame_annotations': 'One row per person per frame with both box slots; null means no box of that type.',
+            'box_types': 'Each class_key is an independent rectangle channel of one shared identity/track. Named classes use class:<name>. Legacy person_visible and person_ext keys retain their original meanings; box_type person_extended aliases person_ext.',
+            'annotation_index_key': 'video_id, frame_index, identity_uuid, class_key; observation_id is shared by all boxes of the track on that frame; track_id aliases person_id',
+            'frame_annotations': 'One row per track per annotated frame; boxes maps class_key to source-image xyxy coordinates. An omitted class has no saved box on that frame.',
             'source_references': 'Video names, hashes and paths are metadata only. No video, image, thumbnail or binary media is embedded.',
             'history_scope': 'Selected-video changes only; project backups preserve full replayable history.' if video_id else 'Full project history.',
             'history': 'Operations preserve before/after values and undo links. recorded_at is server UTC time; no annotator identity is invented.',
         },
         'summary': {'videos': len(project['videos']), 'people': len(state['identities']),
-                    'observations': len(state['observations']),
+                    'observations': len(state['observations']), 'boxes': len(annotation_index),
+                    'boxes_by_class': {key: sum(row['class_key'] == key for row in annotation_index) for key in sorted({row['class_key'] for row in annotation_index})},
                     'visible_boxes': sum(o.get('person_visible') is not None for o in state['observations'].values()),
                     'extended_boxes': sum(o.get('person_ext') is not None for o in state['observations'].values()),
                     'frames_in_ledger': sum(map(len, frames.values())),
                     'whole_frames_checked': sum(bool(r['complete']) for r in state['reviews'].values()),
                     'operations': len(operations)},
         'videos': project['videos'], 'frames': frames,
-        'annotation_index': annotation_index, 'frame_annotations': frame_annotations, 'visibility_intervals': visibility_intervals(state, project['videos']),
+        'annotation_index': annotation_index, 'frame_annotations': frame_annotations, 'visibility_intervals': visibility_intervals(state, project['videos']), 'presence_intervals': presence_intervals(state, project['videos']),
         'state': state, 'operations': operations, 'restored_history': restored_history,
         'detector': {'proposals': proposals, 'processed_frames': proposal_frames, 'jobs': detector_jobs},
     }

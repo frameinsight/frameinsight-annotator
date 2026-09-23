@@ -1,4 +1,5 @@
 Unicode true
+!define APP_VERSION "@APP_VERSION@"
 !include "MUI2.nsh"
 !include "x64.nsh"
 !include "WinVer.nsh"
@@ -12,7 +13,7 @@ SetCompressor /SOLID lzma
 !define MUI_UNICON "frameinsight.ico"
 !define MUI_ABORTWARNING
 !define MUI_WELCOMEPAGE_TITLE "Install Frameinsight"
-!define MUI_WELCOMEPAGE_TEXT "Annotate people in videos with editable interpolation.$\r$\n$\r$\nEverything needed is included. No Python, Node, GPU setup or internet connection is required.$\r$\n$\r$\nWindows 11 (64-bit). Your saved projects stay separate from the app."
+!define MUI_WELCOMEPAGE_TEXT "Annotate and track objects in videos with your own classes.$\r$\n$\r$\nEverything needed for offline annotation is included. No Python, Node or GPU setup is required.$\r$\n$\r$\nWindows 11 (64-bit). Your saved projects stay separate from the app."
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
 !insertmacro MUI_PAGE_INSTFILES
@@ -22,10 +23,10 @@ SetCompressor /SOLID lzma
 !insertmacro MUI_UNPAGE_CONFIRM
 !insertmacro MUI_UNPAGE_INSTFILES
 !insertmacro MUI_LANGUAGE "English"
-VIProductVersion "2.0.0.0"
+VIProductVersion "${APP_VERSION}.0"
 VIAddVersionKey /LANG=1033 "ProductName" "Frameinsight"
 VIAddVersionKey /LANG=1033 "FileDescription" "Frameinsight offline annotation installer"
-VIAddVersionKey /LANG=1033 "FileVersion" "2.0.0"
+VIAddVersionKey /LANG=1033 "FileVersion" "${APP_VERSION}"
 VIAddVersionKey /LANG=1033 "LegalCopyright" "Frameinsight project"
 Function .onInit
   ${IfNot} ${RunningX64}
@@ -54,7 +55,7 @@ Section "Frameinsight"
   WriteRegStr HKCU "Software\Frameinsight" "InstallDir" "$INSTDIR"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Frameinsight" "DisplayName" "Frameinsight"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Frameinsight" "UninstallString" '"$INSTDIR\Uninstall.exe"'
-  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Frameinsight" "DisplayVersion" "2.0.0"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Frameinsight" "DisplayVersion" "${APP_VERSION}"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Frameinsight" "DisplayIcon" "$INSTDIR\Frameinsight.exe"
   WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Frameinsight" "NoModify" 1
   WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\Frameinsight" "NoRepair" 1

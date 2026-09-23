@@ -1,4 +1,4 @@
-import {type Domain,type Segment,uuid} from './types';
+import {type Domain,type Segment,uuid,getBox,setBox,boxKeys,identityGeometryKeys} from './types';
 import {isInterpolated,markCorrected} from './interpolation';
 
 // Called inside one store commit: deletion, segment repair and the gap share Undo.
@@ -7,7 +7,7 @@ export function markHiddenRange(d:Domain,videoId:string,identityId:string,start:
  if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start<0||end<start||end>=frameCount)throw new Error(`Enter a valid range from 0 to ${frameCount-1}; the last frame must be at or after the first.`);
  const belongs=(row:{video_id:string;identity_uuid:string})=>row.video_id===videoId&&row.identity_uuid===identityId;
  let removed=0;
- for(const o of Object.values(d.observations))if(belongs(o)&&o.frame_index>=start&&o.frame_index<=end){if(o.person_visible||o.person_ext)removed++;delete d.observations[o.id];}
+ for(const o of Object.values(d.observations))if(belongs(o)&&o.frame_index>=start&&o.frame_index<=end){if(boxKeys(o).length)removed++;delete d.observations[o.id];}
 
  // Keep the original reason/evidence on portions of older gaps outside the range.
  for(const gap of Object.values(d.intervals)){
@@ -69,13 +69,13 @@ export function deleteGeometryRange(d:Domain,videoId:string,identityId:string,st
  const rows=Object.values(d.observations).filter(o=>o.video_id===videoId&&o.identity_uuid===identityId).sort((a,b)=>a.frame_index-b.frame_index);
  let removed=0;
  for(const o of rows)if(o.frame_index>=start&&o.frame_index<=end){
-  if(o[geometry])removed++;
-  o[geometry]=null;delete o.provenance[geometry];o.geometry_link='independent';o.review_state='draft';
+  if(getBox(o,geometry))removed++;
+  setBox(o,geometry,null);delete o.provenance[geometry];o.geometry_link='independent';o.review_state='draft';
   if(geometry==='person_ext')o.full_quality='unknown';
-  if(!o.person_ext&&!o.person_visible)delete d.observations[o.id];
+  if(!boxKeys(o).length)delete d.observations[o.id];
  }
  // Retain boundary coordinates as anchors only for the affected geometry.
- for(const edge of [rows.filter(o=>o.frame_index<start&&o[geometry]).at(-1),rows.find(o=>o.frame_index>end&&o[geometry])])if(edge){markCorrected(edge,geometry);edge.review_state='draft';}
+ for(const edge of [rows.filter(o=>o.frame_index<start&&getBox(o,geometry)).at(-1),rows.find(o=>o.frame_index>end&&getBox(o,geometry))])if(edge){markCorrected(edge,geometry);edge.review_state='draft';}
  const id=uuid();d.intervals[id]={id,video_id:videoId,identity_uuid:identityId,start,end,geometry,reason:'unknown',evidence_note:'Boxes deleted by the annotator; cause unspecified.'};
  for(const r of Object.values(d.reviews))if(r.video_id===videoId&&r.frame_index>=start&&r.frame_index<=end){r.complete=false;r.checked_all_people=false;}
  return removed;
@@ -84,7 +84,7 @@ export function deleteGeometryRange(d:Domain,videoId:string,identityId:string,st
 export function prepareGeometryFrame(d:Domain,videoId:string,identityId:string,frame:number,geometry:import('./types').Geometry){
  // Split legacy all-box gaps into scopes before restoring just the drawn type.
  for(const gap of Object.values(d.intervals))if(gap.video_id===videoId&&gap.identity_uuid===identityId&&!gap.geometry){
-  gap.geometry='person_visible';const id=uuid();d.intervals[id]={...gap,id,geometry:'person_ext'};
+  const known=identityGeometryKeys(d,identityId),keys=[...new Set([...(known.some(k=>k==='person_ext'||k==='person_visible')?['person_visible','person_ext']:[]),...known,geometry])];gap.geometry=keys[0];for(const key of keys.slice(1)){const id=uuid();d.intervals[id]={...gap,id,geometry:key};}
  }
  for(const gap of Object.values(d.intervals)){
   if(gap.video_id!==videoId||gap.identity_uuid!==identityId||gap.geometry!==geometry||gap.start>frame||(gap.end!==null&&gap.end<frame))continue;

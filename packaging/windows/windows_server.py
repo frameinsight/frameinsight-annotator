@@ -17,6 +17,7 @@ def configure_paths():
     os.environ.setdefault('FRAMEINSIGHT_DATA', str(base / 'Data'))
     os.environ.setdefault('FRAMEINSIGHT_WORKSPACE', str(base / 'Workspace'))
     os.environ.setdefault('FRAMEINSIGHT_MODELS', str(base / 'Models'))
+    os.environ['FRAMEINSIGHT_PACKAGE_KIND'] = 'windows'
     return base
 
 
@@ -26,6 +27,8 @@ def main():
     parser.add_argument('--parent', type=int, default=0)
     args = parser.parse_args()
     base = configure_paths()
+    if args.parent:
+        os.environ['FRAMEINSIGHT_LAUNCHER_PID'] = str(args.parent)
     log = base / 'Logs' / 'server.log'
     if log.exists() and log.stat().st_size > 2 * 1024 * 1024:
         log.replace(base / 'Logs' / 'server.previous.log')
@@ -37,6 +40,15 @@ def main():
         server = uvicorn.Server(uvicorn.Config(app, host='127.0.0.1', port=8765,
             access_log=False, loop='asyncio', http='h11', ws='websockets', use_colors=False))
         if os.name == 'nt' and args.parent:
+            def update_shutdown():
+                user = ctypes.WinDLL('user32', use_last_error=True)
+                user.FindWindowW.argtypes = [ctypes.c_wchar_p, ctypes.c_wchar_p]
+                user.FindWindowW.restype = ctypes.c_void_p
+                user.PostMessageW.argtypes = [ctypes.c_void_p, ctypes.c_uint, ctypes.c_size_t, ctypes.c_ssize_t]
+                hwnd = user.FindWindowW('Frameinsight.Desktop.v1', None)
+                if not hwnd or not user.PostMessageW(hwnd, 0x0010, 0, 0):
+                    raise OSError('Unable to close the desktop launcher safely')
+            app.state.update_shutdown = update_shutdown
             kernel = ctypes.WinDLL('kernel32', use_last_error=True)
             kernel.OpenEventW.argtypes = [ctypes.c_ulong, ctypes.c_int, ctypes.c_wchar_p]
             kernel.OpenEventW.restype = ctypes.c_void_p

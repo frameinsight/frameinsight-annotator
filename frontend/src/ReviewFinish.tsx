@@ -264,7 +264,7 @@ export function ReviewFinish({
         <div>
           <h3>{source.name}</h3>
           <p>
-            Review every person, both box types and the IDs through the whole
+            Review every object, class and ID through the whole
             video. Boxes hidden in the editor are included here.
           </p>
         </div>
@@ -294,7 +294,7 @@ export function ReviewFinish({
           <Film size={36} />
           <h3>See your annotations in motion</h3>
           <p>
-            Prepare a complete review video with boxes, classes and person IDs.
+            Prepare a complete review video with boxes, classes and track IDs.
             The preview stays on this computer; your annotation JSON contains no
             video or images.
           </p>
@@ -438,10 +438,10 @@ export function ReviewFinish({
                 }}
               >
                 <option value="all_people">
-                  All visible people in the whole video
+                  All visible objects in the whole video
                 </option>
                 <option value="selected_people">
-                  Only the people I chose to annotate
+                  Only the objects I chose to annotate
                 </option>
               </select>
             </label>
@@ -457,12 +457,12 @@ export function ReviewFinish({
                   setExportJob(null);
                 }}
               />
-              I reviewed the video: boxes fit the people, each real person keeps
+              I reviewed the video: boxes fit the objects, each real object keeps
               the same ID, and the coverage selected above is correct.
             </label>
             <p>
               Automatic checks verify the data structure. They cannot tell
-              whether two IDs belong to the same real person or whether someone
+              whether two IDs belong to the same real object or whether an object
               was missed. Your visual review checks that.
             </p>
             <Button

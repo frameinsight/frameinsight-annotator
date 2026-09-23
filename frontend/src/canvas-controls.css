@@ -1,0 +1,20 @@
+.canvas-toolbox{position:absolute;left:14px;top:14px;z-index:4;display:flex;flex-direction:column;gap:4px;padding:6px;border:1px solid #383b3f;border-radius:11px;background:rgba(25,27,30,.97);box-shadow:0 8px 28px #0005;cursor:default}
+.canvas-toolbox button{display:grid;place-items:center;width:36px;height:36px;min-height:0;padding:0;border:1px solid transparent;border-radius:6px;color:#a5aaaf;background:transparent;cursor:pointer}
+.canvas-toolbox button:hover:not(:disabled){color:#f0f2f3;background:#303338}
+.canvas-toolbox button[aria-pressed=true]{color:#8aedc6;background:#21443c;border-color:#396355}
+.canvas-toolbox button:focus-visible{outline:2px solid #8aedc6;outline-offset:2px}
+.canvas-toolbox button:disabled{opacity:.35;cursor:default}
+.canvas-toolbox .canvas-tool-divider{height:1px;background:#383b3f;margin:3px 1px}
+.canvas-toolbox .canvas-tool-zoom{font:10px ui-monospace,monospace;color:#a7adb4;text-align:center;padding:3px 0 1px}
+.canvas-context-menu{z-index:80;min-width:246px;max-width:min(330px,calc(100vw - 20px));max-height:var(--radix-context-menu-content-available-height);overflow-y:auto;padding:6px;border:1px solid #41454a;border-radius:10px;background:#202226;color:#e3e5e8;box-shadow:0 12px 48px #0008;font:12px/1.3 Inter,system-ui,sans-serif;animation:canvas-menu-in .12s ease-out}
+.canvas-context-menu [role=menuitem]{position:relative;display:flex;align-items:center;gap:10px;min-height:33px;padding:7px 10px;outline:none;border-radius:5px;cursor:default;user-select:none}
+.canvas-context-menu [role=menuitem][data-highlighted]{background:#33373c;color:#fff}
+.canvas-context-menu [role=menuitem][data-disabled]{opacity:.35;pointer-events:none}
+.canvas-context-menu [role=menuitem].canvas-menu-danger{color:#ffada0}
+.canvas-context-menu svg{width:15px;height:15px;flex-shrink:0;color:#a2a9b1}
+.canvas-context-menu .canvas-menu-danger svg{color:inherit}
+.canvas-context-menu kbd{margin-left:auto;border:0;background:transparent;font:10px ui-monospace,monospace;color:#9aA1aa;white-space:nowrap}
+.canvas-menu-label{padding:7px 10px 9px;color:#a2a9b1;font-size:10px;font-weight:600;letter-spacing:.06em;text-transform:uppercase;overflow-wrap:anywhere}
+.canvas-menu-label strong{display:block;font-size:12px;letter-spacing:0;text-transform:none;color:#ebedf0;margin-top:4px}
+.canvas-menu-separator{height:1px;margin:5px 5px;background:#393d42}
+@keyframes canvas-menu-in{from{opacity:0;transform:scale(.98)}to{opacity:1;transform:scale(1)}}

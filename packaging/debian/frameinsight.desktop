@@ -1,0 +1,20 @@
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=Frameinsight
+Comment=Annotate and track people in videos
+Exec=/usr/bin/frameinsight
+Icon=frameinsight
+Terminal=false
+Categories=Graphics;
+StartupNotify=false
+Actions=OpenData;Stop;
+Keywords=video;annotation;tracking;boxes;
+
+[Desktop Action OpenData]
+Name=Open saved-work folder
+Exec=/usr/bin/frameinsight --open-data
+
+[Desktop Action Stop]
+Name=Close Frameinsight
+Exec=/usr/bin/frameinsight --stop

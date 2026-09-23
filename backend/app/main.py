@@ -13,6 +13,8 @@ from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 from . import db
+from .version import APP_VERSION
+from .updates import router as updates_router, service as update_service
 from .config import DATA, ROOT, WORKSPACE, MODELS, safe_path
 from .schema import Operation
 from .video import import_video, new_job, POOL, sha256
@@ -37,7 +39,8 @@ async def lifespan(app):
                 c.execute('UPDATE videos SET data=? WHERE id=?',(json.dumps(v),row['id']))
     yield
     worker.stop()
-app=FastAPI(title='Frameinsight',version='2.0.0',lifespan=lifespan)
+app=FastAPI(title='Frameinsight',version=APP_VERSION,lifespan=lifespan)
+app.include_router(updates_router)
 
 @app.middleware('http')
 async def local_only(request:Request,call_next):
@@ -47,6 +50,8 @@ async def local_only(request:Request,call_next):
     origin=request.headers.get('origin')
     if origin and origin not in ('http://localhost:8765','http://127.0.0.1:8765','http://localhost:5173','http://127.0.0.1:5173'):
         return JSONResponse({'detail':'Untrusted origin'},status_code=403)
+    if request.method not in ('GET', 'HEAD', 'OPTIONS') and update_service.installing:
+        return JSONResponse({'detail':'Frameinsight is closing for the update. Reopen it after installation.'},status_code=503)
     return await call_next(request)
 @app.exception_handler(ValueError)
 async def value_error(request,e): return JSONResponse({'detail':str(e)},status_code=422)
@@ -117,7 +122,7 @@ def create_project(body:NewProject):
 def video_library():
     with db.connect() as c:
         rows=c.execute('SELECT v.id,v.project_id,v.data,p.name,p.revision FROM videos v JOIN projects p ON p.id=v.project_id ORDER BY v.rowid DESC').fetchall()
-        validated={(r['id'],r['video_id'],r['revision']) for r in c.execute('SELECT id,video_id,revision,data FROM validations') if json.loads(r['data']).get('passed')}
+        validated={(r['id'],r['video_id'],r['revision']) for r in c.execute('SELECT id,video_id,revision,data FROM validations') if json.loads(r['data']).get('passed') and json.loads(r['data']).get('app_version') == APP_VERSION}
     return [{**json.loads(r['data']), 'project_id':r['project_id'], 'project_name':r['name'],
              'finished':json.loads(r['data']).get('status')=='ready' and json.loads(r['data']).get('finished_revision')==r['revision'] and (json.loads(r['data']).get('validation_id'),r['id'],r['revision']) in validated} for r in rows]
 

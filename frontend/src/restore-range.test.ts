@@ -2,7 +2,7 @@ import {describe,it,expect} from 'vitest';
 import {deleteGeometryRange,markHiddenRange,prepareGeometryFrame} from './hidden-range';
 import {interpolatePerson} from './interpolation';
 import {previewRestoreRange,restoreRange} from './restore-range';
-import {emptyObservation,uuid,validateDomain,type Change,type Domain,type Geometry,type Operation,type Video} from './types';
+import {setBox,emptyObservation,uuid,validateDomain,type Change,type Domain,type Geometry,type Operation,type Video} from './types';
 
 const videos={v:{id:'v',frame_count:2000,width:640,height:360} as Video};
 const at=(d:Domain,f:number)=>Object.values(d.observations).find(o=>o.identity_uuid==='p'&&o.video_id==='v'&&o.frame_index===f)!;
@@ -11,7 +11,7 @@ function operation(before:Domain,after:Domain):Operation{
  return {id:uuid(),base_revision:0,label:'Fixture edit',video_id:'v',frame_index:1000,changes};
 }
 function draw(d:Domain,frame:number,left:number,geometry:Geometry='person_visible'){
- const segment=prepareGeometryFrame(d,'v','p',frame,geometry),o=at(d,frame)||emptyObservation('v',frame,'p',segment.id);o[geometry]=[left,80,left+60,geometry==='person_visible'?240:310];o.provenance[geometry]={origin:'manual',proposal_id:null,human_corrected:true};o.review_state='draft';d.observations[o.id]=o;return o;
+ const segment=prepareGeometryFrame(d,'v','p',frame,geometry),o=at(d,frame)||emptyObservation('v',frame,'p',segment.id);setBox(o,geometry,[left,80,left+60,geometry==='person_visible'?240:310]);o.provenance[geometry]={origin:'manual',proposal_id:null,human_corrected:true};o.review_state='draft';d.observations[o.id]=o;return o;
 }
 function setup(legacy=false){
  const d:Domain={identities:{p:{id:'p',person_id:1,name:'Person 1'}},segments:{s:{id:'s',video_id:'v',identity_uuid:'p',start:0,end:null,status:'verified'}},observations:{},intervals:{},reviews:{},links:{},proposal_reviews:{}};

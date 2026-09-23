@@ -1,7 +1,9 @@
 Bundled components remain under their original licenses; see individual files.
-PyAV 18.1.0 is BSD-3-Clause; its unmodified PyPI Windows wheel contains
+PyAV 18.1.0 is BSD-3-Clause; its unmodified PyPI wheels contain
 FFmpeg and codec DLLs, including GPL components (x264, x265). Their source
-and build recipes are available from the upstream projects:
+and matching build recipes are in the release's third-party-sources archive.
+See VIDEO-LIBRARY-SOURCES.txt and video-library-sources.json beside this file.
+Upstream projects:
 https://github.com/PyAV-Org/PyAV/tree/v18.1.0
 https://github.com/PyAV-Org/pyav-ffmpeg
 https://ffmpeg.org/download.html
@@ -17,4 +19,5 @@ components were generated from the official registry and are supplied
 as source under app/frontend-source/src/components/ui.
 The application backend is supplied
 as Python source under app/backend. Application frontend source and
-build files are supplied in app/frontend-source.
+build files are supplied in app/frontend-source. On Debian, application source
+and notices are under /usr/share/doc/frameinsight/source and licenses.

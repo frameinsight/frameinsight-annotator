@@ -6,6 +6,7 @@ from pathlib import Path
 from xml.etree import ElementTree as ET
 from defusedxml.ElementTree import fromstring
 from .config import DATA
+from .geometry import reject_dynamic
 from .db import snapshot, connect, transaction, now, job_update
 from .schema import issues, MODELS, validate_state
 
@@ -22,6 +23,7 @@ def native_manifest(project):
 
 def cvat_xml(project, vid, *, visible_only=False):
     state = project['state']; video = project['videos'][vid]
+    reject_dynamic(o for o in state['observations'].values() if o['video_id'] == vid)
     root = ET.Element('annotations'); ET.SubElement(root, 'version').text = '1.1'
     meta = ET.SubElement(root, 'meta'); task = ET.SubElement(meta, 'task')
     for name, val in {'id': 0, 'name': video['name'], 'size': video['frame_count'], 'mode': 'interpolation', 'start_frame': 0, 'stop_frame': video['frame_count']-1, 'frame_filter': '', 'overlap': 0, 'flipped': 'False'}.items(): ET.SubElement(task, name).text = str(val)
@@ -57,6 +59,7 @@ def cvat_xml(project, vid, *, visible_only=False):
     return ET.tostring(root, encoding='utf-8', xml_declaration=True)
 
 def yolo_rows(obs, width, height, profile):
+    reject_dynamic(obs)
     rows, pairs = [], []
     geometries = {'dual_class': [('person_ext', 0), ('person_visible', 1)], 'full_only': [('person_ext', 0)], 'visible_only': [('person_visible', 0)]}[profile]
     for o in obs:
@@ -87,6 +90,7 @@ def export_project(pid, settings, jid):
         project = snapshot(pid); native = native_manifest(project)
         eid = str(uuid.uuid4()); path = DATA / 'exports' / f'{eid}.zip'
         profile = settings['format']; exclusions = []; included = 0
+        if profile != 'native': reject_dynamic(project['state']['observations'].values())
         with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as z:
             z.writestr('native/project.json', json.dumps(native, indent=2))
             z.writestr('settings.json', json.dumps(settings, indent=2))

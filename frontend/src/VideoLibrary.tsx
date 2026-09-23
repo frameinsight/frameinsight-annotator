@@ -86,7 +86,7 @@ export function VideoLibrary({onOpen, onNew}: {onOpen: (p: string, v: string) =>
           </article>
         ))}</div>}
         {!loading && videos.length > 0 && !shown.length && <div className="library-no-results"><p>No videos match this search.</p><Button variant="ghost" onClick={() => { setQuery(''); setFilter('all'); }}>Clear filters</Button></div>}
-        {!loading && !videos.length && <div className="library-empty"><Upload size={35}/><h2>Your first video starts here</h2><p>Add a video, draw your first person, and adjust their box as you move through the frames.</p><div className="empty-actions"><Button onClick={onNew}><Plus size={16}/>Create new video</Button><Button variant="outline" onClick={() => setGuide(true)}><BookOpen size={16}/>See the 5-step guide</Button></div></div>}
+        {!loading && !videos.length && <div className="library-empty"><Upload size={35}/><h2>Your first video starts here</h2><p>Add a video, draw your first object, and adjust its box as you move through the frames.</p><div className="empty-actions"><Button onClick={onNew}><Plus size={16}/>Create new video</Button><Button variant="outline" onClick={() => setGuide(true)}><BookOpen size={16}/>See the 5-step guide</Button></div></div>}
         <details className="restore-backup"><summary><FolderArchive size={16}/> Restore a backup</summary><p>Choose a project backup ZIP. You will also need the original videos on this computer.</p><Input aria-label="Restore backup" type="file" accept=".zip" disabled={!!restore && !['completed', 'failed'].includes(restore.status)} onChange={e => {
           const file = e.target.files?.[0]; if (!file) return;
           const data = new FormData(); data.append('file', file); setError('');

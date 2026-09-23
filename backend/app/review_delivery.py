@@ -16,7 +16,7 @@ from .config import DATA, safe_path
 from .review_validation import validate_document, LIMITATION
 from .video import sha256
 
-APP_VERSION = '2.0.0'
+from .version import APP_VERSION
 POOL = ThreadPoolExecutor(max_workers=1, thread_name_prefix='video-review')
 
 
@@ -61,6 +61,7 @@ def verify_source(document):
 
 
 def current_matches(job, c=None):
+    if job.get('app_version') != APP_VERSION: return False
     context = c or db.connect()
     try:
         if c is None: context.execute('BEGIN')
@@ -125,16 +126,19 @@ def draw_annotations(image, rows, font):
     draw = ImageDraw.Draw(image)
     width, height = image.size
     line = max(2, round(min(width, height) / 360))
+    label_counts = defaultdict(int)
     for index, row in enumerate(rows):
         box = row['box_xyxy']; color = row.get('color', '#22d3ee')
         draw.rectangle(tuple(box), outline=color, width=line)
         person = row.get('person_id')
-        label = f'Person {person if person is not None else "UNASSIGNED"} | {row["class_name"]}'
+        label = f'Track {person if person is not None else "UNASSIGNED"} | {row["class_name"]}'
         bounds = draw.textbbox((0, 0), label, font=font)
         tw, th = bounds[2]-bounds[0]+8, bounds[3]-bounds[1]+8
         x = min(max(0, box[0]), max(0, width-tw))
-        # Put the two class labels on different edges so equal boxes remain legible.
-        y = box[1]-th if row['geometry_name'] == 'person_visible' else box[3]
+        # Stack class labels of a shared track on alternating box edges.
+        ordinal = label_counts[row.get('identity_uuid')]
+        label_counts[row.get('identity_uuid')] += 1
+        y = box[1]-th*(ordinal//2+1) if ordinal % 2 == 0 else box[3]+th*(ordinal//2)
         y = min(max(0, y), max(0, height-th))
         draw.rectangle((x, y, min(width, x+tw), y+th), fill='#101820', outline=color, width=1)
         draw.text((x+4, y+4-bounds[1]), label, font=font, fill=color)
@@ -268,7 +272,7 @@ def validation_proof(pid, settings, c=None):
         row = context.execute('SELECT data FROM validations WHERE id=? AND project_id=? AND video_id=?', (validation_id, pid, vid)).fetchone()
         if not row: raise ValueError('Validation proof was not found for this video')
         report = json.loads(row['data']); job = get_review(review_id)
-        if not report['passed'] or report['revision'] != revision or report['review_job_id'] != review_id or job['project_id'] != pid or job['video_id'] != vid or job['revision'] != revision:
+        if report.get('app_version') != APP_VERSION or not report['passed'] or report['revision'] != revision or report['review_job_id'] != review_id or job['project_id'] != pid or job['video_id'] != vid or job['revision'] != revision:
             raise ValueError('Validation proof does not match this export')
         project = db.get_state(context, pid)
         if project['revision'] != revision: raise db.Conflict(project['revision'])

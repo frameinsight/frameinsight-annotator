@@ -1,5 +1,4 @@
 import json
-import colorsys
 import secrets
 import sqlite3
 import threading
@@ -8,15 +7,17 @@ from datetime import datetime, timezone
 from .config import DB
 from .schema import MODELS, Operation, validate_state
 LOCK = threading.RLock()
+# Match frontend/colors.ts. Red is reserved for hidden intervals; keep legacy colors unchanged.
+NEW_BOX_COLORS = ('#fbbf24','#fb923c','#facc15','#a3e635','#4ade80','#2dd4bf','#22d3ee','#38bdf8','#60a5fa','#818cf8','#a78bfa','#c084fc')
 
 def class_palette(names, existing=None):
     palette = dict(existing or {})
     for name in dict.fromkeys([*(names or ['Person']), 'person_visible', 'person_extended']):
         if name in palette:
             continue
-        # Sample several bright colors and keep the most distinct candidate.
+        # Randomize ties, then choose the allowed color furthest from existing classes.
         def rgb(color): return tuple(int(color[i:i+2], 16) for i in (1, 3, 5))
-        candidates = [tuple(round(c * 255) for c in colorsys.hsv_to_rgb(secrets.randbelow(3600)/3600, .55, .95)) for _ in range(32)]
+        candidates = [rgb(color) for color in secrets.SystemRandom().sample(NEW_BOX_COLORS, len(NEW_BOX_COLORS))]
         used = [rgb(c) for c in palette.values()]
         chosen = max(candidates, key=lambda c: min((sum((a-b)**2 for a,b in zip(c,u)) for u in used), default=0))
         palette[name] = '#%02x%02x%02x' % chosen
@@ -90,7 +91,7 @@ def get_state(c, pid):
     for row in c.execute('SELECT collection,id,data FROM entities WHERE project_id=?', (pid,)):
         state[row['collection']][row['id']] = json.loads(row['data'])
     videos = {r['id']: json.loads(r['data']) for r in c.execute('SELECT id,data FROM videos WHERE project_id=?', (pid,))}
-    return {**dict(p), 'classes': json.loads(p['classes']), 'class_colors': json.loads(p['class_colors']), 'schema_version': 1, 'state': state, 'videos': videos}
+    return {**dict(p), 'classes': json.loads(p['classes']), 'class_colors': json.loads(p['class_colors']), 'schema_version': 2, 'state': state, 'videos': videos}
 
 def snapshot(pid):
     with connect() as c: return get_state(c, pid)
@@ -121,6 +122,8 @@ def apply(pid, operation: Operation):
             if change.after is None: state[change.collection].pop(change.id, None)
             else:
                 value = MODELS[change.collection].model_validate(change.after).model_dump(mode='json', exclude_unset=change.collection in ('identities', 'intervals'))
+                if change.collection == 'observations' and 'boxes' not in change.after:
+                    value.pop('boxes', None)  # Preserve legacy undo values byte-for-byte in shape.
                 if value['id'] != change.id: raise ValueError('Entity ID mismatch')
                 state[change.collection][change.id] = value
             if change.collection == 'observations':

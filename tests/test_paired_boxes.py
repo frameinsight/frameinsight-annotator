@@ -25,7 +25,7 @@ def test_export_pairs_geometry_and_keeps_per_type_labels_and_keyframes(project):
                        'person_ext': {'origin': 'interpolated', 'human_corrected': False, 'proposal_id': None}}
     persist(p)
     doc = annotation_document(p['id'], v)
-    assert doc['schema_version'] == 2 and doc['media_included'] is False
+    assert doc['schema_version'] == 3 and doc['media_included'] is False
     visible, extended = doc['annotation_index']
     assert visible['identity_uuid'] == extended['identity_uuid'] == i
     assert visible['person_id'] == extended['person_id'] == 17
@@ -34,7 +34,7 @@ def test_export_pairs_geometry_and_keeps_per_type_labels_and_keyframes(project):
     assert extended['box_type'] == 'person_extended' and extended['class_name'] == 'Full worker'
     assert visible['annotation_type'] == 'keyframe' and extended['annotation_type'] == 'interpolated'
     assert extended['color'] == '#abcdef' and extended['box_xyxy'] == o['person_ext']
-    assert doc['frame_annotations'][0]['boxes'] == {'person_visible': o['person_visible'], 'person_extended': o['person_ext']}
+    assert doc['frame_annotations'][0]['boxes'] == {'person_visible': o['person_visible'], 'person_ext': o['person_ext']}
     assert doc['summary']['people'] == 1 and doc['summary']['extended_boxes'] == 1
 
 

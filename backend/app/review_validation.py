@@ -3,8 +3,10 @@ import json
 import math
 from fractions import Fraction
 from .schema import MODELS, validate_state
+from .geometry import box_items, box_style
+from .visibility import presence_intervals
 
-LIMITATION = 'Structural checks cannot determine whether two boxes show the same real person or whether a person was missed. Visual review and the stated coverage are the annotator’s confirmation.'
+LIMITATION = 'Structural checks cannot determine whether two boxes show the same real object or whether an object was missed. Visual review and the stated coverage are the annotator’s confirmation.'
 
 
 def numeric_box(box):
@@ -50,16 +52,20 @@ def validate_document(document):
                 model.model_validate(value)
                 if value.get('id') != key: raise ValueError('Entity key and ID differ')
             except (ValueError, TypeError) as e: error('entity_schema', f'{collection}: {e}', entity_id=key)
+    schema_invalid = any(item['code'] == 'entity_schema' for item in errors)
     try: validate_state(state, videos, visible_only=True)
-    except (ValueError, TypeError, KeyError, IndexError) as e: error('domain_integrity', str(e))
+    except (ValueError, TypeError, KeyError, IndexError, AttributeError) as e: error('domain_integrity', str(e))
     check('Boxes, classes, identities, segments, gaps and links', before)
+    if schema_invalid:
+        return {'passed': False, 'errors': errors, 'warnings': [], 'checks': checks,
+                'summary': {'people': 0, 'frames': 0, 'boxes': 0}, 'limitation': LIMITATION}
     before = len(errors)
-    annotated = {o.get('identity_uuid') for o in state.get('observations', {}).values() if o.get('person_visible') or o.get('person_ext')}
+    annotated = {o.get('identity_uuid') for o in state.get('observations', {}).values() if any(box_items(o))}
     ids = {}
     for ident in annotated:
         person = state.get('identities', {}).get(ident, {})
         number = person.get('person_id')
-        first_frame = min(o['frame_index'] for o in state['observations'].values() if o.get('identity_uuid') == ident and (o.get('person_visible') or o.get('person_ext')))
+        first_frame = min(o['frame_index'] for o in state['observations'].values() if o.get('identity_uuid') == ident and any(box_items(o)))
         if type(number) is not int or number <= 0:
             error('missing_person_id', 'Assign a positive numeric person ID before finishing.', identity_uuid=ident, frame_index=first_frame)
         elif number in ids:
@@ -98,20 +104,30 @@ def validate_document(document):
         number = person.get('person_id')
         common = (vid, frame, ident)
         expected_frames[common] = o
-        for geometry, box_type in [('person_visible', 'person_visible'), ('person_ext', 'person_extended')]:
-            box = o.get(geometry)
-            if box is None: continue
+        frame_classes = set()
+        for geometry, box in box_items(o):
             if not numeric_box(box): error('invalid_box', 'A box must have four finite numeric coordinates.', frame_index=frame, identity_uuid=ident)
-            style = person.get('box_styles', {}).get(geometry, {})
-            expected[(*common, box_type)] = {'observation_id': o.get('id'), 'person_id': number, 'box_xyxy': box,
-                'class_name': style.get('class_name', person.get('class_name', 'person_visible') if geometry == 'person_visible' else 'person_extended'),
-                'geometry_name': geometry, 'timestamp_seconds': times.get((vid, frame))}
+            style = box_style(person, geometry, document.get('class_colors'))
+            if style['class_name'] in frame_classes:
+                error('duplicate_frame_class', 'One track has more than one box for the same class on this frame.', frame_index=frame, identity_uuid=ident)
+            frame_classes.add(style['class_name'])
+            if geometry.startswith('class:') and geometry[6:] not in document.get('classes', []):
+                error('unknown_class', 'A named box class is missing from the project class catalog.', frame_index=frame, identity_uuid=ident)
+            provenance = o.get('provenance', {}).get(geometry, {})
+            generated = provenance.get('origin') in ('interpolated', 'model_track', 'copied_track') and not provenance.get('human_corrected')
+            expected[(*common, geometry)] = {'observation_id': o.get('id'), 'person_id': number, 'track_id': number, 'box_xyxy': box,
+                'class_name': style['class_name'], 'color': style['color'], 'class_key': geometry, 'geometry_name': geometry,
+                'box_type': 'person_extended' if geometry == 'person_ext' else geometry,
+                'origin': provenance.get('origin'), 'human_corrected': provenance.get('human_corrected', False),
+                'annotation_type': ('interpolated' if provenance.get('origin') == 'interpolated' else 'generated') if generated else 'keyframe', 'presence': 'present',
+                'protected_from_interpolation': o['review_state'] == 'approved' or not generated,
+                'timestamp_seconds': times.get((vid, frame))}
         a, b = o.get('person_ext'), o.get('person_visible')
         if numeric_box(a) and numeric_box(b) and any((b[0] < a[0]-.01, b[1] < a[1]-.01, b[2] > a[2]+.01, b[3] > a[3]+.01)):
             warning('visible_outside_extended', 'The Visible box extends outside the Extended box. Check both edges.', frame_index=frame, identity_uuid=ident, person_id=number)
     seen = set()
     for row in document.get('annotation_index', []):
-        key = (row.get('video_id'), row.get('frame_index'), row.get('identity_uuid'), row.get('box_type'))
+        key = (row.get('video_id'), row.get('frame_index'), row.get('identity_uuid'), row.get('class_key'))
         target = expected.get(key)
         if key in seen or target is None or any(row.get(k) != v for k, v in (target or {}).items()):
             error('annotation_index_mismatch', 'The exported box index differs from the saved annotations.', frame_index=row.get('frame_index'), identity_uuid=row.get('identity_uuid'))
@@ -125,16 +141,22 @@ def validate_document(document):
     for row in document.get('frame_annotations', []):
         key = (row.get('video_id'), row.get('frame_index'), row.get('identity_uuid'))
         o = expected_frames.get(key)
-        if key in seen_frames or not o or row.get('observation_id') != o.get('id') or row.get('boxes') != {'person_visible': o.get('person_visible'), 'person_extended': o.get('person_ext')} or row.get('person_id') != state.get('identities', {}).get(key[2], {}).get('person_id') or row.get('timestamp_seconds') != times.get(key[:2]):
-            error('paired_box_identity', 'The paired-box rows do not share the saved identity and observation.', frame_index=row.get('frame_index'))
+        if key in seen_frames or not o or row.get('observation_id') != o.get('id') or row.get('boxes') != dict(box_items(o)) or row.get('person_id') != state.get('identities', {}).get(key[2], {}).get('person_id') or row.get('track_id') != row.get('person_id') or row.get('timestamp_seconds') != times.get(key[:2]):
+            error('paired_box_identity', 'The per-class box rows do not share the saved identity and observation.', frame_index=row.get('frame_index'))
         seen_frames.add(key)
-    if seen_frames != set(expected_frames): error('paired_box_count', 'A paired-box row is missing or duplicated.')
+    if seen_frames != set(expected_frames): error('paired_box_count', 'A track/frame box row is missing or duplicated.')
     expected_summary = {'videos':len(videos),'people':len(state.get('identities',{})), 'observations':len(state.get('observations',{})),
-                        'visible_boxes':sum(k[3]=='person_visible' for k in expected),'extended_boxes':sum(k[3]=='person_extended' for k in expected),
+                        'visible_boxes':sum(k[3]=='person_visible' for k in expected),'extended_boxes':sum(k[3]=='person_ext' for k in expected), 'boxes':len(expected),
+                        'boxes_by_class':{key:sum(k[3] == key for k in expected) for key in sorted({k[3] for k in expected})},
                         'frames_in_ledger':sum(len(v) for v in ledgers.values())}
     if any(document.get('summary',{}).get(k)!=v for k,v in expected_summary.items()):error('summary_counts', 'Exported summary counts differ from the saved annotations and frame ledger.')
-    check('Exported index and paired-box identity consistency', before)
-    if not annotated: warning('no_annotations', 'No person boxes are saved. Confirm that this is intentional for the chosen coverage.')
+    try:
+        if document.get('presence_intervals') != presence_intervals(state, videos):
+            error('presence_intervals', 'Exported per-class presence differs from saved boxes and gaps.')
+    except (ValueError, TypeError, KeyError, IndexError) as e:
+        error('presence_intervals', f'Could not derive per-class presence: {e}')
+    check('Exported index, class presence and shared track identity consistency', before)
+    if not annotated: warning('no_annotations', 'No annotation boxes are saved. Confirm that this is intentional for the chosen coverage.')
     for s in state.get('segments', {}).values():
         if s.get('status') == 'unresolved': warning('unresolved_segment', 'This segment’s real-world identity remains unresolved.', frame_index=s.get('start'), identity_uuid=s.get('identity_uuid'))
     for link in state.get('links', {}).values():
@@ -143,5 +165,5 @@ def validate_document(document):
     return {'passed': not errors, 'errors': errors, 'warnings': grouped_warnings, 'checks': checks,
             'summary': {'people': len(annotated), 'frames': sum(v.get('frame_count', 0) for v in videos.values()), 'boxes': len(expected),
                         'warning_occurrences': len(warnings), 'warning_groups':len(grouped_warnings),
-                        'visible_boxes': sum(k[3] == 'person_visible' for k in expected), 'extended_boxes': sum(k[3] == 'person_extended' for k in expected)},
+                        'visible_boxes': sum(k[3] == 'person_visible' for k in expected), 'extended_boxes': sum(k[3] == 'person_ext' for k in expected)},
             'limitation': LIMITATION}

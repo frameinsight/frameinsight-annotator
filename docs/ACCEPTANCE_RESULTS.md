@@ -1,4 +1,6 @@
-# Acceptance results — 18 September 2026
+# Historical acceptance results — 18 September 2026
+
+This is the development log for earlier versions, not a statement of current functionality. Some workflows described below have since been replaced. See the [current user guide](USER_GUIDE.md), [3.0.0 release notes](releases/v3.0.0.md), and the packaged verification reports for the current release.
 
 The application runs locally at http://127.0.0.1:8765. Source is implemented, with persistent manual annotation, exact source frames, real model proposals, identity/gap editing, review gates, native/CVAT/YOLO/MOT exports, and native restoration. **The completed export snapshot has 613/613 reviewed-complete frames and 6,904 approved observations at revision 153.** Subsequent live edits are separate; a user adjustment at revision 154 correctly returned one observation to draft. See [clip review](CLIP_REVIEW.md) for methods, corrections and preserved uncertainty.
 

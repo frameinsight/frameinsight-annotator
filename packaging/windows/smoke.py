@@ -2,6 +2,7 @@
 import ctypes,io,json,os,subprocess,sys,time,urllib.error,urllib.request,uuid
 from pathlib import Path
 root=Path(sys.argv[1]).resolve();fixture=Path(sys.argv[2]).resolve()
+app_version=json.loads((root/'build-manifest.json').read_text())['version']
 k=ctypes.WinDLL('kernel32',use_last_error=True)
 k.OpenEventW.argtypes=[ctypes.c_ulong,ctypes.c_int,ctypes.c_wchar_p];k.OpenEventW.restype=ctypes.c_void_p
 k.SetEvent.argtypes=k.CloseHandle.argtypes=[ctypes.c_void_p]
@@ -38,6 +39,7 @@ p=subprocess.Popen([str(root/'Frameinsight.exe')])
 try:
  wait(lambda:request('/api/projects') is not None)
  assert b'Frameinsight' in request('/',raw=True)
+ assert request('/api/updates/status')['can_install'] is True
  second=subprocess.run([str(root/'Frameinsight.exe')],timeout=10);assert second.returncode==0
  project=request('/api/projects',{'name':'Windows runtime acceptance','classes':['Worker','Customer']});pid=project['id']
  palette=project['class_colors'];assert len(set(palette.values()))==len(palette)
@@ -52,9 +54,11 @@ try:
  assert request('/api/videos/'+vid+'/frames/10',raw=True).startswith(b'\x89PNG')
  from backend.app.schema import Identity,Segment,Observation
  who,seg,obs=uid(),uid(),uid()
- identity=Identity(id=who,person_id=7,class_name='Worker',color='#ff7700',box_styles={'person_ext':{'class_name':'person_extended','color':'#67e2b1'}}).model_dump(mode='json')
+ styles={'class:'+name:{'class_name':name,'color':color} for name,color in zip(['Worker','Customer','person_extended'],['#ff7700','#33ddff','#dd55ff'])}
+ identity=Identity(id=who,person_id=7,class_name='Worker',color='#ff7700',box_styles={'person_ext':{'class_name':'person_extended','color':'#67e2b1'},**styles}).model_dump(mode='json')
  segment=Segment(id=seg,identity_uuid=who,video_id=vid,start=0).model_dump(mode='json')
- observation=Observation(id=obs,identity_uuid=who,segment_id=seg,video_id=vid,frame_index=10,person_visible=[10,20,100,200],person_ext=[5,10,110,220],full_quality='estimated',provenance={'person_visible':{'origin':'manual'},'person_ext':{'origin':'copied_track','human_corrected':True}}).model_dump(mode='json')
+ named_boxes={'class:Worker':[10,20,100,200],'class:Customer':[120,20,180,200],'class:person_extended':[5,10,110,220]}
+ observation=Observation(id=obs,identity_uuid=who,segment_id=seg,video_id=vid,frame_index=10,person_visible=[10,20,100,200],person_ext=[5,10,110,220],boxes=named_boxes,full_quality='estimated',provenance={'person_visible':{'origin':'manual'},'person_ext':{'origin':'copied_track','human_corrected':True},**{key:{'origin':'manual'} for key in named_boxes}}).model_dump(mode='json')
  changes=[{'collection':col,'id':val['id'],'before':None,'after':val} for col,val in [('identities',identity),('segments',segment),('observations',observation)]]
  request('/api/projects/'+pid+'/operations',{'id':uid(),'base_revision':0,'label':'Windows smoke annotation','changes':changes})
  assert request('/api/projects/'+pid)['classes']==['Worker','Customer','person_extended']
@@ -74,12 +78,14 @@ try:
  assert next(v for v in request('/api/video-library') if v['id']==vid)['finished']
  job=wait_job(request('/api/projects/'+pid+'/exports',{'format':'annotations_json','video_id':vid,**proof}))
  export=request('/api/exports/'+job['export_id']);assert export['media_included'] is False and export['annotation_index'][0]['color']=='#ff7700'
- assert export['app_version']=='2.0.0' and export['validation']['validation_id']==validation['validation_id']
+ assert export['app_version']==app_version and export['validation']['validation_id']==validation['validation_id']
  assert export['class_colors']==palette
- assert export['schema_version']==2 and len(export['annotation_index'])==2
+ assert export['schema_version']==3 and len(export['annotation_index'])==5
+ assert {row['track_id'] for row in export['annotation_index']}=={7}
+ assert all(export['frame_annotations'][0]['boxes'][key]==box for key,box in named_boxes.items())
  assert export['annotation_index'][1]['person_id']==7 and export['annotation_index'][1]['box_type']=='person_extended'
  assert export['annotation_index'][1]['origin']=='copied_track' and export['annotation_index'][1]['human_corrected'] is True
- assert export['frame_annotations'][0]['boxes']['person_extended']==[5,10,110,220]
+ assert export['frame_annotations'][0]['boxes']['person_ext']==[5,10,110,220]
  assert [(r['start'],r['end'],r['status']) for r in export['visibility_intervals']]==[(0,9,'not_visible'),(10,10,'visible'),(11,23,'not_visible')]
  stop(p)
  p=subprocess.Popen([str(root/'Frameinsight.exe')]);wait(lambda:request('/api/projects/'+pid)['revision']==1)
@@ -87,7 +93,7 @@ try:
  assert request('/api/videos/'+vid+'?confirmed=true',method='DELETE')['deleted']
  assert request('/api/video-library')==[] and fixture.exists()
  stop(p)
- report={'app_version':'2.0.0','runtime':'Windows embedded Python 3.13.12','environment':'Wine on Linux' if 'WINEPREFIX' in os.environ else 'Windows','checks':['native launcher','single instance','HTTP frontend','multipart video import','24 exact frames','PNG decoding','annotation save with class/color','class catalog and persistent random palette','video library','unreviewed finish and JSON export rejected','full 24-frame annotated review with exact timestamps','revision-bound structural validation and selected-person coverage','validated finish confirmation','annotations-only export with matching validation proof','paired-box JSON v2 with shared identity','bulk-copy provenance and correction export','automatic visibility export','delete video preserves original file','graceful shutdown','relaunch persistence'],'project_id':pid}
+ report={'app_version':app_version,'runtime':'Windows embedded Python 3.13.12','environment':'Wine on Linux' if 'WINEPREFIX' in os.environ else 'Windows','checks':['native launcher','single instance','HTTP frontend','updater package kind','multipart video import','24 exact frames','PNG decoding','annotation save with class/color','class catalog and persistent random palette','video library','unreviewed finish and JSON export rejected','full 24-frame annotated review with exact timestamps','revision-bound structural validation and selected-person coverage','validated finish confirmation','annotations-only export with matching validation proof','JSON v3 with three named classes and legacy paired geometry sharing one identity','bulk-copy provenance and correction export','automatic visibility export','delete video preserves original file','graceful shutdown','relaunch persistence'],'project_id':pid}
  Path('windows-smoke-report.json').write_text(json.dumps(report,indent=2));print(json.dumps(report),flush=True)
 finally:
  if p.poll() is None:

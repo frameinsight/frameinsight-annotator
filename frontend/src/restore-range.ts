@@ -1,4 +1,4 @@
-import {emptyObservation,uuid,type Box,type Domain,type Geometry,type Observation,type Operation,type Segment} from './types';
+import {emptyObservation,uuid,getBox,setBox,identityGeometryKeys,boxStyle,type Box,type Domain,type Geometry,type Observation,type Operation,type Segment} from './types';
 
 export type RestoreMode='interpolate'|'original';
 export type RestorePreview={mode:RestoreMode;start:number;end:number;geometry:Geometry;canRestore:boolean;restoredBoxes:number;keptBoxes:number;remainingBlockedFrames:number;anchorFrames:number[];warnings:string[];error?:string};
@@ -37,8 +37,8 @@ function originals(history:Operation[],videoId:string,identityId:string,start:nu
   for(const c of operation.changes)if(c.collection==='observations'){
    const old=c.before as Observation|null,next=c.after as Observation|null,row=old||next;
    if(!row||!belongs(videoId,identityId)(row)||row.frame_index<start||row.frame_index>end)continue;
-   if(old?.[geometry]&&!next?.[geometry])deleted.set(row.frame_index,old);
-   else if(next?.[geometry]&&JSON.stringify(old?.[geometry]??null)!==JSON.stringify(next[geometry]))change(row.frame_index);
+   if(old&&getBox(old,geometry)&&!getBox(next,geometry))deleted.set(row.frame_index,old);
+   else if(getBox(next,geometry)&&JSON.stringify(getBox(old,geometry))!==JSON.stringify(getBox(next,geometry)))change(row.frame_index);
   }
   for(const c of operation.changes)if(c.collection==='intervals'&&match(c.after)){
    const gap=c.after;
@@ -59,23 +59,23 @@ function planRestore(d:Domain,videoId:string,identityId:string,start:number,end:
  const rows=Object.values(d.observations).filter(belongs(videoId,identityId)).sort((a,b)=>a.frame_index-b.frame_index),byFrame=new Map(rows.map(o=>[o.frame_index,o]));
  const gaps=Object.values(d.intervals).filter(applies(videoId,identityId,geometry));
  const blocked=new Set<number>(),missing:number[]=[];
- for(let f=start;f<=end;f++){if(byFrame.get(f)?.[geometry])preview.keptBoxes++;else{missing.push(f);if(gaps.some(g=>covers(g,f)))blocked.add(f);}}
+ for(let f=start;f<=end;f++){if(getBox(byFrame.get(f),geometry))preview.keptBoxes++;else{missing.push(f);if(gaps.some(g=>covers(g,f)))blocked.add(f);}}
  preview.remainingBlockedFrames=blocked.size;
  if(!missing.length)return fail('Every selected frame already has this box type. Existing boxes will not be replaced.');
  if(mode==='original'){
   const prior=originals(history,videoId,identityId,start,end,geometry,d.segments);
-  for(const frame of missing){const old=prior.get(frame),source=old?.observation;if(blocked.has(frame)&&source?.[geometry])plan.boxes.push({frame,box:[...source[geometry]!],provenance:source.provenance[geometry]?structuredClone(source.provenance[geometry]):undefined,source,segmentStatus:old!.segmentStatus});}
+  for(const frame of missing){const old=prior.get(frame),source=old?.observation;if(blocked.has(frame)&&getBox(source,geometry))plan.boxes.push({frame,box:[...getBox(source,geometry)!],provenance:source!.provenance[geometry]?structuredClone(source!.provenance[geometry]):undefined,source,segmentStatus:old!.segmentStatus});}
   if(plan.boxes.some(b=>b.segmentStatus==='unresolved'))preview.warnings.push('Some original boxes had an unresolved identity segment. Recovery keeps that status; verify the person before finishing.');
   preview.remainingBlockedFrames-=plan.boxes.length;
   if(!plan.boxes.length)return fail('Original deleted boxes are not available in the available edit history. Draw two boundary boxes and choose Fill between boxes instead.');
   if(preview.remainingBlockedFrames)preview.warnings.push(`${preview.remainingBlockedFrames} deleted frames have no recoverable original box and will stay empty. Use boundary boxes and interpolation to fill those separately.`);
  }else{
-  const anchors=rows.filter(o=>o[geometry]&&(o.review_state==='approved'||!generated(o,geometry)));
+  const anchors=rows.filter(o=>getBox(o,geometry)&&(o.review_state==='approved'||!generated(o,geometry)));
   const used=new Set<number>(),timing=new Map<string,boolean>();let anchorIndex=0;
   for(const frame of missing){
    while(anchorIndex<anchors.length&&anchors[anchorIndex].frame_index<frame)anchorIndex++;
    const left=anchors[anchorIndex-1],right=anchors[anchorIndex];
-   if(!left||!right)return fail(`Frame ${frame} needs a drawn or corrected ${geometry==='person_visible'?'Visible':'Extended'} box on both sides. Add boundary boxes, then try again.`);
+   if(!left||!right)return fail(`Frame ${frame} needs a drawn or corrected ${boxStyle(d.identities[identityId],geometry).class_name} box on both sides. Add boundary boxes, then try again.`);
    const first=left.frame_index,last=right.frame_index;
    // The command may override only the chosen range, never an outside absence.
    const outside=gaps.find(g=>g.start<=last&&(g.end===null||g.end>=first)&&((g.start<start&&Math.min(g.end??Infinity,start-1)>=first)||(g.end===null||g.end>end)&&Math.max(g.start,end+1)<=last));
@@ -89,7 +89,7 @@ function planRestore(d:Domain,videoId:string,identityId:string,start:number,end:
    if(!timing.has(key))timing.set(key,t0!=null&&t1!=null&&t1>t0&&Array.from({length:last-first+1},(_,n)=>times[first+n]).every((t,n)=>t!=null&&Number.isFinite(t)&&t>=t0&&t<=t1&&(n===0||t>times[first+n-1]!)));
    const timeValid=timing.get(key)!;
    const t=timeValid?(times[frame]!-t0!)/(t1!-t0!):(frame-first)/(last-first);
-   plan.boxes.push({frame,box:left[geometry]!.map((x,i)=>x+(right[geometry]![i]-x)*t) as Box,provenance:{origin:'interpolated',proposal_id:null,human_corrected:false},segmentId:left.segment_id});used.add(first);used.add(last);
+   plan.boxes.push({frame,box:getBox(left,geometry)!.map((x,i)=>x+(getBox(right,geometry)![i]-x)*t) as Box,provenance:{origin:'interpolated',proposal_id:null,human_corrected:false},segmentId:left.segment_id});used.add(first);used.add(last);
   }
   preview.anchorFrames=[...used].sort((a,b)=>a-b);preview.remainingBlockedFrames=0;
   if(plan.join.length)preview.warnings.push('Verified segments of this person will be reconnected across the restored section. Existing box coordinates stay unchanged.');
@@ -105,7 +105,7 @@ function clearFrames(d:Domain,videoId:string,identityId:string,geometry:Geometry
   const affected=[...frames].filter(f=>covers(gap,f)).sort((a,b)=>a-b);if(!affected.length)continue;
   const original={...gap};delete d.intervals[gap.id];
   // A legacy unscoped interval still applies to the other box type in full.
-  if(!original.geometry)d.intervals[original.id]={...original,geometry:geometry==='person_visible'?'person_ext':'person_visible'};
+  if(!original.geometry){const known=identityGeometryKeys(d,identityId),others=[...new Set([...(known.some(k=>k==='person_ext'||k==='person_visible')?['person_visible','person_ext']:[]),...known])].filter(key=>key!==geometry);for(const [index,key] of others.entries()){const id=index?uuid():original.id;d.intervals[id]={...original,id,geometry:key};}}
   let cursor=original.start,reuse=!!original.geometry;
   const retain=(start:number,end:number|null)=>{const id=reuse?original.id:uuid();reuse=false;d.intervals[id]={...original,id,start,end,geometry};};
   for(const frame of affected){if(cursor<frame)retain(cursor,frame-1);cursor=frame+1;}
@@ -142,7 +142,7 @@ export function restoreRange(d:Domain,videoId:string,identityId:string,start:num
    o.evidence_note=mode==='original'?item.source!.evidence_note:`Restored interpolation between current boundary boxes. Review against the image.`;
    d.observations[o.id]=o;rows.set(item.frame,o);
   }
-  o[geometry]=[...item.box];o.geometry_link='independent';o.review_state='draft';
+  setBox(o,geometry,[...item.box]);o.geometry_link='independent';o.review_state='draft';
   if(item.provenance)o.provenance[geometry]=structuredClone(item.provenance);else delete o.provenance[geometry];
   if(geometry==='person_ext')o.full_quality=item.source?.full_quality||'estimated';
  }

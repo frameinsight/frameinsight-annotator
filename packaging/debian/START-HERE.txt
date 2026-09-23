@@ -1,0 +1,40 @@
+FRAMEINSIGHT 3.0.0 — UBUNTU / DEBIAN (64-bit Intel/AMD)
+
+Ubuntu 24.04 or newer, or Debian 12 or newer, with a graphical desktop.
+Python and video decoding libraries are included. Node and a GPU are not needed.
+
+1. Download the frameinsight_VERSION_amd64.deb file from the official release.
+2. Open it with your system's software installer and click Install.
+   Your operating system may ask for your administrator password.
+3. Open Applications and search for Frameinsight. Launch it.
+4. Your normal browser opens the local annotation app.
+5. Use Start guide for the walkthrough, or New video to begin.
+
+If opening the .deb shows an archive viewer instead of an installer, choose
+Open With > Software Install or GDebi. The terminal alternative is:
+  sudo apt install ./frameinsight_VERSION_amd64.deb
+
+The app works offline after installation. Internet is needed to check for
+updates and to download an update. Installing may download normal system
+dependencies. Updates are optional; annotation data stays on your computer.
+
+CLOSING AND UPDATING
+Closing the browser keeps Frameinsight running. Right-click Frameinsight in
+your Applications menu and choose Close Frameinsight after saving. You can
+also run: frameinsight --stop
+Close it before manually installing an update. If you choose Install update
+inside the app, the app closes itself and opens your system package installer.
+Then reopen Frameinsight from Applications.
+
+SAVED WORK
+Data: ~/.local/share/frameinsight/data
+Logs: ~/.local/state/frameinsight/server.log
+These follow XDG_DATA_HOME and XDG_STATE_HOME when configured.
+Updates, removal and purge keep your saved work. Back up your project and
+keep original videos separately. Removing the app does not remove projects.
+
+To copy the full data folder, first close Frameinsight. You can also use
+Back up project inside the app and Restore a backup on the videos screen.
+
+Only download packages from:
+https://github.com/frameinsight/frameinsight-annotator/releases
