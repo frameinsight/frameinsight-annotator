@@ -93,9 +93,9 @@ def test_full_vfr_review_preserves_every_frame_timing_last_duration_and_range_se
             assert len(frames)==6
             assert [float(f.pts*f.time_base) for f in frames]==pytest.approx(expected)
             assert meta['duration_seconds']>expected[-1]
-            pixels=frames[0].to_ndarray(format='rgb24')
-            assert ((pixels[:,:,1]>140)&(pixels[:,:,2]>140)&(pixels[:,:,0]<110)).sum()>20
-            assert ((pixels[:,:,0]>180)&(pixels[:,:,1]>65)&(pixels[:,:,1]<200)&(pixels[:,:,2]<120)).sum()>20
+            pixels=list(frames[0].to_image().convert('RGB').getdata())
+            assert sum(g>140 and b>140 and r<110 for r,g,b in pixels)>20
+            assert sum(r>180 and 65<g<200 and b<120 for r,g,b in pixels)>20
         streamed=client.get('/api/reviews/'+job['id']+'/video',headers={'Range':'bytes=0-99'})
         assert streamed.status_code==206 and len(streamed.content)==100
         assert streamed.headers['content-type']=='video/mp4'
