@@ -36,10 +36,12 @@ test('new video collects classes before uploading and opens editor',async({page,
  await page.getByLabel('Number of classes').fill('2');await page.getByLabel('Class 1',{exact:true}).fill('person_visible');await page.getByLabel('Class 2',{exact:true}).fill('person_extended');await page.getByRole('button',{name:'Continue to upload'}).click();
  const response=page.waitForResponse(r=>r.url().endsWith('/videos')&&r.request().method()==='POST');
  await page.getByLabel('Upload video').setInputFiles(path.resolve('../tests/fixtures/numbered.mp4'));
- const result=await (await response).json();videoId=result.video_id;await ready(page,0);
+ const result=await (await response).json();videoId=result.video_id;
+ // The upload response precedes project loading; the previous canvas can still show frame 0 behind the dialog.
+ await expect(page.getByRole('dialog')).toHaveCount(0);await ready(page,0);
  const library=await (await request.get('/api/video-library')).json();projectId=library.find((v:any)=>v.id===videoId).project_id;
  expect((await state(request)).classes).toEqual(['person_visible','person_extended']);
- await page.getByTestId('canvas').press('n');await page.keyboard.press('i');await expect(page.getByLabel('Class name',{exact:true})).toHaveValue('person_visible');await page.getByLabel('Class name',{exact:true}).fill('Visitor');await page.getByRole('button',{name:'Save ID',exact:true}).click();await expect(page.getByRole('dialog')).toHaveCount(0);await saved(page);expect((await state(request)).classes).toContain('Visitor');
+ await page.getByTestId('canvas').press('n');await expect(page.getByRole('button',{name:'Select Track 1',exact:true})).toHaveAttribute('aria-pressed','true');await page.getByTestId('canvas').press('i');await expect(page.getByLabel('Class name',{exact:true})).toHaveValue('person_visible');await page.getByLabel('Class name',{exact:true}).fill('Visitor');await page.getByRole('button',{name:'Save ID',exact:true}).click();await expect(page.getByRole('dialog')).toHaveCount(0);await saved(page);expect((await state(request)).classes).toContain('Visitor');
 });
 test('reuse later ID before earlier frame; class, color, interpolation and undo persist',async({page,request})=>{
  await page.getByLabel('Go to frame').fill('20');await ready(page,20);await page.getByTestId('canvas').press('n');await drag(page,[200,80],[300,300]);await page.keyboard.press('i');await page.getByLabel('Track ID',{exact:true}).fill('7');await page.getByLabel('Class name',{exact:true}).fill('Worker');await page.getByRole('button',{name:'Box color #fb923c',exact:true}).click();await page.getByRole('button',{name:'Save ID',exact:true}).click();await expect(page.getByRole('dialog')).toHaveCount(0);await saved(page);

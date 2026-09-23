@@ -90,7 +90,7 @@ jobs:
           retention-days: 7
 
   windows:
-    needs: [version, checks]
+    needs: version
     runs-on: windows-2022
     timeout-minutes: 30
     steps:
@@ -141,7 +141,7 @@ jobs:
           retention-days: 14
 
   debian:
-    needs: [version, checks]
+    needs: version
     runs-on: ubuntu-24.04
     timeout-minutes: 40
     steps:
@@ -190,7 +190,7 @@ jobs:
           retention-days: 14
 
   release:
-    needs: [version, windows, debian, sources]
+    needs: [version, checks, windows, debian, sources]
     if: (github.event_name == 'push' && github.ref_type == 'tag') || (github.event_name == 'workflow_dispatch' && inputs.publish == true)
     runs-on: ubuntu-24.04
     timeout-minutes: 10
