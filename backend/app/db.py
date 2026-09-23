@@ -103,7 +103,8 @@ def apply(pid, operation: Operation):
             previous = json.loads(old['data'])
             if old['project_id'] != pid or previous != operation.model_dump(mode='json'):
                 raise ValueError('Operation ID was reused with different content')
-            return {'revision': old['revision'], 'duplicate': True}
+            catalog = get_state(c, pid)
+            return {'revision': old['revision'], 'duplicate': True, 'classes': catalog['classes'], 'class_colors': catalog['class_colors']}
         project = get_state(c, pid)
         if operation.base_revision != project['revision']: raise Conflict(project['revision'])
         state = project['state']
@@ -147,6 +148,15 @@ def apply(pid, operation: Operation):
                 row=c.execute('SELECT video_id,frame_index FROM proposals WHERE id=?',(e['proposal_id'],)).fetchone()
                 if not row or row['video_id']!=e['video_id'] or row['frame_index']!=e['frame_index']: raise ValueError('Proposal review must reference its original video/frame')
         validate_state(state, project['videos'], visible_only=True)
+        classes = list(project.get('classes', []))
+        palette = dict(project.get('class_colors', {}))
+        for identity in state['identities'].values():
+            for style in identity.get('box_styles', {}).values():
+                name = style['class_name']
+                if name not in classes: classes.append(name)
+                palette.setdefault(name, style['color'])
+        if len(classes) > 100: raise ValueError('A project supports at most 100 classes')
+        c.execute('UPDATE projects SET classes=?,class_colors=? WHERE id=?', (json.dumps(classes),json.dumps(palette),pid))
         for change in operation.changes:
             value = state[change.collection].get(change.id)
             if value is None: c.execute('DELETE FROM entities WHERE project_id=? AND collection=? AND id=?', (pid, change.collection, change.id))
@@ -154,7 +164,7 @@ def apply(pid, operation: Operation):
         revision = project['revision'] + 1
         c.execute('UPDATE projects SET revision=? WHERE id=?', (revision, pid))
         c.execute('INSERT INTO operations VALUES(?,?,?,?,?)', (operation.id, pid, revision, operation.model_dump_json(), now()))
-        return {'revision': revision, 'duplicate': False}
+        return {'revision': revision, 'duplicate': False, 'classes': classes, 'class_colors': palette}
 
 class Conflict(Exception):
     def __init__(self, revision): self.revision = revision

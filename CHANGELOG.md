@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.1.0 — 2026-09-23
+
+Project folders with multiple videos, a dark workspace with tracks on the right, consistent class ordering, and previewable YOLO/MOT imports. See the [release notes](docs/releases/v3.1.0.md).
+
 ## 3.0.1 — 2026-09-23
 
 First public installer release. Every frame without a box now shows Hidden; context-menu undo acceptance waits for saved server state. See the [release notes](docs/releases/v3.0.1.md).

@@ -60,14 +60,7 @@ def delete_video(vid):
                     files.append((Path(job['snapshot_path']).parent,DATA/'reviews'))
                 c.execute('DELETE FROM jobs WHERE id=?', (job['id'],))
         c.execute('DELETE FROM validations WHERE video_id=?',(vid,))
-        if remaining:
-            c.execute('UPDATE projects SET revision=revision+1 WHERE id=?', (pid,))
-        else:
-            for table in ('entities', 'operations', 'jobs'):
-                c.execute(f'DELETE FROM {table} WHERE project_id=?', (pid,))
-            if c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='restored_history'").fetchone():
-                c.execute('DELETE FROM restored_history WHERE project_id=?', (pid,))
-            c.execute('DELETE FROM projects WHERE id=?', (pid,))
+        c.execute('UPDATE projects SET revision=revision+1 WHERE id=?', (pid,))
         if video.get('source'):
             files.append((Path(video['source']), DATA / 'originals'))
     warnings = []
@@ -82,5 +75,5 @@ def delete_video(vid):
                 path.unlink(missing_ok=True)
         except OSError:
             warnings.append('Some cached files could not be removed. Close other programs using them before cleaning the app cache.')
-    return {'deleted': True, 'video_id': vid, 'project_id': pid, 'project_deleted': not remaining,
+    return {'deleted': True, 'video_id': vid, 'project_id': pid, 'project_deleted': False,
             'cleanup_warning': warnings[0] if warnings else None}

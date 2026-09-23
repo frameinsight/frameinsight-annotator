@@ -21,7 +21,7 @@ At startup, Frameinsight checks this repository’s latest stable release. When 
 
 ## A simple annotation workflow
 
-1. Choose **New video**, enter your class names, and upload a video.
+1. Choose **New project**, enter its name and class names (one per line). Open the project, choose **New video**, and upload a video or enter its local path.
 2. Go to the first frame where an object appears. Press **N** for a new track, choose a class, and draw its box. A free numeric ID is assigned automatically.
 3. Move forward with **F** or **Shift+F**, then move or resize the box. Interpolation fills between your drawn/corrected boxes. Inspect the in-between frames and correct any drift.
 4. Keep the same track selected to annotate another class. Choose its class button and draw, or use **Copy to class…** to copy the current class across the video. Existing destination boxes are kept. Adjust the copies at keyframes.
@@ -134,3 +134,29 @@ If Frameinsight helps your annotation work, a GitHub star helps others find it.
 ## License
 
 [MIT](LICENSE). Bundled dependencies retain their own licenses; installer notices document them.
+
+
+### Projects and annotation imports
+
+The home screen groups recordings by project. Videos in a project share a class catalog and its ordering; each video shows only its own tracks. Existing projects and annotations stay available. Deleting the last video leaves an empty project you can reuse.
+
+To import labels:
+
+1. Open the correct project and add the matching original video. Wait for preparation to finish.
+2. Click **Import annotations** in the top playback bar.
+3. Select **YOLO detection**, **YOLO with track IDs**, or **MOT 1.1 ground truth**. Upload a ZIP, or a single TXT file.
+4. Check the source frame numbering. App frames always start at 0. For MOT, also choose whether coordinates start at 0 or 1.
+5. Click **Preview import**, check the box/track counts, frame range, warnings and ID mapping, then **Add annotations**.
+6. Play and inspect the imported boxes. Move/resize them normally. **Ctrl+Z** undoes the whole import. **K** can fill missing frames between imported boxes when you want interpolation; import itself preserves unlabeled frames as Hidden.
+
+Supported layouts and limits:
+
+- YOLO labels contain `class_id center_x center_y width height` in normalized image coordinates. The explicit tracked variant adds an integer `track_id` as column six. Confidence scores are not track IDs. Label filenames must end in the source frame number, such as `frame_000000.txt`. ZIP folders such as `labels/train` and `obj_train_data` are supported. Import one video's labels at a time.
+- Class names come from `obj.names`, `classes.txt`, or YAML `names`. Without those, YOLO uses the project's class order. You can override names in the dialog, one per line in source class-ID order.
+- Ordinary five-column YOLO contains **no identity information**. Each detection becomes a separate track; the importer cannot know which detections belong to the same object. Use tracked YOLO or MOT for existing tracking work.
+- MOT accepts `gt/gt.txt` and optional `gt/labels.txt`, or a standalone ground-truth TXT: `frame,id,left,top,width,height,included,class_id,visibility`. Class IDs start at 1; without class names, standard MOT labels are used. Rows with `included=0` are excluded. Scored MOT tracking-result files are not supported as ground truth. Visibility is retained in the observation evidence note.
+- Existing tracks are never replaced or automatically merged. Positive source IDs are preserved when unused in the project; colliding IDs and YOLO ID 0 receive a new positive ID shown in the preview. Separate classes with the same source ID share one track.
+- Upload limit: 50 MB; archive text limit: 64 MB; at most 45,000 boxes and 49,000 new entities per import. Oversized, ambiguous or invalid imports fail without changing annotations. Out-of-image boxes require explicit clipping; boxes fully outside the image are rejected.
+- Preview checks structure, not visual identity accuracy or whether the selected video matches the labels. Use **Finish** for visual review and final JSON validation before training. Imports remain local; no videos or annotations are sent to a cloud service.
+
+Format references: [CVAT YOLO](https://docs.cvat.ai/docs/dataset_management/formats/format-yolo/), [CVAT Ultralytics YOLO](https://docs.cvat.ai/docs/dataset_management/formats/format-yolo-ultralytics/), [CVAT MOT](https://docs.cvat.ai/docs/dataset_management/formats/format-mot/).

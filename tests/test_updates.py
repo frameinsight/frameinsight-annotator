@@ -14,7 +14,7 @@ from backend.app.main import app
 
 
 PACKAGE = b'Test installer payload, never executable.'
-VERSION = '3.1.0'
+VERSION = '.'.join([*updates.APP_VERSION.split('.')[:2], str(int(updates.APP_VERSION.split('.')[2]) + 1)])
 NAME = f'frameinsight_{VERSION}_amd64.deb'
 URL = f'https://github.com/{updates.REPOSITORY}/releases/download/v{VERSION}/{NAME}'
 

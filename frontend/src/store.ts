@@ -1,7 +1,7 @@
 import {create} from 'zustand';
 import {interpolatePerson,markCorrected} from './interpolation';
 import {assignPerson as assignPersonInDomain} from './identity';
-import {VISIBLE_ONLY,legacyExtended,boxStyle,classColor,classKey,geometryForClass,geometryLabel,getBox,setBox as putBox,boxKeys,type Box} from './types';
+import {VISIBLE_ONLY,legacyExtended,boxStyle,classColor,classKey,geometryForClass,orderedGeometryKeys,geometryLabel,getBox,setBox as putBox,boxKeys,type Box} from './types';
 import {deleteGeometryRange,prepareGeometryFrame} from './hidden-range';
 import {copyVisibleToExtended,copyClassTrack as copyClassInDomain} from './copy-visible';
 import {previewRestoreRange as previewRecovery,restoreRange as restoreRecovery,type RestoreMode,type RestorePreview} from './restore-range';
@@ -26,8 +26,9 @@ async function pump(){
  try{while(useStore.getState().pending.length){
   const s=useStore.getState(), op=s.pending[0], pid=s.project!.id;
   useStore.setState({saveStatus:'Saving'});
-  await post('/projects/'+pid+'/operations',op);
+  const result=await post('/projects/'+pid+'/operations',op);
   if(useStore.getState().project?.id!==pid)break;
+  if(result.classes)useStore.setState({project:{...useStore.getState().project!,classes:result.classes,class_colors:result.class_colors}});
   useStore.setState({pending:useStore.getState().pending.filter(p=>p.id!==op.id),saveError:''});await persist();
  }
  useStore.setState({saveStatus:'Saved'});
@@ -66,7 +67,7 @@ export const useStore=create<Store>((set,get)=>({
  togglePersonVisibility:(id)=>{const s=get(),hidden=!s.hiddenIds[id];set({hiddenIds:{...s.hiddenIds,[id]:hidden},...(hidden&&s.activeId===id?{activeId:''}:{})});},
  focusPerson:(id)=>{const s=get();if(!s.project?.state.identities[id])return;s.selectPerson(id);set({hiddenIds:Object.fromEntries(Object.keys(s.project.state.identities).map(key=>[key,key!==id]))});},
  showAllPeople:()=>set({hiddenIds:{}}),
- selectPerson:(id)=>{const s=get(),name=boxStyle(s.project?.state.identities[s.activeId],s.geometry).class_name;set({activeId:id,geometry:geometryForClass(s.project?.state.identities[id],name),hiddenIds:{...s.hiddenIds,[id]:false}})},
+ selectPerson:(id)=>{const s=get(),name=boxStyle(s.project?.state.identities[s.activeId],s.geometry).class_name;set({activeId:id,geometry:s.activeId===id?s.geometry:(s.project?orderedGeometryKeys(s.project,id,s.videoId).find(g=>boxStyle(s.project!.state.identities[id],g).class_name===name)||orderedGeometryKeys(s.project,id,s.videoId)[0]:null)||geometryForClass(s.project?.state.identities[id],name),hiddenIds:{...s.hiddenIds,[id]:false}})},
  deletePerson:(id)=>{const s=get();const ok=s.commit('Delete person and all their annotations',d=>{if(!d.identities[id])throw new Error('Person not found');for(const col of ['observations','segments','intervals'] as const)for(const row of Object.values(d[col]))if(row.identity_uuid===id)delete d[col][row.id];for(const link of Object.values(d.links))if(link.source===id||link.target===id)delete d.links[link.id];delete d.identities[id];});if(ok){set({activeId:s.activeId===id?'':s.activeId});s.toast('Person deleted. Press Ctrl+Z to undo.');}return ok;},
  autoInterpolate:(()=>{try{return localStorage.getItem('frameinsight:interpolate')!=='off'}catch{return true}})(),frameTimes:{},
  toggleInterpolation:()=>{const enabled=!get().autoInterpolate;set({autoInterpolate:enabled});try{localStorage.setItem('frameinsight:interpolate',enabled?'on':'off')}catch{}},

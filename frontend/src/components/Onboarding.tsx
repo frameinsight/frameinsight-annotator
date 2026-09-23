@@ -1,8 +1,9 @@
 import {useState} from 'react';
-import {ArrowLeft, ArrowRight, Check, Download, MousePointer2, ScanLine, Users, WandSparkles} from 'lucide-react';
+import {ArrowLeft, ArrowRight, Check, Download, FolderOpen, MousePointer2, ScanLine, Users, WandSparkles} from 'lucide-react';
 import {Button} from './ui/button';
 
 const steps = [
+  {title:'Create a project and add videos',icon:FolderOpen,text:'Choose New project, give it a name and enter its classes. Open the project and choose New video to upload a recording or enter its local path.',tip:'Use Import annotations in the editor if you already have YOLO or MOT labels. Preview them before adding.',action:'Open the project library',key:'Home'},
   {title: 'Start with one object', icon: Users, text: 'Choose New track, select a class, then draw a box around your object.', tip: 'Keep the same track selected as you move through the video. Each object has one ID.', action: 'New track', key: 'N'},
   {title: 'Move forward and adjust', icon: MousePointer2, text: 'Skip a few frames and move or resize the box. Interpolation fills the frames between your corrections.', tip: 'Go back and check the in-between frames. Drag any box that needs a correction.', action: 'Next frame', key: 'F'},
   {title: 'Add classes to the same ID', icon: ScanLine, text: 'Choose another class in the class bar and draw its box. You can also copy a whole class track, then resize the copies.', tip: 'One object can have any number of classes. The eye beside a class hides it from view without deleting anything.', action: 'ID, class & color', key: 'I'},

@@ -91,3 +91,8 @@ export function identityGeometryKeys(d:Domain,id:string,videoId?:string):Geometr
  for(const gap of Object.values(d.intervals))if(gap.identity_uuid===id&&gap.geometry&&(!videoId||gap.video_id===videoId))keys.add(gap.geometry);
  if(!keys.size&&identity?.class_name)keys.add('person_visible');return [...keys];
 }
+
+export function orderedGeometryKeys(project:Project,id:string,videoId?:string):Geometry[]{
+ const rank=(g:Geometry)=>{const i=(project.classes||[]).indexOf(boxStyle(project.state.identities[id],g).class_name);return i<0?Number.MAX_SAFE_INTEGER:i;};
+ return identityGeometryKeys(project.state,id,videoId).sort((a,b)=>rank(a)-rank(b)||boxStyle(project.state.identities[id],a).class_name.localeCompare(boxStyle(project.state.identities[id],b).class_name));
+}

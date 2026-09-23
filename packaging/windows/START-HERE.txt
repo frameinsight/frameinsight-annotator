@@ -1,18 +1,19 @@
-FRAMEINSIGHT 3.0.1 — WINDOWS 11 (64-bit)
+FRAMEINSIGHT 3.1.0 — WINDOWS 11 (64-bit)
 
 INSTALL AND OPEN
 1. Download Window_setup.exe from the official Frameinsight release:
    https://github.com/frameinsight/frameinsight-annotator/releases/latest
 2. Open Window_setup.exe and follow the installer.
 3. Double-click Frameinsight on your desktop. Your normal browser opens.
-4. Check that the app says LOCAL · 3.0.1.
+4. Check that the app says LOCAL · 3.1.0.
 
 No terminal, Python, Node or GPU setup is needed. Annotation works offline;
 internet is needed for checking and downloading updates.
 
 YOUR FIRST ANNOTATION
-1. Click Start guide for a short walkthrough, or New video to begin.
-2. Name the classes (box labels) you need, then choose your video.
+1. Click New project, name it, and enter class names (one per line).
+2. Open the project and click New video. Upload a video or enter its path.
+   To continue YOLO/MOT work, use Import annotations after it is ready.
 3. Once the video is ready, choose a class, press N and drag a box around
    one object (for example, a person).
 4. Press I to assign a track number, class and color. Select an existing

@@ -26,7 +26,7 @@ export const EditorCanvas=forwardRef<CanvasHandle,{proposals:Proposal[];showProp
  useLayoutEffect(()=>{const ro=new ResizeObserver(entries=>{const r=entries[0].contentRect;setSize({w:r.width,h:r.height})});if(host.current)ro.observe(host.current);return()=>ro.disconnect()},[]);
  const autoFit=useRef(true),fittedVideo=useRef('');
  const fit=()=>{autoFit.current=true;fitView()};
- const fitView=()=>{if(!video?.width)return;const scale=Math.min((size.w-48)/video.width,(size.h-48)/video.height);setView({scale,x:(size.w-video.width*scale)/2,y:(size.h-video.height*scale)/2})};
+ const fitView=()=>{if(!video?.width)return;const scale=Math.min((size.w-96)/video.width,(size.h-48)/video.height);setView({scale,x:48+(size.w-48-video.width*scale)/2,y:(size.h-video.height*scale)/2})};
  useLayoutEffect(()=>{
   if(fittedVideo.current!==videoId){fittedVideo.current=videoId;autoFit.current=true;}
   if(autoFit.current&&!gesture.current)fitView();

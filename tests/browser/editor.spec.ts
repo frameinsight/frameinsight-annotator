@@ -6,7 +6,7 @@ async function drag(page:Page,a:number[],b:number[]){const v=await page.getByTes
 async function copyTo(page:Page,target:string){await page.getByRole('button',{name:'Copy to class…',exact:true}).click();await page.getByLabel('Destination class').selectOption(target);await page.getByRole('button',{name:'Copy across all frames',exact:true}).click();await expect(page.getByRole('dialog')).toHaveCount(0)}
 async function saved(page:Page){await expect(page.locator('.save-status')).toHaveText('Saved')}
 async function ready(page:Page,f:number){await expect(page.getByTestId('canvas')).toHaveAttribute('data-frame',String(f))}
-async function reopen(page:Page){await page.reload();await expect(page.getByRole('heading',{name:'Your videos'})).toBeVisible();await page.getByTestId('open-video-'+videoId).click();}
+async function reopen(page:Page){await page.reload();await expect(page.getByRole('heading',{name:'Your projects'})).toBeVisible();await page.getByTestId('open-project-'+projectId).click();await page.getByTestId('open-video-'+videoId).click();}
 async function validatedExport(request:any){
  const revision=(await state(request)).revision;
  const rendered=await request.post(`/api/videos/${videoId}/review-jobs`,{data:{revision}});expect(rendered.ok()).toBeTruthy();const review=(await rendered.json()).id;
@@ -22,7 +22,7 @@ test.beforeEach(async({page,request})=>{
  const v=await request.post(`/api/projects/${projectId}/videos/local`,{data:{path:'tests/fixtures/numbered.mp4'}});videoId=(await v.json()).video_id;
  await expect.poll(async()=> (await state(request)).videos[videoId].status).toBe('ready');
  await page.route('**/api/updates/check*',route=>route.fulfill({json:{status:'current',current_version:'test',can_install:false}}));
- await page.goto('/');await expect(page.getByRole('heading',{name:'Your videos'})).toBeVisible();await page.getByTestId('open-video-'+videoId).click();await ready(page,0);
+ await page.goto('/');await expect(page.getByRole('heading',{name:'Your projects'})).toBeVisible();await page.getByTestId('open-project-'+projectId).click();await page.getByTestId('open-video-'+videoId).click();await ready(page,0);
 });
 test('simple workspace, explicit save and keyboard save retain annotations',async({page,request})=>{
  for(const name of ['Export','Manual ready','Visible person','Configure detector','Review / reject suggestions','New project'])await expect(page.getByRole('button',{name,exact:true})).toHaveCount(0);
@@ -31,9 +31,8 @@ test('simple workspace, explicit save and keyboard save retain annotations',asyn
  await page.getByTestId('canvas').press('Control+s');await saved(page);expect((await state(request)).revision).toBe(p.revision);
  await reopen(page);await ready(page,0);expect((await state(request)).state).toEqual(p.state);
 });
-test('new video collects classes before uploading and opens editor',async({page,request})=>{
- await page.getByRole('button',{name:'New video',exact:true}).click();await expect(page.getByLabel('Upload video')).toHaveCount(0);
- await page.getByLabel('Number of classes').fill('2');await page.getByLabel('Class 1',{exact:true}).fill('person_visible');await page.getByLabel('Class 2',{exact:true}).fill('person_extended');await page.getByRole('button',{name:'Continue to upload'}).click();
+test('new video inherits project classes and opens editor',async({page,request})=>{
+ await page.getByRole('button',{name:'New video',exact:true}).click();
  const response=page.waitForResponse(r=>r.url().endsWith('/videos')&&r.request().method()==='POST');
  await page.getByLabel('Upload video').setInputFiles(path.resolve('../tests/fixtures/numbered.mp4'));
  const result=await (await response).json();videoId=result.video_id;
@@ -68,7 +67,7 @@ test('finish reviews and validates before exporting annotations only; edits reop
  await page.getByLabel('Annotation coverage').selectOption('selected_people');await page.getByLabel('Visual review complete').check();await page.getByRole('button',{name:'Run annotation validation'}).click();await expect(page.getByTestId('validation-report')).toContainText('Validation passed');
  if(await page.getByLabel('Review notes checked').count())await page.getByLabel('Review notes checked').check();await page.getByRole('button',{name:'Prepare validated JSON'}).click();
  const link=page.getByRole('link',{name:'Download annotations (.json)'});await expect(link).toBeVisible();const doc=await (await request.get((await link.getAttribute('href'))!)).json();expect(doc.video_scope).toBe(videoId);expect(doc.media_included).toBe(false);expect(doc.annotation_index).toHaveLength(1);expect(doc.state.reviews).toEqual({});
- await page.getByRole('button',{name:'Close dialog',exact:true}).click();await page.getByRole('button',{name:'All videos',exact:true}).click();await expect(page.getByTestId('open-video-'+videoId)).toContainText('Finished');await page.getByTestId('open-video-'+videoId).click();await ready(page,0);await drag(page,[150,190],[160,190]);await saved(page);await page.getByRole('button',{name:'All videos',exact:true}).click();await expect(page.getByTestId('open-video-'+videoId)).toContainText('In progress');
+ await page.getByRole('button',{name:'Close dialog',exact:true}).click();await page.locator('.project-switch').click();await expect(page.getByTestId('open-video-'+videoId)).toContainText('Finished');await page.getByTestId('open-video-'+videoId).click();await ready(page,0);await drag(page,[150,190],[160,190]);await saved(page);await page.locator('.project-switch').click();await expect(page.getByTestId('open-video-'+videoId)).toContainText('In progress');
 });
 test('offline edits are retained and Save retries after reconnect',async({page,request,context})=>{
  await page.getByTestId('canvas').press('n');await saved(page);await context.setOffline(true);await drag(page,[100,80],[200,300]);await expect(page.locator('.save-status')).toHaveText('Save failed');await page.getByRole('button',{name:'Save',exact:true}).click();await expect(page.locator('.save-status')).toHaveText('Save failed');await context.setOffline(false);await page.getByRole('button',{name:'Save',exact:true}).click();await saved(page);expect(obs(await state(request))).toHaveLength(1);
@@ -102,7 +101,7 @@ test('restore deleted range preserves new endpoints, supports exact undo, and re
  const fresh=await browser.newContext({baseURL:new URL(page.url()).origin,viewport:{width:1440,height:960}});
  let releaseHistory!:()=>void,requested=false;const waitingHistory=new Promise<void>(resolve=>{releaseHistory=resolve});await fresh.route(`**/api/projects/${projectId}/operations`,async route=>{requested=true;await waitingHistory;await route.continue()});
  try{
-  const other=await fresh.newPage();await other.goto('/');await other.getByTestId('open-video-'+videoId).click();await ready(other,0);await other.locator('.person').filter({hasText:'Track 1'}).click();await other.getByLabel('Go to frame').fill('10');await ready(other,10);await expect(other.locator('.gap-banner')).toContainText('Interpolation paused');
+  const other=await fresh.newPage();await other.goto('/');await other.getByTestId('open-project-'+projectId).click();await other.getByTestId('open-video-'+videoId).click();await ready(other,0);await other.locator('.person').filter({hasText:'Track 1'}).click();await other.getByLabel('Go to frame').fill('10');await ready(other,10);await expect(other.locator('.gap-banner')).toContainText('Interpolation paused');
   await other.locator('.gap-banner').getByRole('button',{name:'Restore deleted range',exact:true}).click();await other.getByLabel('First frame to restore').fill('8');await other.getByLabel('Last frame to restore').fill('12');expect(requested).toBe(false);await other.getByRole('radio',{name:/Recover deleted boxes/}).check();await expect.poll(()=>requested).toBe(true);await expect(other.getByRole('button',{name:'Recover deleted boxes',exact:true})).toBeDisabled();await expect(other.locator('.restore-preview')).toHaveCount(0);await expect(other.getByRole('dialog')).toContainText('Loading saved edit history');expect((await state(request)).state).toEqual(blocked);releaseHistory();await expect(other.getByRole('dialog')).toContainText('3 boxes to restore');await other.getByRole('button',{name:'Recover deleted boxes',exact:true}).click();await saved(other);
   const recovered=await state(request);expect(at(recovered,10).boxes?.['class:person_visible']).toEqual(at({state:original},10).boxes?.['class:person_visible']);expect(at(recovered,8)).toEqual(at({state:blocked},8));expect(at(recovered,12)).toEqual(at({state:blocked},12));expect(Object.values(recovered.state.intervals)).toHaveLength(0);
   await other.getByTestId('canvas').press('Control+z');await saved(other);expect((await state(request)).state).toEqual(blocked);await other.getByTestId('canvas').press('Control+Shift+z');await saved(other);await reopen(other);await ready(other,10);expect((await state(request)).state).toEqual(recovered.state);
@@ -124,9 +123,9 @@ test('video library deletion can be cancelled and removes only the selected vide
  await page.getByTestId('canvas').press('n');await drag(page,[100,80],[200,300]);await saved(page);
  const second=await request.post('/api/projects',{data:{name:'Keep this video',classes:['person_visible','person_extended']}});const otherProject=(await second.json()).id;const added=await request.post(`/api/projects/${otherProject}/videos/local`,{data:{path:'tests/fixtures/numbered.mp4'}});const otherVideo=(await added.json()).video_id;
  await expect.poll(async()=> (await (await request.get('/api/projects/'+otherProject)).json()).videos[otherVideo].status).toBe('ready');
- await page.getByRole('button',{name:'All videos',exact:true}).click();await page.getByTestId('delete-video-'+videoId).click();await expect(page.getByRole('dialog',{name:'Delete video'})).toContainText('numbered.mp4');await page.getByRole('button',{name:'Cancel',exact:true}).click();await expect(page.getByTestId('open-video-'+videoId)).toBeVisible();
- await page.getByTestId('delete-video-'+videoId).click();await page.getByRole('button',{name:'Delete video and annotations',exact:true}).click();await expect(page.getByRole('dialog')).toHaveCount(0);await expect(page.getByTestId('open-video-'+videoId)).toHaveCount(0);await expect(page.getByTestId('open-video-'+otherVideo)).toBeVisible();expect((await request.get('/api/projects/'+projectId)).status()).toBe(404);
- await page.reload();await expect(page.getByTestId('open-video-'+videoId)).toHaveCount(0);await page.getByTestId('open-video-'+otherVideo).click();await ready(page,0);
+ await page.locator('.project-switch').click();await page.getByTestId('delete-video-'+videoId).click();await expect(page.getByRole('dialog',{name:'Delete video'})).toContainText('numbered.mp4');await page.getByRole('button',{name:'Cancel',exact:true}).click();await expect(page.getByTestId('open-video-'+videoId)).toBeVisible();
+ await page.getByTestId('delete-video-'+videoId).click();await page.getByRole('button',{name:'Delete video and annotations',exact:true}).click();await expect(page.getByRole('dialog')).toHaveCount(0);await expect(page.getByTestId('open-video-'+videoId)).toHaveCount(0);await expect(page.getByTestId('open-video-'+otherVideo)).toHaveCount(0);expect((await request.get('/api/projects/'+projectId)).status()).toBe(200);
+ await page.reload();await page.getByTestId('open-project-'+otherProject).click();await expect(page.getByTestId('open-video-'+videoId)).toHaveCount(0);await page.getByTestId('open-video-'+otherVideo).click();await ready(page,0);
 });
 
 test('visible and extended boxes share an ID with independent interpolation, deletion, undo and JSON rows',async({page,request})=>{
@@ -241,7 +240,7 @@ test('dimming is display-only, keeps overlapping box interiors bright and follow
 test('three arbitrary classes remain independent under one track through copy, hiding, corrections, reload and JSON3 export',async({page,request})=>{
  projectId=(await(await request.post('/api/projects',{data:{name:'Three arbitrary classes '+Date.now(),classes:['Face','Torso','Bag']}})).json()).id;
  videoId=(await(await request.post(`/api/projects/${projectId}/videos/local`,{data:{path:'tests/fixtures/numbered.mp4'}})).json()).video_id;
- await expect.poll(async()=>(await state(request)).videos[videoId].status).toBe('ready');await page.reload();await page.getByTestId('open-video-'+videoId).click();await ready(page,0);
+ await expect.poll(async()=>(await state(request)).videos[videoId].status).toBe('ready');await page.reload();await page.getByTestId('open-project-'+projectId).click();await page.getByTestId('open-video-'+videoId).click();await ready(page,0);
  const select=async(name:string)=>page.getByRole('button',{name:'Select class '+name,exact:true}).click();
  const canvas=page.getByTestId('canvas');await canvas.press('n');await drag(page,[110,60],[150,110]);await page.getByLabel('Go to frame').fill('10');await ready(page,10);await drag(page,[210,60],[250,110]);await saved(page);
  await select('Torso');await drag(page,[200,120],[280,260]);await page.getByLabel('Go to frame').fill('0');await ready(page,0);await drag(page,[100,120],[180,260]);await saved(page);

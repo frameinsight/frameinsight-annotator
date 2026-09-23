@@ -1,3 +1,4 @@
+import zipfile
 import asyncio
 import json
 import os
@@ -8,7 +9,7 @@ import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
-from fastapi import FastAPI, UploadFile, File, HTTPException, WebSocket, WebSocketDisconnect, Request
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, WebSocket, WebSocketDisconnect, Request
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
@@ -61,6 +62,11 @@ async def key_error(request,e): return JSONResponse({'detail':str(e)},status_cod
 async def conflict(request,e): return JSONResponse({'detail':'Revision conflict. Local edits are retained. Reconcile with server state before continuing.','revision':e.revision},status_code=409)
 class NewProject(BaseModel):
     name:str=Field(min_length=1,max_length=150)
+    @field_validator('name')
+    @classmethod
+    def clean_name(cls, value):
+        if not value.strip(): raise ValueError('Enter a project name')
+        return value.strip()
     classes:list[str]=Field(default_factory=list,max_length=100)
     @field_validator('classes')
     @classmethod
@@ -194,7 +200,12 @@ def library():
     return result
 @app.post('/api/projects/{pid}/videos/local')
 def add_local(pid:str,body:LocalVideo):
-    db.snapshot(pid); source=safe_path(body.path,WORKSPACE)
+    db.snapshot(pid)
+    source=Path(body.path).expanduser()
+    if not source.is_absolute(): source=WORKSPACE/source
+    source=source.resolve()
+    if not source.is_file() or source.suffix.lower() not in ('.mp4','.mov','.avi','.mkv','.webm','.m4v'):
+        raise ValueError('Choose an existing video file on this computer')
     return import_video(pid,source)
 @app.post('/api/projects/{pid}/videos')
 def upload(pid:str,file:UploadFile=File(...)):
@@ -281,6 +292,13 @@ def download_export(eid:str):
         if not e.get('file_hash') or sha256(e['path'])!=e['file_hash']:raise ValueError('The export file changed. Prepare a new validated download.')
     extension, media_type = ('json', 'application/json') if is_json else ('zip', 'application/zip')
     return FileResponse(e['path'],filename=f'frameinsight-{e["settings"]["format"]}-{eid[:8]}.{extension}',media_type=media_type)
+@app.post('/api/projects/{pid}/imports/annotations/preview')
+def annotation_preview(pid:str,video_id:str,file:UploadFile=File(...),format:str=Form('yolo'),frame_base:int=Form(0),coordinate_base:int=Form(0),class_names:str=Form(''),clip_boxes:bool=Form(False)):
+    from .annotation_import import preview
+    try:
+        return preview(file.file.read(50*1024*1024+1),file.filename or 'labels.txt',db.snapshot(pid),video_id,format,frame_base,coordinate_base,json.loads(class_names) if class_names.strip() else None,clip_boxes)
+    except (UnicodeError, zipfile.BadZipFile) as error:
+        raise ValueError('Use a readable UTF-8 annotation file or ZIP archive') from error
 @app.post('/api/projects/{pid}/imports/cvat')
 def import_cvat(pid:str,video_id:str,file:UploadFile=File(...)):
     p=db.snapshot(pid)

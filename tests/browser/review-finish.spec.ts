@@ -15,7 +15,7 @@ test.beforeEach(async({page,request})=>{
  videoId=(await(await request.post(`/api/projects/${projectId}/videos/local`,{data:{path:'tests/fixtures/numbered.mp4'}})).json()).video_id;
  await expect.poll(async()=>(await state(request)).videos[videoId].status).toBe('ready');
  await page.route('**/api/updates/check*',route=>route.fulfill({json:{status:'current',current_version:'test',can_install:false}}));
- await page.goto('/');await page.getByTestId('open-video-'+videoId).click();await ready(page,0);
+ await page.goto('/');await page.getByTestId('open-project-'+projectId).click();await page.getByTestId('open-video-'+videoId).click();await ready(page,0);
 });
 
 test('deleted range explains why filling stops and can be refilled with one undo',async({page,request})=>{

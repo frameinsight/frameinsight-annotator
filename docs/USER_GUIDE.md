@@ -1,7 +1,7 @@
 # Annotating your first video
 
-1. Open Frameinsight. **Your videos** lists saved work. Click a video to continue, or **New video** to begin.
-2. Enter the number of classes and their names. A class is a box label: use the names supplied by your supervisor. Click **Continue to upload**, choose your video, and wait for it to load.
+1. Open Frameinsight. **Your projects** groups saved work. Open a project to see its videos, or choose **New project** and enter its name and class names (one per line).
+2. Inside the project, click **New video**. Upload a recording or enter its path on this computer, then wait for it to load. A class is a box label: use the names supplied by your supervisor. All videos in a project share these classes.
 3. Find the first frame where your object appears. Click **New track** or press **N**. The app gives it a free ID.
 4. Choose a class button above the picture, then drag a box around the object. If you need to change or reuse an ID, press **I**, choose **Existing track ID** or type a number, and **Save ID**.
 5. Keep that track selected. Move forward a few frames with **F** or **Shift+F**, then move or resize the box. With **Auto-interpolate** on, the app fills frames between your corrections.
@@ -98,6 +98,19 @@ Finished work remains editable. Any later annotation change requires another rev
 
 At startup, a notice appears if a newer stable version is available. Choose **View update**, read what changed, then **Update** or **Skip for now**. After download verification, **Install update** saves your work and opens the system installer. Reopen Frameinsight after installation. You can also use the update icon at the top to check manually. No internet? Continue annotating normally.
 
-To remove an old video, open **All videos → Delete video** on its card. Check the filename before confirming. This permanently removes that video’s working annotations and cached frames from the app. Your original video and previously downloaded exports remain. Keep a project backup first if you may need to edit it again.
+To remove an old video, open your project’s video list and choose **Delete video** on its card. Check the filename before confirming. This permanently removes that video’s working annotations and cached frames from the app. Your original video and previously downloaded exports remain. Keep a project backup first if you may need to edit it again.
 
 See [all useful shortcuts](SHORTCUTS.md). **Help → About** shows the app version when reporting a problem.
+
+
+## Continue from YOLO or MOT labels
+
+1. Add the matching original video to your project and open it.
+2. Click **Import annotations** in the top playback bar.
+3. Choose the format and select the annotation ZIP or TXT file. Five-column YOLO has no tracking IDs; choose the six-column option only when the last column really is a track ID.
+4. Check the first source frame number. App frame numbers start at zero. For MOT, also check whether box coordinates start at zero or one. The source program or dataset documentation determines this.
+5. Click **Preview import**. Check the counts, frame range, warnings and track-ID mapping. Existing tracks are preserved; colliding IDs get new numbers.
+6. Click **Add annotations**. The boxes are now editable. Use **Ctrl+Z** to undo the import. Any newly introduced class names remain available for reuse.
+7. Inspect the result using playback and slow review before finishing. Missing source labels stay Hidden after import. Use **K** to fill between boxes when appropriate; editing a box with Auto-interpolate enabled can also fill its neighboring frames.
+
+Ordinary YOLO detection labels cannot tell the app which detections belong to one object across frames. They become separate tracks. Use tracked YOLO or MOT if you need to preserve a complete tracking annotation.

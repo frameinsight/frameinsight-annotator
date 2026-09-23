@@ -3,7 +3,7 @@ import {test,expect,type Page} from '../../frontend/node_modules/@playwright/tes
 let projectId:string,videoId:string;
 const release=(can_install=false)=>({status:'available',current_version:'3.0.0',latest_version:'3.1.0',release_notes:'Faster review\nMore annotation classes',release_url:'https://github.com/frameinsight/frameinsight/releases/tag/v3.1.0',can_install,asset:{name:'Window_setup.exe',size:12345678}});
 const state=async(request:any)=>(await request.get('/api/projects/'+projectId)).json();
-async function open(page:Page){await page.goto('/');await page.getByTestId('open-video-'+videoId).click();await expect(page.getByTestId('canvas')).toHaveAttribute('data-frame','0');}
+async function open(page:Page){await page.goto('/');await page.getByTestId('open-project-'+projectId).click();await page.getByTestId('open-video-'+videoId).click();await expect(page.getByTestId('canvas')).toHaveAttribute('data-frame','0');}
 async function draw(page:Page,a=[100,80],b=[200,300]){const v=await page.getByTestId('canvas').evaluate(e=>{const r=e.getBoundingClientRect();return{x:r.x+Number(e.getAttribute('data-offset-x')),y:r.y+Number(e.getAttribute('data-offset-y')),s:Number(e.getAttribute('data-scale'))}});await page.mouse.move(v.x+a[0]*v.s,v.y+a[1]*v.s);await page.mouse.down();await page.mouse.move(v.x+b[0]*v.s,v.y+b[1]*v.s,{steps:5});await page.mouse.up();}
 
 test.beforeEach(async({request,page})=>{

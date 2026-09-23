@@ -39,11 +39,11 @@ def test_delete_requires_confirmation_and_removes_app_data_not_original(client, 
     assert client.delete('/api/videos/' + vid).status_code == 422
     assert copied.exists()
     response = client.delete('/api/videos/' + vid + '?confirmed=true')
-    assert response.status_code == 200 and response.json()['project_deleted']
+    assert response.status_code == 200 and not response.json()['project_deleted']
     assert original.read_bytes() == b'original'
     assert not copied.exists() and not frame_dir.exists() and not export.exists()
     assert client.get('/api/video-library').json() == []
-    assert client.get('/api/projects/' + pid).status_code == 404
+    assert client.get('/api/projects/' + pid).json()['videos'] == {}
     assert client.delete('/api/videos/' + vid + '?confirmed=true').status_code == 404
 
 
@@ -76,14 +76,11 @@ def test_delete_waits_for_processing_and_exports(client):
     assert len(client.get('/api/video-library').json()) == 1
 
 
-def test_delete_closes_project_event_stream(client):
+def test_delete_last_video_keeps_project_event_stream(client):
     from starlette.websockets import WebSocketDisconnect
     pid = client.post('/api/projects', json={'name': 'Open stream'}).json()['id']
     video = add_video(pid)
     with client.websocket_connect('/api/projects/' + pid + '/events', headers={'origin': 'http://127.0.0.1:8765'}) as ws:
         assert ws.receive_json()['project_id'] == pid
         assert client.delete('/api/videos/' + video['id'] + '?confirmed=true').status_code == 200
-        with pytest.raises(WebSocketDisconnect) as closed:
-            while True:
-                ws.receive_json()
-        assert closed.value.code == 1008
+        assert ws.receive_json()['project_id'] == pid
