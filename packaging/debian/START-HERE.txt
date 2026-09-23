@@ -1,4 +1,4 @@
-FRAMEINSIGHT 3.0.0 — UBUNTU / DEBIAN (64-bit Intel/AMD)
+FRAMEINSIGHT 3.0.1 — UBUNTU / DEBIAN (64-bit Intel/AMD)
 
 Ubuntu 24.04 or newer, or Debian 12 or newer, with a graphical desktop.
 Python and video decoding libraries are included. Node and a GPU are not needed.
