@@ -1,6 +1,6 @@
 # Annotation JSON v3
 
-Choose **Finish → Prepare review video**, watch the annotated video, confirm coverage and visual review, then **Run annotation validation**. After a pass, **Prepare validated JSON → Download annotations (.json)** creates a UTF-8 file containing no embedded media. Keep the original video separately.
+Choose **Finish → Review in editor** to inspect the existing canvas playback. Then choose **Finish → I reviewed — continue**. On **Validate & export**, select coverage and **Run annotation validation**. After a pass, **Prepare validated JSON → Download annotations (.json)** creates a UTF-8 file containing no embedded media. Keep the original video separately.
 
 The selected-video export is one saved, reviewed snapshot. Its JSON includes `format: "frameinsight.annotations"`, `schema_version: 3`, `app_version`, `exported_at`, `video_scope`, `media_included: false`, project metadata, class catalog/colors, video metadata, exact frame ledgers, current annotations and relevant history.
 
@@ -36,7 +36,7 @@ Class names are examples, not reserved UI modes. An omitted class has no box on 
 | Field | Meaning |
 |---|---|
 | `observation_id` | Shared by all classes of the identity on this source frame. |
-| `class_key` | Persistent rectangle channel: new work uses `class:<name>`; legacy work retains `person_visible` or `person_ext`. |
+| `class_key` | Rectangle channel: new work uses `class:<name>` and changes its key when that class is renamed; legacy work retains `person_visible` or `person_ext`. |
 | `class_name`, `color` | Authoritative label and display color, including per-track overrides. Use the name for your training label, not a storage key. |
 | `track_id`, `person_id`, `identity_uuid` | Shared object identity. Display numbers are scoped to a project. |
 | `frame_index`, `timestamp_seconds` | Zero-based source frame and actual source time. Use the ledger rather than nominal FPS for variable-frame-rate footage. |
@@ -48,7 +48,7 @@ Class names are examples, not reserved UI modes. An omitted class has no box on 
 | `presence` | `present`; absent classes have no positive row. |
 | `box_type`, `geometry_name`, `visibility` | Legacy compatibility fields. New readers should prefer `class_key` and per-class presence. Dynamic classes have no inferred physical `visibility`. |
 
-`Copy to class…` creates `copied_track` rectangles throughout the selected video where source boxes exist and destination boxes are missing. Existing destination boxes stay. Unadjusted copies can adapt between later destination corrections; corrected boxes remain anchors. Source coordinates and identity stay unchanged. The whole copy is undoable.
+In **Copy to class…**, choose **Source class** and **Target class**, then **Copy boxes**. This creates `copied_track` rectangles throughout the selected video where source boxes exist and target boxes are missing. Existing target boxes stay. Unadjusted copies adapt between later target corrections; corrected boxes remain anchors. Source coordinates and identity stay unchanged. The whole copy is undoable. Interpolation is always on.
 
 ## Presence, deletion and display
 
@@ -60,19 +60,27 @@ No box means no annotation of that class. It does **not** prove physical occlusi
 
 **Restore range** removes a selected barrier and fills between current anchors, or recovers original coordinates from history without overwriting newer boxes. Unrecoverable frames remain blocked. Undo restores the previous boxes and intervals together.
 
-Class and track eyes, focus and dimming change only display. Full-video review and JSON include every saved class, including hidden boxes.
+Class and track eyes, focus and automatic background dimming change only display. **Review in editor** shows every saved track and class. JSON includes every saved box regardless of display hiding.
 
 ## Validation and review
 
-`validation` records checks, errors, warnings, counts, the reviewed revision, video/project IDs, validation/review job IDs, app version, snapshot/review hashes, declared coverage and the annotator’s visual confirmation.
+New `validation` records use `mode: "structural"` and include checks, errors, notes, counts, the saved revision, video/project IDs, validation ID, app version, annotation snapshot hash, declared coverage and the annotator’s confirmation. A rendered-review job ID is not required.
 
-Checks cover JSON serialization, entity schemas and references, unique positive track numbers, class-channel consistency, box bounds, frame timestamps, index/count agreement and successful rendering of every source frame. The computer cannot identify real objects, detect every missed object or judge box placement. Coverage values retain `all_people` / `selected_people` for compatibility; the UI labels these all objects / selected objects.
+Checks cover JSON serialization and schema, entity references, unique positive track numbers, class-channel consistency, finite positive-area rectangle data, frame timestamps and index/count agreement. Validation makes no judgment about image bounds, one class containing another, box placement or real-world identity. Coverage values retain `all_people` / `selected_people` for compatibility; the UI labels these all objects / selected objects.
 
-The preview is a locally rendered silent MP4 with all saved boxes, class labels and track IDs. It is not embedded in delivery JSON. A changed saved annotation, relevant metadata, or incompatible app review version invalidates proof. Export and downloads reject stale validation. A restored project requires fresh review.
+Visual review uses the existing editor with **0.125× / 0.25× / 0.5× / 1×** playback. Validation freezes only annotation JSON; it does not render video, decode footage or rehash the source file. Changed saved annotations, relevant metadata or an incompatible app version invalidate the proof. Export and downloads reject stale validation. Restored projects require a fresh validation.
+
+Older exports may contain a rendered-review job ID and review-video hash. Those remain compatibility metadata; new structural validation does not require them.
+
+## Project and class renaming
+
+**Project settings** applies class renames across current annotations and saved recovery history, including class keys, labels and interpolation barriers. IDs, coordinates, timestamps and colors stay unchanged. Legacy geometry slots keep their keys while their explicit class labels update. Renames cannot silently combine two classes.
+
+`project_settings_history` records the old/new project names, class-name mapping, added classes, revisions and change time. Earlier native-archive audit entries remain in `restored_history`. Run validation again after changing settings; names alone do not require another watch-through. Newly downloaded JSON uses the updated names. Previously downloaded files are unchanged.
 
 ## Compatibility with earlier work
 
-Existing saved legacy fields are retained without rewriting edit history. Legacy channels remain `person_visible` / `person_ext` in v3 indexes and `frame_annotations.boxes`; **v2** used `person_extended` as its paired-view extended key. Always check `schema_version`.
+Opening existing work retains its legacy fields and edit history. An explicit class rename updates the labels in recovery history as described above. Legacy channels remain `person_visible` / `person_ext` in v3 indexes and `frame_annotations.boxes`; **v2** used `person_extended` as its paired-view extended key. Always check `schema_version`.
 
 - V1 used a single visible slot and could include `missing_box` rows.
 - V2 exported two independent geometry slots and a paired frame view.

@@ -1,3 +1,4 @@
+import {Input} from './components/ui/input';
 import { Button } from "./components/ui/button";
 import { useEffect, useMemo, useState } from "react";
 import { AlertTriangle, RotateCcw, WandSparkles } from "lucide-react";
@@ -92,7 +93,7 @@ export function RestoreRange({
       <div className="form-grid">
         <label>
           First frame
-          <input
+          <Input
             autoFocus
             aria-label="First frame to restore"
             type="number"
@@ -106,7 +107,7 @@ export function RestoreRange({
         </label>
         <label>
           Last frame
-          <input
+          <Input
             aria-label="Last frame to restore"
             type="number"
             required
@@ -127,7 +128,7 @@ export function RestoreRange({
         aria-label="How to restore boxes"
       >
         <label className={mode === "interpolate" ? "selected" : ""}>
-          <input
+          <Input
             type="radio"
             name="restore-mode"
             checked={mode === "interpolate"}
@@ -143,7 +144,7 @@ export function RestoreRange({
           </span>
         </label>
         <label className={mode === "original" ? "selected" : ""}>
-          <input
+          <Input
             type="radio"
             name="restore-mode"
             checked={mode === "original"}

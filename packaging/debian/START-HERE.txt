@@ -1,23 +1,58 @@
-FRAMEINSIGHT 3.1.0 — UBUNTU / DEBIAN (64-bit Intel/AMD)
+FRAMEINSIGHT 3.2.0 — UBUNTU / DEBIAN (64-bit Intel/AMD)
 
 Ubuntu 24.04 or newer, or Debian 12 or newer, with a graphical desktop.
 Python and video decoding libraries are included. Node and a GPU are not needed.
 
-1. Download the frameinsight_VERSION_amd64.deb file from the official release.
+1. Download frameinsight_3.2.0_amd64.deb from the official release.
 2. Open it with your system's software installer and click Install.
    Your operating system may ask for your administrator password.
 3. Open Applications and search for Frameinsight. Launch it.
 4. Your normal browser opens the local annotation app.
+   Check that the app says LOCAL · 3.2.0.
 5. Choose New project, enter its name and classes, then add videos inside it.
    Use Import annotations in the editor to load YOLO or MOT labels.
 
 If opening the .deb shows an archive viewer instead of an installer, choose
 Open With > Software Install or GDebi. The terminal alternative is:
-  sudo apt install ./frameinsight_VERSION_amd64.deb
+  sudo apt install ./frameinsight_3.2.0_amd64.deb
 
 The app works offline after installation. Internet is needed to check for
 updates and to download an update. Installing may download normal system
 dependencies. Updates are optional; annotation data stays on your computer.
+
+ANNOTATE AND REVIEW
+1. Open a video from its project's table, or use Resume to return to your
+   saved frame. Choose a class, press N, then draw a box around one object.
+2. Each new track gets its own ID. Keep that track and class selected as
+   you move through frames and adjust its box. In-between frames fill
+   automatically. Check them and correct inaccurate boxes.
+3. For another class on the same object, select that class and draw its
+   box on the SAME track. Press I to change an ID, class or color, or to
+   choose an existing ID. Do not make a second track for the same object.
+4. Work saves automatically. Save or Ctrl+S saves immediately.
+5. Click Finish, then Review in editor. Your existing canvas plays from
+   frame 0 with all tracks and classes shown at 0.5x. Use the controls below
+   the canvas to step through frames or play at 0.125x, 0.25x, 0.5x or 1x.
+   Check box placement and IDs, and fix mistakes in the editor.
+6. Click Finish again, then I reviewed — continue. On Validate & export,
+   choose whether you annotated all objects or only selected objects.
+7. Click Run annotation validation. When you see "Validation passed. You can export.",
+   choose Prepare validated JSON, then Download annotations (.json).
+
+Finish does not render another video. JSON contains annotations only, with
+no video or images. Validation checks saved data, IDs and class references.
+You must check visual accuracy, missed objects and real-world identity.
+
+Use Project settings or Edit classes to change project and class names.
+Edit project & classes is also available on the export page. Names update
+saved annotations and exports while preserving track IDs and box positions.
+Changes require validation again before export.
+
+Delete removes the selected class box on one frame. Shift+Delete opens a
+range deletion; other classes stay. Use Restore range to fill between your
+boxes or recover deleted boxes when history is available. Check the preview.
+Missing boxes are shown as Hidden; the cause is not guessed.
+Help contains the guide. Press ? for actions and shortcuts.
 
 CLOSING AND UPDATING
 Closing the browser keeps Frameinsight running. Right-click Frameinsight in
@@ -35,7 +70,8 @@ Updates, removal and purge keep your saved work. Back up your project and
 keep original videos separately. Removing the app does not remove projects.
 
 To copy the full data folder, first close Frameinsight. You can also use
-Back up project inside the app and Restore a backup on the videos screen.
+Back up project from Help or the export page and Restore a backup in the
+project library. Annotation JSON is for sharing/training, not backup restore.
 
 Only download packages from:
 https://github.com/frameinsight/frameinsight-annotator/releases

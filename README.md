@@ -24,31 +24,42 @@ At startup, Frameinsight checks this repository’s latest stable release. When 
 1. Choose **New project**, enter its name and class names (one per line). Open the project, choose **New video**, and upload a video or enter its local path.
 2. Go to the first frame where an object appears. Press **N** for a new track, choose a class, and draw its box. A free numeric ID is assigned automatically.
 3. Move forward with **F** or **Shift+F**, then move or resize the box. Interpolation fills between your drawn/corrected boxes. Inspect the in-between frames and correct any drift.
-4. Keep the same track selected to annotate another class. Choose its class button and draw, or use **Copy to class…** to copy the current class across the video. Existing destination boxes are kept. Adjust the copies at keyframes.
+4. Keep the same track selected to annotate another class. Choose its class button and draw, or open **Copy to class…**, choose **Source class** and **Target class**, then click **Copy boxes**. Existing target boxes are kept. Adjust the copies at keyframes.
 5. Use track or class eyes to hide clutter without deleting labels. **Delete range** removes only the selected class. **Restore range** repairs accidental gaps without redrawing every frame.
 6. Edits save automatically. **Ctrl+S** saves explicitly. **Ctrl+Z** undoes a complete action, including its generated boxes.
-7. Choose **Finish**, prepare the complete annotated review video, watch at normal or slow speed, confirm the coverage, and run validation. Export annotation-only JSON after validation passes.
+7. Choose **Finish → Review in editor** to check the existing canvas playback at **0.125×, 0.25×, 0.5× or 1×**. Correct mistakes, click **Finish → I reviewed — continue**, then choose coverage and **Run annotation validation** on the **Validate & export** page. Export annotation-only JSON after a pass.
+
+Interpolation and background dimming are always on. The app fills between corrections and keeps the selected track's boxes bright while dimming the surrounding picture.
 
 Read the [beginner guide](docs/USER_GUIDE.md) or [shortcut list](docs/SHORTCUTS.md). Every essential shortcut has an on-screen control.
+
+### Rename a project or its classes
+
+Open **Project settings** from a project card or the project's video library. In the annotation editor, use the settings icon beside **New video**, or **Edit classes** above the canvas. Change the project name or class names and click **Save changes**. You can also add classes here.
+
+Names update across all videos, saved boxes and future exports in that project; track IDs, coordinates, colors and hidden ranges stay intact. On **Validate & export**, choose **Edit project & classes** to make the same changes. Run validation again after renaming; you do not need to watch the video again just because a name changed. Already downloaded files are not rewritten.
+
+A settings change resets the current Undo/Redo stacks, while saved edit history remains available through **Restore range**. Saving unchanged settings does not reset them.
 
 ## What is included
 
 - Exact source-frame navigation and timestamps, zoom/pan, box movement and resizing.
-- Canvas select/draw/hand tools and a context-sensitive right-click menu.
+- Compact icon toolbar for class copying, range deletion/restoration, select/draw/hand, zoom and edit history. Hover hints explain each icon; right-click a box or its class/ID label for the same context menu.
 - Large color-coded Present/Hidden frame bar; more room for video without thumbnail clutter.
 - One stable object identity with multiple user-defined classes; no fixed Visible/Extended slots in the UI.
 - Independent interpolation, copying, deletion and recovery for each class.
-- Compact searchable track list, hide/focus controls, and optional background dimming.
+- Editable project and class names, including during final review, with existing annotations updated together.
+- Compact searchable track list, hide/focus controls, and automatic background dimming.
 - Automatic saving, undo/redo, recovery journals, and native project backups.
-- Full-video review with all saved boxes and IDs, frame stepping, and **0.5× / 0.25× / 0.125×** playback.
-- Structural validation of IDs, references, coordinates, timestamps, JSON and export counts. A changed annotation invalidates its previous review proof.
+- Review in the existing annotation canvas with all tracks, frame stepping, and **0.125× / 0.25× / 0.5× / 1×** playback.
+- Structural validation of IDs, references, coordinate data, timestamps, JSON and export counts. It needs no video rendering or source-file hashing. Saved changes require revalidation.
 - Windows and Debian installers with release notes and opt-in updates.
 
 The app does not recognize objects or guarantee identity correctness. Human review checks placement, identity swaps, missed objects and interpolation. Direction labels, movement prediction, cross-camera identity association and direct custom-JSON import are not implemented. This is a localhost app, without network deployment or multi-user authentication.
 
 ## How to use annotation JSON
 
-The **Finish → Prepare validated JSON → Download annotations (.json)** file includes current annotations, source metadata, validation, and edit history. It embeds **no video, image, crop or thumbnail**. Keep the original video separately; its name and SHA-256 hash identify the matching footage. Hiding boxes in the editor does not remove them from review or export.
+After **Finish → I reviewed — continue → Run annotation validation**, use **Prepare validated JSON → Download annotations (.json)**. The file includes current annotations, source metadata, validation, and edit history. It embeds **no video, image, crop or thumbnail**. Keep the original video separately; its recorded name and SHA-256 hash identify the matching footage. **Review in editor** shows all saved tracks and classes; display hiding never removes boxes from export.
 
 New exports use `format: "frameinsight.annotations"`, `schema_version: 3`.
 
@@ -123,7 +134,7 @@ Browser tests need an **isolated** server at `127.0.0.1:5173` and Chrome. Set a 
 FRAMEINSIGHT_TEST_URL=http://127.0.0.1:5173 npm --prefix frontend run test:e2e
 ```
 
-Build and release instructions are in [Windows packaging](docs/WINDOWS.md), [Debian packaging](docs/LINUX.md) and the [release workflow](.github/workflows/desktop-release.yml). See the [3.0.0 verification record](docs/releases/v3.0.0-acceptance.md) for test coverage and limits.
+Build and release instructions are in [Windows packaging](docs/WINDOWS.md), [Debian packaging](docs/LINUX.md) and the [release workflow](.github/workflows/desktop-release.yml). See the [3.2.0 verification record](docs/releases/v3.2.0-acceptance.md) for test coverage and limits.
 
 ## Contributing
 
@@ -143,7 +154,7 @@ The home screen groups recordings by project. Videos in a project share a class 
 To import labels:
 
 1. Open the correct project and add the matching original video. Wait for preparation to finish.
-2. Click **Import annotations** in the top playback bar.
+2. Click **Import annotations** in the playback controls at the center of the timeline.
 3. Select **YOLO detection**, **YOLO with track IDs**, or **MOT 1.1 ground truth**. Upload a ZIP, or a single TXT file.
 4. Check the source frame numbering. App frames always start at 0. For MOT, also choose whether coordinates start at 0 or 1.
 5. Click **Preview import**, check the box/track counts, frame range, warnings and ID mapping, then **Add annotations**.

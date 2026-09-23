@@ -1,17 +1,32 @@
+import {Textarea} from './components/ui/textarea';
+import {Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter} from './components/ui/card';
 import {useEffect, useMemo, useState} from 'react';
-import {ArrowLeft, FolderOpen, ArrowRight, BookOpen, Check, ChevronRight, FolderArchive, LoaderCircle, LockKeyhole, Play, Plus, Search, Trash2, Upload} from 'lucide-react';
+import {Settings2, ArrowLeft, FolderOpen, ArrowRight, BookOpen, Check, CheckCircle2, ChevronRight, FileVideo2, FolderArchive, LoaderCircle, LockKeyhole, Play, Plus, Search, Trash2, Upload} from 'lucide-react';
 import {api, post} from './api';
 import {type Video} from './types';
 import {useStore} from './store';
 import {Button} from './components/ui/button';
 import {Input} from './components/ui/input';
+import {Badge} from './components/ui/badge';
+import {Table, TableHeader, TableBody, TableRow, TableHead, TableCell} from './components/ui/table';
+import './library-table.css';
 import {Modal} from './components/AppDialog';
 import {Onboarding} from './components/Onboarding';
 import {APP_VERSION} from './release';
 
-export type LibraryVideo = Video & {project_id: string; project_name: string; finished: boolean};
+export type LibraryVideo = Video & {project_id: string; project_name: string; finished: boolean; created_at?: string | null; updated_at?: string | null};
 type RestoreJob = {id: string; status: string; error?: string; restored_project_id?: string};
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
+
+function VideoTimestamp({value}: {value?: string | null}) {
+  const date = value ? new Date(value) : null;
+  if (!date || !Number.isFinite(date.getTime())) return <span className="video-table-date-unavailable" aria-label="Date unavailable">—</span>;
+  return <time className="video-table-date" dateTime={value!} title={date.toLocaleString()}>
+    <span>{date.toLocaleDateString(undefined, {day: 'numeric', month: 'short', year: 'numeric'})}</span>
+    <small>{date.toLocaleTimeString(undefined, {hour: '2-digit', minute: '2-digit'})}</small>
+  </time>;
+}
+
 
 function lastPosition(videos: LibraryVideo[]) {
   try {
@@ -24,7 +39,7 @@ function lastPosition(videos: LibraryVideo[]) {
   } catch { return null; }
 }
 
-export function VideoLibrary({onOpen, onNew, selectedProject, onSelectProject, onNewProject}: {onOpen: (p: string, v: string) => Promise<void>; onNew: () => void; selectedProject:string|null; onSelectProject:(id:string|null)=>void; onNewProject:()=>void}) {
+export function VideoLibrary({onOpen, onNew, selectedProject, onSelectProject, onNewProject, onSettings}: {onOpen: (p: string, v: string) => Promise<void>; onNew: () => void; selectedProject:string|null; onSelectProject:(id:string|null)=>void; onNewProject:()=>void;onSettings:(id:string)=>void}) {
   const [projects,setProjects]=useState<{id:string;name:string;classes:string[]|string}[]>([]);
   const [deleting, setDeleting] = useState<LibraryVideo | null>(null);
   const [videos, setVideos] = useState<LibraryVideo[]>([]);
@@ -71,29 +86,53 @@ export function VideoLibrary({onOpen, onNew, selectedProject, onSelectProject, o
     <main className="video-library">
       <div className="library-heading">
         <div><span className="library-kicker">YOUR WORKSPACE</span><h1>{selected?.name||'Your projects'}</h1><p>{selectedProject?'Videos in this project share the same classes.':'Group related videos and classes in a project.'}</p></div>
-        <div className="library-actions"><Button variant="outline" onClick={() => setGuide(true)}><BookOpen size={16}/>Start guide</Button><Button className="primary" onClick={selectedProject?onNew:onNewProject}><Plus size={17}/>{selectedProject?'New video':'New project'}</Button></div>
+        <div className="library-actions">{selectedProject&&<Button variant="outline" onClick={()=>onSettings(selectedProject)}><Settings2 size={16}/>Project settings</Button>}<Button variant="outline" size="sm" onClick={() => setGuide(true)}><BookOpen size={16}/>Start guide</Button><Button size="sm" onClick={selectedProject?onNew:onNewProject}><Plus size={17}/>{selectedProject?'New video':'New project'}</Button></div>
       </div>
       <div className="library-body">
         {error && !deleting && <p role="alert" className="error">{error}</p>}
         {loading&&!selectedProject&&<p role="status">Loading your projects…</p>}
-        {selectedProject&&<button className="project-back" onClick={()=>{setQuery('');onSelectProject(null)}}><ArrowLeft size={15}/>All projects</button>}
-        {!selectedProject&&<><label className="video-search"><Search size={17}/><Input aria-label="Search projects" placeholder="Search projects…" value={query} onChange={e=>setQuery(e.target.value)}/></label><div className="project-folders">{projects.filter(p=>p.name.toLowerCase().includes(query.toLowerCase())).map(p=>{const classes:string[]=typeof p.classes==='string'?JSON.parse(p.classes):p.classes||[];return <button className="project-folder" data-testid={'open-project-'+p.id} key={p.id} onClick={()=>{setQuery('');onSelectProject(p.id)}}><FolderOpen size={24}/><div><strong>{p.name}</strong><span>{videos.filter(v=>v.project_id===p.id).length} videos</span><small>{classes.join(' · ')||'Add classes when you annotate'}</small></div><ChevronRight size={18}/></button>})}</div>{!loading&&projects.length>0&&!projects.some(p=>p.name.toLowerCase().includes(query.toLowerCase()))&&<p className="library-no-results">No projects match this search.</p>}{!loading&&!projects.length&&<div className="library-empty"><FolderOpen size={35}/><h2>Create your first project</h2><p>For example, Person detection or Mobile detection. Add videos inside it.</p><Button onClick={onNewProject}><Plus size={16}/>New project</Button></div>}</>}
+        {selectedProject&&<Button variant="ghost" size="sm" className="project-back" onClick={()=>{setQuery('');onSelectProject(null)}}><ArrowLeft size={15}/>All projects</Button>}
+        {!selectedProject&&<><label className="video-search"><Search size={17}/><Input aria-label="Search projects" placeholder="Search projects…" value={query} onChange={e=>setQuery(e.target.value)}/></label><div className="project-folders">{projects.filter(p=>p.name.toLowerCase().includes(query.toLowerCase())).map(p=>{const classes:string[]=typeof p.classes==='string'?JSON.parse(p.classes):p.classes||[];return <Card className="project-folder gap-4 py-4 shadow-none" key={p.id}>
+          <CardHeader className="px-4"><CardTitle className="flex items-start gap-2"><FolderOpen size={17} className="mt-0.5 shrink-0 text-muted-foreground"/>{p.name}</CardTitle><CardDescription>{videos.filter(v=>v.project_id===p.id).length} {videos.filter(v=>v.project_id===p.id).length===1?'video':'videos'}</CardDescription></CardHeader>
+          <CardContent className="px-4 text-sm text-muted-foreground">{classes.join(' · ')||'Add classes when you annotate'}</CardContent>
+          <CardFooter className="mt-auto px-4"><Button variant="outline" size="sm" data-testid={'open-project-'+p.id} onClick={()=>{setQuery('');onSelectProject(p.id)}}>Open project<ChevronRight size={14}/></Button><Button variant="ghost" size="icon-sm" className="ml-auto" aria-label={'Edit project '+p.name} title="Project settings" onClick={()=>onSettings(p.id)}><Settings2 size={16}/></Button></CardFooter>
+        </Card>})}</div>{!loading&&projects.length>0&&!projects.some(p=>p.name.toLowerCase().includes(query.toLowerCase()))&&<p className="library-no-results">No projects match this search.</p>}{!loading&&!projects.length&&<div className="library-empty"><FolderOpen size={35}/><h2>Create your first project</h2><p>For example, Person detection or Mobile detection. Add videos inside it.</p><Button onClick={onNewProject}><Plus size={16}/>New project</Button></div>}</>}
         {selectedProject&&<>
-        {!loading && resume && resume.video.project_id===selectedProject && <div className="resume-video"><div className="resume-icon"><Play size={19}/></div><div className="resume-copy"><span>CONTINUE ANNOTATING</span><strong>{resume.video.name}</strong><small>Last viewed: frame {resume.frame} of {Math.max(0, resume.video.frame_count - 1)}</small></div><Button variant="outline" disabled={!!busy} data-testid={'resume-video-' + resume.video.id} onClick={() => openVideo(resume.video)}>Resume video<ArrowRight size={15}/></Button></div>}
-        {(loading || projectVideos.length > 0) && <><div className="library-controls"><label className="video-search"><Search size={17}/><Input className="rounded-none border-0 px-0 shadow-none focus-visible:ring-0" aria-label="Search videos" placeholder="Search your videos…" value={query} onChange={e => setQuery(e.target.value)}/></label><div className="library-filters" aria-label="Filter videos">{([['all', 'All videos'], ['progress', 'In progress'], ['finished', 'Finished']] as const).map(([value, label]) => <button key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}>{label}</button>)}</div></div><p className="library-count">{projectVideos.length} {projectVideos.length === 1 ? 'video' : 'videos'}{finished > 0 && ` · ${finished} finished`}</p></>}
-        {loading ? <p role="status"><LoaderCircle size={16} className="animate-spin"/> Loading your videos…</p> : <div className="video-grid">{shown.map(video => (
-          <article key={video.id} className="video-card">
-            <button data-testid={'open-video-' + video.id} className="video-tile" disabled={!!busy} onClick={() => openVideo(video)}>
-              <div className="video-thumbnail">{video.frame_count > 0 ? <img src={'/api/videos/' + video.id + '/frames/0'} loading="lazy" alt=""/> : <Play size={32}/>}</div>
-              <strong title={video.name}>{video.name}</strong>
-              <div className="video-card-meta"><span>{video.frame_count.toLocaleString()} frames</span><span className={'video-state-badge ' + (video.status === 'failed' ? 'failed' : video.finished ? 'finished' : '')}>{video.status === 'failed' ? 'Needs attention' : video.status === 'indexing' ? 'Preparing…' : video.finished ? 'Finished' : 'In progress'}</span></div>
-              {video.project_name !== video.name && <span>{video.project_name}</span>}
-            </button>
-            <div className="video-card-footer"><small>{busy === video.id ? 'Opening…' : 'Open video'} <ChevronRight size={12}/></small><Button variant="ghost" size="sm" className="delete-video" aria-label={'Delete video ' + video.name} data-testid={'delete-video-' + video.id} disabled={!!busy} onClick={() => { setError(''); setDeleting(video); }}><Trash2 size={13}/>Delete video</Button></div>
-          </article>
-        ))}</div>}
-        {!loading && projectVideos.length > 0 && !shown.length && <div className="library-no-results"><p>No videos match this search.</p><Button variant="ghost" onClick={() => { setQuery(''); setFilter('all'); }}>Clear filters</Button></div>}
-        {!loading && !projectVideos.length && <div className="library-empty"><Upload size={35}/><h2>Your first video starts here</h2><p>Add a video, draw your first object, and adjust its box as you move through the frames.</p><div className="empty-actions"><Button onClick={onNew}><Plus size={16}/>Add video</Button><Button variant="outline" onClick={() => setGuide(true)}><BookOpen size={16}/>See the start guide</Button></div></div>}
+        {(loading || projectVideos.length > 0) && <><div className="library-controls"><label className="video-search"><Search size={17}/><Input aria-label="Search videos" placeholder="Search your videos…" value={query} onChange={e => setQuery(e.target.value)}/></label><div className="library-filters" aria-label="Filter videos">{([['all', 'All videos'], ['progress', 'In progress'], ['finished', 'Finished']] as const).map(([value, label]) => <Button variant="ghost" size="sm" className="aria-pressed:bg-accent" key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}>{label}</Button>)}</div></div><p className="library-count">{projectVideos.length} {projectVideos.length === 1 ? 'video' : 'videos'}{finished > 0 && ` · ${finished} finished`}</p></>}
+        {loading ? <p role="status" className="flex items-center gap-2"><LoaderCircle size={16} className="animate-spin"/>Loading your videos…</p> : projectVideos.length > 0 && <div className="video-table-panel">
+          <Table className="video-library-table" aria-label="Project videos">
+            <TableHeader><TableRow>
+              <TableHead scope="col" className="h-10 video-table-name-heading">Video</TableHead>
+              <TableHead scope="col" className="h-10">Status</TableHead>
+              <TableHead scope="col" className="h-10">Created</TableHead>
+              <TableHead scope="col" className="h-10">Last updated</TableHead>
+              <TableHead scope="col" className="h-10 text-right">Actions</TableHead>
+            </TableRow></TableHeader>
+            <TableBody>{shown.map(video => {
+              const isResume = resume?.video.id === video.id;
+              const preparing = video.status !== 'ready' && video.status !== 'failed';
+              const status = video.status === 'failed' ? 'Needs attention' : preparing ? 'Preparing…' : video.finished ? 'Finished' : 'In progress';
+              return <TableRow key={video.id} data-testid={'video-row-' + video.id}>
+                <TableCell className="py-2.5 video-table-name-cell"><div className="video-table-name">
+                  <FileVideo2 size={18} aria-hidden="true"/>
+                  <div><strong title={video.name}>{video.name}</strong><small>{video.frame_count.toLocaleString()} frames{isResume && <span className="video-table-saved-position"> · Saved at frame {resume.frame}</span>}</small></div>
+                </div></TableCell>
+                <TableCell className="py-2.5"><Badge variant={video.status === 'failed' ? 'destructive' : video.finished ? 'secondary' : 'outline'} className="video-table-status">{preparing ? <LoaderCircle className="animate-spin"/> : video.finished ? <CheckCircle2/> : null}{status}</Badge></TableCell>
+                <TableCell className="py-2.5"><VideoTimestamp value={video.created_at}/></TableCell>
+                <TableCell className="py-2.5"><VideoTimestamp value={video.updated_at}/></TableCell>
+                <TableCell className="py-2.5"><div className="video-table-actions">
+                  <Button variant="outline" size="sm" data-testid={'open-video-' + video.id} aria-label={(isResume ? 'Resume video ' : 'Open video ') + video.name} disabled={!!busy} onClick={() => openVideo(video)}>
+                    {busy === video.id && !deleting ? <LoaderCircle className="animate-spin"/> : <Play/>}<span data-testid={isResume ? 'resume-video-' + video.id : undefined}>{busy === video.id && !deleting ? 'Opening…' : isResume ? 'Resume' : 'Open'}</span>
+                  </Button>
+                  <Button variant="ghost" size="icon-sm" aria-label={'Delete video ' + video.name} title="Delete video" data-testid={'delete-video-' + video.id} disabled={!!busy} onClick={() => {setError(''); setDeleting(video);}}><Trash2/></Button>
+                </div></TableCell>
+              </TableRow>;
+            })}
+            {!shown.length && <TableRow className="hover:bg-transparent"><TableCell colSpan={5} className="py-9 text-center"><p className="mb-3 text-muted-foreground">No videos match this search.</p><Button variant="outline" size="sm" onClick={() => {setQuery(''); setFilter('all');}}>Clear filters</Button></TableCell></TableRow>}
+            </TableBody>
+          </Table>
+        </div>}
+        {!loading && !projectVideos.length && <div className="library-empty"><Upload size={35}/><h2>Your first video starts here</h2><p>Add a video, draw your first object, and adjust its box as you move through the frames.</p><div className="empty-actions"><Button onClick={onNew}><Plus size={16}/>Add video</Button><Button variant="outline" size="sm" onClick={() => setGuide(true)}><BookOpen size={16}/>See the start guide</Button></div></div>}
         </>}
         <details className="restore-backup"><summary><FolderArchive size={16}/> Restore a backup</summary><p>Choose a project backup ZIP. You will also need the original videos on this computer.</p><Input aria-label="Restore backup" type="file" accept=".zip" disabled={!!restore && !['completed', 'failed'].includes(restore.status)} onChange={e => {
           const file = e.target.files?.[0]; if (!file) return;
@@ -114,7 +153,7 @@ export function NewProject({onCreated,onBusy}:{onCreated:(id:string)=>void;onBus
  const [name,setName]=useState(''),[classes,setClasses]=useState('Person'),[error,setError]=useState(''),[busy,setBusy]=useState(false);
  return <form onSubmit={async e=>{e.preventDefault();setError('');setBusy(true);onBusy(true);try{const names=classes.split('\n').map(c=>c.trim()).filter(Boolean);if(!name.trim()||!names.length)throw new Error('Enter a project name and at least one class.');const p=await post('/projects',{name:name.trim(),classes:names});onCreated(p.id);}catch(e){setError(message(e))}finally{setBusy(false);onBusy(false)}}}>
  <label>Project name<Input autoFocus required maxLength={150} placeholder="Person detection" value={name} onChange={e=>setName(e.target.value)}/></label>
- <label>Class names — one per line<textarea aria-label="Project classes" rows={4} required value={classes} onChange={e=>setClasses(e.target.value)}/></label><p className="form-help">All videos in this project use these classes, in this order. You can add more later.</p>{error&&<p role="alert" className="error">{error}</p>}<Button type="submit" className="primary" disabled={busy}>Create project</Button></form>;
+ <label>Class names — one per line<Textarea aria-label="Project classes" rows={4} required value={classes} onChange={e=>setClasses(e.target.value)}/></label><p className="form-help">All videos in this project use these classes, in this order. You can add more later.</p>{error&&<p role="alert" className="error">{error}</p>}<Button type="submit" className="primary" disabled={busy}>Create project</Button></form>;
 }
 
 export function NewVideo({projectId,onCreated,onBusy}:{projectId:string;onCreated:(p:string,v:string)=>Promise<void>;onBusy:(busy:boolean)=>void}){

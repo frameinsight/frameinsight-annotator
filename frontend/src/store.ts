@@ -8,7 +8,8 @@ import {previewRestoreRange as previewRecovery,restoreRange as restoreRecovery,t
 import {get,set as dbSet,del as dbDelete} from 'idb-keyval';
 import {api,post} from './api';
 import {type Domain,type Project,type Operation,type Change,type Geometry,type Observation,type Proposal,uuid,currentObservation,emptyObservation,observationIssues,validateDomain} from './types';
-type Store={selectClass:(name:string)=>void;copyClassTrack:(source:Geometry,targetClass:string)=>boolean;previewRestoreRange:(start:number,end:number,mode:RestoreMode,operations?:Operation[])=>RestorePreview;restoreRange:(start:number,end:number,mode:RestoreMode,operations?:Operation[])=>boolean;copyVisibleToExtended:()=>void;forgetProject:(id:string)=>Promise<void>;markHiddenRange:(start:number,end:number)=>boolean;saveNow:()=>Promise<void>;hiddenIds:Record<string,boolean>;togglePersonVisibility:(id:string)=>void;focusPerson:(id:string)=>void;showAllPeople:()=>void;selectPerson:(id:string)=>void;deletePerson:(id:string)=>boolean;assignPerson:(target:string,personId:number|null,className:string,color:string,geometry?:Geometry)=>boolean;autoInterpolate:boolean;frameTimes:Record<string,(number|null)[]>;toggleInterpolation:()=>void;fillInterpolation:()=>void;project:Project|null;videoId:string;frame:number;activeId:string;geometry:Geometry;saveStatus:string;saveError:string;notice:string;pending:Operation[];history:Operation[];redoStack:Operation[];ready:boolean;load:(id:string)=>Promise<void>;commit:(label:string,fn:(d:Domain)=>void)=>boolean;navigate:(n:number)=>void;undo:()=>void;redo:()=>void;retry:()=>void;newPerson:()=>void;editObservation:(label:string,fn:(o:Observation)=>void,propagate?:boolean)=>void;setBox:(geometry:Geometry,box:Box|null,proposal?:Proposal,context?:{videoId:string;frame:number;activeId:string})=>void;equal:()=>void;copyPrevious:()=>void;approve:()=>boolean;rename:(id:string,n:number|null)=>void;toast:(message:string)=>void;};
+export type ProjectSettingsUpdate={base_revision:number;name:string;class_renames:Record<string,string>;new_classes?:string[];request_id:string};
+type Store={settingsSaving:boolean;saveProjectSettings:(id:string,update:ProjectSettingsUpdate)=>Promise<Project>;selectClass:(name:string)=>void;copyClassTrack:(source:Geometry,targetClass:string)=>boolean;previewRestoreRange:(start:number,end:number,mode:RestoreMode,operations?:Operation[])=>RestorePreview;restoreRange:(start:number,end:number,mode:RestoreMode,operations?:Operation[])=>boolean;copyVisibleToExtended:()=>void;forgetProject:(id:string)=>Promise<void>;markHiddenRange:(start:number,end:number)=>boolean;saveNow:()=>Promise<void>;hiddenIds:Record<string,boolean>;togglePersonVisibility:(id:string)=>void;focusPerson:(id:string)=>void;showAllPeople:()=>void;selectPerson:(id:string)=>void;deletePerson:(id:string)=>boolean;assignPerson:(target:string,personId:number|null,className:string,color:string,geometry?:Geometry)=>boolean;frameTimes:Record<string,(number|null)[]>;fillInterpolation:()=>void;project:Project|null;videoId:string;frame:number;activeId:string;geometry:Geometry;saveStatus:string;saveError:string;notice:string;pending:Operation[];history:Operation[];redoStack:Operation[];ready:boolean;load:(id:string)=>Promise<void>;commit:(label:string,fn:(d:Domain)=>void)=>boolean;navigate:(n:number)=>void;undo:()=>void;redo:()=>void;retry:()=>void;newPerson:()=>void;editObservation:(label:string,fn:(o:Observation)=>void,propagate?:boolean)=>void;setBox:(geometry:Geometry,box:Box|null,proposal?:Proposal,context?:{videoId:string;frame:number;activeId:string})=>void;equal:()=>void;copyPrevious:()=>void;approve:()=>boolean;rename:(id:string,n:number|null)=>void;toast:(message:string)=>void;};
 let pumpRunning=false;let persistChain=Promise.resolve();
 const clone=<T,>(x:T):T=>structuredClone(x);
 const same=(a:any,b:any)=>JSON.stringify(a)===JSON.stringify(b);
@@ -48,6 +49,39 @@ function invalidate(before:Domain,after:Domain){
  for(const r of Object.values(after.reviews))if(frames.has(r.video_id+':'+r.frame_index)){r.complete=false;r.checked_all_people=false;}
 }
 export const useStore=create<Store>((set,get)=>({
+ settingsSaving:false,
+ saveProjectSettings:async(id,update)=>{
+  if(get().settingsSaving)throw new Error('Project settings are already saving.');
+  set({settingsSaving:true});
+  try{
+   // The revision covers both annotation edits and settings. Drain this tab's
+   // queue before requesting an atomic rename; an inactive recovery journal
+   // must never be silently replaced by a server snapshot.
+   await persistChain;
+   const active=get().project?.id===id;
+   if(active)await get().saveNow();
+   const local=await getJournal(id);
+   if(!active&&local?.pending?.length)throw new Error('Open a video in this project and save your pending edits before changing its settings.');
+   const saved=await api<Project>('/projects/'+id+'/settings',{method:'PATCH',body:JSON.stringify(update)});
+   const mappedGeometry=(geometry:Geometry)=>geometry.startsWith('class:')&&Object.prototype.hasOwnProperty.call(update.class_renames,geometry.slice(6))?classKey(update.class_renames[geometry.slice(6)]):geometry;
+   const live=get();
+   if(live.project?.id===id){
+    const changed=saved.revision!==live.project.revision||!same(saved.classes,live.project.classes)||saved.name!==live.project.name;
+    set({project:saved,geometry:mappedGeometry(live.geometry),history:changed?[]:live.history,redoStack:changed?[]:live.redoStack,pending:[],saveStatus:'Saved',saveError:''});
+    try{await persist();}catch(e){set({saveError:'Project settings were saved to the server, but the local recovery copy could not be refreshed. '+String(e)});}
+   }else if(local){
+    // Server edit history is retained and renamed for deleted-range recovery.
+    // Local undo stacks are cleared because older implicit class slots may
+    // acquire explicit styles and no longer match compensation snapshots.
+    const changed=saved.revision!==local.project?.revision||!same(saved.classes,local.project?.classes)||saved.name!==local.project?.name;
+    const record={...local,project:saved,geometry:mappedGeometry(local.geometry||classKey(saved.classes?.[0]||'Person')),pending:[],history:changed?[]:local.history||[],redoStack:changed?[]:local.redoStack||[]};
+    const task=persistChain.then(()=>dbSet(journalKey(id),record));persistChain=task.catch(()=>{});
+    try{await task;}catch{await dbDelete(journalKey(id));}
+   }
+   try{const raw=localStorage.getItem(positionKey(id));if(raw){const position=JSON.parse(raw);if(typeof position.geometry==='string')localStorage.setItem(positionKey(id),JSON.stringify({...position,geometry:mappedGeometry(position.geometry)}));}}catch{/* Cursor recovery is optional; annotation data is already saved. */}
+   return saved;
+  }finally{set({settingsSaving:false});}
+ },
  selectClass:(name)=>{const s=get();set({geometry:geometryForClass(s.project?.state.identities[s.activeId],name)});},
  copyClassTrack:(source,targetClass)=>{const s=get();if(!s.activeId||s.hiddenIds[s.activeId]){s.toast('Select a visible track first');return false;}let result={count:0,geometry:geometryForClass(s.project!.state.identities[s.activeId],targetClass)};const ok=s.commit('Copy class across video',d=>{result=copyClassInDomain(d,s.videoId,s.activeId,source,targetClass,classColor(s.project,targetClass));});if(ok){set({geometry:result.geometry});void durableAndPump();s.toast(result.count?`${result.count} ${targetClass} boxes copied. Resize at keyframes; Ctrl+Z undoes the whole copy.`:'All source frames already have target-class boxes.');}return ok;},
  previewRestoreRange:(start,end,mode,operations)=>{const s=get();if(!s.project)return {start,end,mode,geometry:s.geometry,canRestore:false,restoredBoxes:0,keptBoxes:0,remainingBlockedFrames:0,anchorFrames:[],warnings:[],error:'Open a video and select a person first.'};return previewRecovery(s.project.state,s.videoId,s.activeId,start,end,s.project.videos[s.videoId]?.frame_count||0,s.geometry,mode,operations??s.history,s.frameTimes[s.videoId]);},
@@ -69,26 +103,28 @@ export const useStore=create<Store>((set,get)=>({
  showAllPeople:()=>set({hiddenIds:{}}),
  selectPerson:(id)=>{const s=get(),name=boxStyle(s.project?.state.identities[s.activeId],s.geometry).class_name;set({activeId:id,geometry:s.activeId===id?s.geometry:(s.project?orderedGeometryKeys(s.project,id,s.videoId).find(g=>boxStyle(s.project!.state.identities[id],g).class_name===name)||orderedGeometryKeys(s.project,id,s.videoId)[0]:null)||geometryForClass(s.project?.state.identities[id],name),hiddenIds:{...s.hiddenIds,[id]:false}})},
  deletePerson:(id)=>{const s=get();const ok=s.commit('Delete person and all their annotations',d=>{if(!d.identities[id])throw new Error('Person not found');for(const col of ['observations','segments','intervals'] as const)for(const row of Object.values(d[col]))if(row.identity_uuid===id)delete d[col][row.id];for(const link of Object.values(d.links))if(link.source===id||link.target===id)delete d.links[link.id];delete d.identities[id];});if(ok){set({activeId:s.activeId===id?'':s.activeId});s.toast('Person deleted. Press Ctrl+Z to undo.');}return ok;},
- autoInterpolate:(()=>{try{return localStorage.getItem('frameinsight:interpolate')!=='off'}catch{return true}})(),frameTimes:{},
- toggleInterpolation:()=>{const enabled=!get().autoInterpolate;set({autoInterpolate:enabled});try{localStorage.setItem('frameinsight:interpolate',enabled?'on':'off')}catch{}},
+ frameTimes:{},
  fillInterpolation:()=>{const s=get();if(!s.activeId)return s.toast('Select a person first');let count=0;const ok=s.commit('Interpolate between keyframes',d=>{count=interpolatePerson(d,s.videoId,s.activeId,s.frameTimes[s.videoId],undefined,s.geometry)});if(ok){const rows=Object.values(s.project!.state.observations).filter(o=>o.video_id===s.videoId&&o.identity_uuid===s.activeId&&getBox(o,s.geometry)),first=Math.min(...rows.map(o=>o.frame_index)),last=Math.max(...rows.map(o=>o.frame_index));const gap=Object.values(s.project!.state.intervals).filter(g=>g.video_id===s.videoId&&g.identity_uuid===s.activeId&&(!g.geometry||g.geometry===s.geometry)&&g.start<=last&&(g.end===null||g.end>=first)).sort((a,b)=>Math.abs(a.start-s.frame)-Math.abs(b.start-s.frame))[0];s.toast(gap?`${count?count+' frames filled. ':''}Frames ${gap.start}–${gap.end??'the end'} are marked deleted. Use Restore deleted range to refill that range.`:count?`${count} interpolated frames. Drag any box to correct it; changes save automatically.`:'No frames to fill. Draw or correct a box on each side in the same visible segment.');}},
  project:null,videoId:'',frame:0,activeId:'',geometry:classKey('Person'),saveStatus:'Saved',saveError:'',notice:'',pending:[],history:[],redoStack:[],ready:false,
  toast:(notice)=>{set({notice});window.setTimeout(()=>{if(get().notice===notice)set({notice:''})},5500)},
  load:async(id)=>{
+  if(get().settingsSaving)throw new Error('Wait for project settings to finish saving.');
   if(get().pending.length)throw new Error('Save or recover pending edits before switching projects.');
   const [remote,local]=await Promise.all([api<Project>('/projects/'+id),getJournal(id)]);
+  const matchingJournal=local?.project?.revision===remote.revision&&same(local?.project?.classes,remote.classes);
+  const validGeometry=(geometry:Geometry|undefined)=>geometry?.startsWith('class:')&&!remote.classes?.includes(geometry.slice(6))?classKey(remote.classes?.[0]||'Person'):geometry;
   let position:any=null;try{position=JSON.parse(localStorage.getItem(positionKey(id))||'null')}catch{}
   if(local?.pending?.length){set({...local,ready:true,saveStatus:'Saved locally',saveError:''});void pump();}
-  else{set({project:remote,pending:[],history:local?.history||[],redoStack:local?.redoStack||[],videoId:local?.videoId&&remote.videos[local.videoId]?local.videoId:Object.keys(remote.videos)[0]||'',frame:local?.frame||0,activeId:local?.activeId||'',geometry:local?.geometry||classKey(remote.classes?.[0]||'Person'),ready:true,saveStatus:'Saved',saveError:''});}
+  else{set({project:remote,pending:[],history:matchingJournal?local?.history||[]:[],redoStack:matchingJournal?local?.redoStack||[]:[],videoId:local?.videoId&&remote.videos[local.videoId]?local.videoId:Object.keys(remote.videos)[0]||'',frame:local?.frame||0,activeId:local?.activeId||'',geometry:validGeometry(local?.geometry)||classKey(remote.classes?.[0]||'Person'),ready:true,saveStatus:'Saved',saveError:''});}
   const loaded=get().project;const positionVideo=loaded?.videos[position?.videoId];
-  if(positionVideo&&Number.isSafeInteger(position.frame))set({videoId:position.videoId,frame:Math.max(0,Math.min(positionVideo.frame_count-1,position.frame)),activeId:loaded?.state.identities[position.activeId]?position.activeId:'',geometry:typeof position.geometry==='string'&&position.geometry?position.geometry:get().geometry});
+  if(positionVideo&&Number.isSafeInteger(position.frame))set({videoId:position.videoId,frame:Math.max(0,Math.min(positionVideo.frame_count-1,position.frame)),activeId:loaded?.state.identities[position.activeId]?position.activeId:'',geometry:typeof position.geometry==='string'&&position.geometry?(local?.pending?.length?position.geometry:validGeometry(position.geometry)!):get().geometry});
   let hiddenIds:Record<string,boolean>={};try{const saved=JSON.parse(localStorage.getItem('frameinsight:visibility:'+id)||'{}');hiddenIds=Object.fromEntries(Object.keys(loaded?.state.identities||{}).map(key=>[key,saved[key]===true]));}catch{}
   set({hiddenIds,...(hiddenIds[get().activeId]?{activeId:''}:{})});
 
   localStorage.setItem('frameinsight:lastProject',id);
  },
  commit:(label,fn)=>{
-  const s=get();if(!s.project)return false;
+  const s=get();if(!s.project)return false;if(s.settingsSaving){s.toast('Wait for project settings to finish saving.');return false;}
   const before=s.project.state,after=clone(before);
   try{fn(after);invalidate(before,after);validateDomain(after,s.project.videos);}catch(e){s.toast(String(e));return false;}
   const changes:Change[]=[];
@@ -115,7 +151,7 @@ export const useStore=create<Store>((set,get)=>({
    // Legacy extended tracks keep their original marker until explicit ID conversion.
    if(!legacyExtended(person)){person.box_styles??={};if(!person.box_styles[s.geometry]){const style=boxStyle(person,s.geometry);person.box_styles[s.geometry]={...style,color:s.geometry==='person_visible'&&person.color?person.color:classColor(s.project,style.class_name)};}}
    prepareGeometryFrame(d,s.videoId,s.activeId,s.frame,s.geometry);markCorrected(o,s.geometry);o.review_state='draft';fn(o);
-   if(s.autoInterpolate&&propagate)interpolatePerson(d,s.videoId,s.activeId,s.frameTimes[s.videoId],s.frame,s.geometry);
+   if(propagate)interpolatePerson(d,s.videoId,s.activeId,s.frameTimes[s.videoId],s.frame,s.geometry);
   });
  },
  setBox:(geometry,box,proposal,context)=>{
@@ -147,12 +183,12 @@ export const useStore=create<Store>((set,get)=>({
   const s=get(),o=currentObservation(s.project,s.videoId,s.frame,s.activeId);if(!o){s.toast('Draw the observation first');return false;}const errors=observationIssues(o);if(s.project!.state.segments[o.segment_id].status!=='verified')errors.push('Resolve the returning identity first');if(errors.length){s.toast(errors.join(' · '));return false;}
   return s.commit('Approve observation',d=>{d.observations[o.id].review_state='approved';});
  },
- assignPerson:(target,personId,className,color,chosenGeometry)=>{const s=get(),g=chosenGeometry||geometryForClass(s.project?.state.identities[target],className),sourceGeometry=s.project&&legacyExtended(s.project.state.identities[s.activeId])?'person_ext':s.geometry;const reconnect=s.activeId!==target&&s.project&&Object.values(s.project.state.observations).some(o=>o.identity_uuid===target&&getBox(o,g));const ok=s.commit('Assign existing track / class / color',d=>{assignPersonInDomain(d,s.activeId,target,s.videoId,s.frame,personId,className,color,g,sourceGeometry);if(s.autoInterpolate&&reconnect)interpolatePerson(d,s.videoId,target,s.frameTimes[s.videoId],s.frame,geometryForClass(d.identities[target],className))});if(ok){get().selectPerson(target);set({geometry:geometryForClass(get().project!.state.identities[target],className)});}return ok;},
+ assignPerson:(target,personId,className,color,chosenGeometry)=>{const s=get(),g=chosenGeometry||geometryForClass(s.project?.state.identities[target],className),sourceGeometry=s.project&&legacyExtended(s.project.state.identities[s.activeId])?'person_ext':s.geometry;const reconnect=s.activeId!==target&&s.project&&Object.values(s.project.state.observations).some(o=>o.identity_uuid===target&&getBox(o,g));const ok=s.commit('Assign existing track / class / color',d=>{assignPersonInDomain(d,s.activeId,target,s.videoId,s.frame,personId,className,color,g,sourceGeometry);if(reconnect)interpolatePerson(d,s.videoId,target,s.frameTimes[s.videoId],s.frame,geometryForClass(d.identities[target],className))});if(ok){get().selectPerson(target);set({geometry:geometryForClass(get().project!.state.identities[target],className)});}return ok;},
  rename:(id,n)=>{const s=get();if(n!==null&&(!Number.isSafeInteger(n)||n<=0)){s.toast('Person ID must be a positive integer');return;}s.commit('Rename person ID',d=>{if(n!==null&&Object.values(d.identities).some(i=>i.id!==id&&i.person_id===n))throw new Error('That ID is already assigned. Resolve or merge identities explicitly.');d.identities[id].person_id=n;});},
 }));
 async function getJournal(id:string){return get<any>(journalKey(id));}
 function compensate(redo:boolean){
- const s=useStore.getState(),stack=redo?s.redoStack:s.history,original=stack.at(-1);if(!original||!s.project)return;
+ const s=useStore.getState(),stack=redo?s.redoStack:s.history,original=stack.at(-1);if(!original||!s.project)return;if(s.settingsSaving){s.toast('Wait for project settings to finish saving.');return;}
  const changes=original.changes.map(c=>({...c,before:c.after,after:c.before}));
  const state=clone(s.project.state);
  for(const c of changes){if(!same(state[c.collection][c.id]??null,c.before)){s.toast('Undo history does not match current data. Reload to review server changes.');return;}if(c.after===null)delete state[c.collection][c.id];else (state[c.collection] as any)[c.id]=clone(c.after);}
@@ -162,7 +198,7 @@ function compensate(redo:boolean){
  const affected=changes.find(c=>c.collection==='observations');const identity=affected?.after?.identity_uuid||affected?.before?.identity_uuid;if(identity&&state.identities[identity])useStore.getState().selectPerson(identity);else if(!state.identities[s.activeId])useStore.setState({activeId:Object.keys(state.identities)[0]||''});
 }
 window.addEventListener('online',()=>void pump());
-window.addEventListener('beforeunload',e=>{if(useStore.getState().saveStatus==='Saving'){e.preventDefault();}});
+window.addEventListener('beforeunload',e=>{if(useStore.getState().saveStatus==='Saving'||useStore.getState().settingsSaving){e.preventDefault();}});
 setInterval(()=>{const s=useStore.getState();if(s.pending.length&&s.saveStatus!=='Save failed')void pump();},3000);
 
 // Cursor changes do not modify annotations. Persist only this tiny position record;

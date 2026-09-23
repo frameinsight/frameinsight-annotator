@@ -24,11 +24,11 @@ export function Modal({title, children, onClose, wide = false, busy = false, des
       <DialogContent
         ref={content}
         showCloseButton={false}
-        className={cn('modal app-dialog flex max-h-[calc(100dvh-2rem)] flex-col gap-5 overflow-y-auto p-6 max-w-none sm:max-w-none', wide ? 'wide w-[min(60rem,calc(100vw-2rem))]' : 'w-[min(32rem,calc(100vw-2rem))]', className)}
+        className={cn('modal app-dialog flex max-h-[calc(100dvh-2rem)] flex-col gap-5 overflow-y-auto p-6 max-w-none sm:max-w-none', wide ? 'wide w-[min(78rem,calc(100vw-2rem))]' : 'w-[min(32rem,calc(100vw-2rem))]', className)}
         aria-describedby={description ? descriptionId : undefined}
         onOpenAutoFocus={event => {
           event.preventDefault();
-          const first = content.current?.querySelector<HTMLElement>('input:not([type="hidden"]):not([disabled]), select:not([disabled]), textarea:not([disabled])')
+          const first = content.current?.querySelector<HTMLElement>('input:not([type="hidden"]):not([aria-hidden="true"]):not(:disabled), select:not([aria-hidden="true"]):not(:disabled), textarea:not(:disabled), [role="combobox"]:not(:disabled):not([aria-disabled="true"])')
             ?? content.current?.querySelector<HTMLElement>('[data-dialog-heading]');
           first?.focus();
         }}

@@ -31,7 +31,7 @@ On Ubuntu, use `packaging/windows/build.sh` for the Windows cross-build and `pac
 
 On Windows, install the developer build tools (Python 3.13, Node, NSIS 3.11 and MSYS2 UCRT64 GCC), install the pinned requirements and frontend dependencies, then run `packaging/windows/build.ps1`. End users need none of these tools. GitHub Actions performs these steps automatically.
 
-`packaging/debian/test-installed.sh` installs and removes the Linux package. Run it only in a disposable container with `FRAMEINSIGHT_DISPOSABLE_TEST=1`; the script refuses to run without this explicit test marker. It verifies startup, one server per user session, three independent classes sharing one track, full review rendering, validation/export, restart persistence, running-app guards, and preservation of user data through reinstall and purge.
+`packaging/debian/test-installed.sh` installs and removes the Linux package. Run it only in a disposable container with `FRAMEINSIGHT_DISPOSABLE_TEST=1`; the script refuses to run without this explicit test marker. It verifies startup, one server per user session, three independent classes sharing one track, annotation-only structural validation/export without rendering, stale-export rejection after settings edits, legacy review-render compatibility, restart persistence, running-app guards, and preservation of user data through reinstall and purge.
 
 To prepare a release manifest locally, put only the chosen version's installers and delivery documents in a clean directory, then run:
 

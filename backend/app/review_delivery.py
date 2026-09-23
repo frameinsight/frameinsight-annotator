@@ -1,4 +1,4 @@
-"""Frozen full-video review and revision-bound validation/export proofs."""
+"""Revision-bound annotation validation; rendered video review is optional."""
 import hashlib
 import json
 import os
@@ -49,7 +49,7 @@ def get_review(jid):
 def read_document(job):
     path = safe_path(job['snapshot_path'], DATA)
     raw = path.read_bytes()
-    if hashlib.sha256(raw).hexdigest() != job['snapshot_hash']: raise ValueError('The review snapshot has changed. Generate a new review.')
+    if hashlib.sha256(raw).hexdigest() != job['snapshot_hash']: raise ValueError('The annotation snapshot has changed. Validate again.')
     return json.loads(raw)
 
 
@@ -262,16 +262,80 @@ def validate_review(vid, revision, review_job_id, visual_confirmed, coverage):
     return report
 
 
+def validate_annotations(vid, revision, visual_confirmed, coverage):
+    """Validate a frozen annotation document without reading or encoding media."""
+    if not visual_confirmed:
+        raise ValueError('Confirm that your annotations are ready to validate')
+    if coverage not in ('all_people', 'selected_people'):
+        raise ValueError('Choose the annotation coverage')
+    with db.transaction() as connection:
+        row = connection.execute('SELECT project_id FROM videos WHERE id=?', (vid,)).fetchone()
+        if not row:
+            raise KeyError('Video not found')
+        project = db.get_state(connection, row['project_id'])
+        if project['revision'] != revision:
+            raise db.Conflict(project['revision'])
+        document = annotation_document(project['id'], vid)
+        expected_fingerprint = live_fingerprint(connection, project['id'], vid, project, document['frames'][vid])
+    document['conventions']['delivery'] = 'Annotation-only snapshot validated for JSON structure and internal consistency. No media was rendered or included.'
+    report = validate_document(document)
+    validation_id = str(uuid.uuid4())
+    report.update(validation_id=validation_id, mode='structural', revision=revision,
+                  video_id=vid, project_id=project['id'], coverage=coverage, visual_confirmed=True,
+                  created_at=db.now(), app_version=APP_VERSION)
+    folder = DATA / 'validations' / validation_id
+    path = folder / 'annotations.json'
+    raw = None
+    if report['passed']:
+        raw = json.dumps(document, ensure_ascii=False, allow_nan=False, sort_keys=True).encode('utf-8')
+        report.update(snapshot_path=str(path), snapshot_hash=hashlib.sha256(raw).hexdigest(), fingerprint=expected_fingerprint)
+        folder.mkdir(parents=True)
+        path.write_bytes(raw)
+    try:
+        with db.transaction() as connection:
+            current = db.get_state(connection, project['id'])
+            if current['revision'] != revision:
+                raise db.Conflict(current['revision'])
+            if live_fingerprint(connection, project['id'], vid, current) != expected_fingerprint:
+                raise ValueError('Annotations changed during validation. Save and validate again.')
+            connection.execute('INSERT INTO validations VALUES(?,?,?,?,?,?)', (validation_id, project['id'], vid, revision, '', json.dumps(report)))
+            if report['passed']:
+                video = current['videos'][vid]
+                video.pop('review_job_id', None)
+                video.update(finished_revision=revision, finished_at=db.now(), validation_id=validation_id,
+                             coverage=coverage, finish_confirmation='Annotations confirmed for '+coverage)
+                connection.execute('UPDATE videos SET data=? WHERE id=?', (json.dumps(video), vid))
+    except Exception:
+        if raw is not None:
+            path.unlink(missing_ok=True)
+            folder.rmdir()
+        raise
+    return report
+
+
 def validation_proof(pid, settings, c=None):
     vid, revision = settings.get('video_id'), settings.get('revision')
     validation_id, review_id = settings.get('validation_id'), settings.get('review_job_id')
-    if not vid or not validation_id or not review_id or type(revision) is not int:
-        raise ValueError('Generate the full annotated review and pass validation before exporting annotation JSON. Project backups are available at any time.')
+    if not vid or not validation_id or type(revision) is not int:
+        raise ValueError('Save and pass annotation validation before exporting annotation JSON. Project backups are available at any time.')
     context = c or db.connect()
     try:
         row = context.execute('SELECT data FROM validations WHERE id=? AND project_id=? AND video_id=?', (validation_id, pid, vid)).fetchone()
         if not row: raise ValueError('Validation proof was not found for this video')
-        report = json.loads(row['data']); job = get_review(review_id)
+        report = json.loads(row['data'])
+        if report.get('mode') == 'structural':
+            if report.get('app_version') != APP_VERSION or not report['passed'] or report['revision'] != revision or report['project_id'] != pid or report['video_id'] != vid:
+                raise ValueError('Validation proof does not match this export')
+            project = db.get_state(context, pid)
+            if project['revision'] != revision:
+                raise db.Conflict(project['revision'])
+            if live_fingerprint(context, pid, vid, project) != report['fingerprint']:
+                raise ValueError('Validation is stale. Save and validate again after your edits.')
+            read_document(report)  # Verify only the immutable annotation snapshot.
+            return report, report
+        if not review_id:
+            raise ValueError('This older validation needs its review ID. Validate annotations again.')
+        job = get_review(review_id)
         if report.get('app_version') != APP_VERSION or not report['passed'] or report['revision'] != revision or report['review_job_id'] != review_id or job['project_id'] != pid or job['video_id'] != vid or job['revision'] != revision:
             raise ValueError('Validation proof does not match this export')
         project = db.get_state(context, pid)

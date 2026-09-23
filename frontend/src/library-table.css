@@ -1,0 +1,20 @@
+@layer theme, base, components, utilities;
+
+@layer components {
+  .video-table-panel { overflow: hidden; border: 1px solid var(--border); border-radius: var(--radius-xl); background: var(--card); }
+  .video-library-table { min-width: 840px; table-layout: fixed; }
+  .video-library-table thead { background: color-mix(in oklab, var(--muted) 40%, transparent); }
+  .video-library-table th:nth-child(2) { width: 132px; }
+  .video-library-table th:nth-child(3), .video-library-table th:nth-child(4) { width: 144px; }
+  .video-library-table th:last-child { width: 152px; }
+  .video-table-name { display: flex; align-items: center; gap: 12px; min-width: 0; }
+  .video-table-name > svg { flex-shrink: 0; color: var(--muted-foreground); }
+  .video-table-name > div { display: flex; flex: 1; min-width: 0; flex-direction: column; gap: 3px; }
+  .video-table-name strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; font-weight: 500; line-height: 1.45; }
+  .video-table-name small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted-foreground); font-size: 11px; line-height: 1.45; }
+  .video-table-saved-position { color: var(--foreground); }
+  .video-table-date { display: flex; flex-direction: column; gap: 3px; font-size: 12px; font-variant-numeric: tabular-nums; line-height: 1.5; }
+  .video-table-date small { color: var(--muted-foreground); font-size: 11px; }
+  .video-table-date-unavailable { color: var(--muted-foreground); }
+  .video-table-actions { display: flex; align-items: center; justify-content: flex-end; gap: 6px; }
+}

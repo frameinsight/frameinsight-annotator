@@ -29,6 +29,38 @@ def rejected(path,data,status):
  try:request(path,data)
  except urllib.error.HTTPError as error:assert error.code==status,(error.code,error.read())
  else:raise AssertionError('Expected request rejection: '+path)
+def structural_delivery(pid,vid,revision,boxes,class_names):
+ before=request('/api/projects/'+pid)
+ def deliver(current_revision):
+  validation=request('/api/videos/'+vid+'/validate',{'revision':current_revision,'visual_confirmed':True,'coverage':'selected_people'})
+  assert validation['passed'] and validation['mode']=='structural',validation
+  assert validation['coverage']=='selected_people' and validation['limitation']
+  assert 'review_job_id' not in validation and 'review_video_hash' not in validation
+  assert not any('render' in check['name'].lower() for check in validation['checks'])
+  proof={'revision':current_revision,'validation_id':validation['validation_id']}
+  request('/api/videos/'+vid+'/finish',{'confirmed':True,**proof})
+  job=wait_job(request('/api/projects/'+pid+'/exports',{'format':'annotations_json','video_id':vid,'include_videos':False,**proof}))
+  document=request('/api/exports/'+job['export_id'])
+  assert document['schema_version']==3 and document['app_version']==app_version and document['media_included'] is False
+  assert document['validation']['mode']=='structural' and document['validation']['validation_id']==validation['validation_id']
+  assert 'review_job_id' not in document['validation'] and 'review_video_hash' not in document['validation']
+  assert document['project']['revision']==current_revision and document['state']==before['state']
+  assert {row['track_id'] for row in document['annotation_index']}=={7}
+  assert {row['person_id'] for row in document['annotation_index']}=={7}
+  assert len(document['annotation_index'])==len(boxes)
+  assert {row['class_key']:row['class_name'] for row in document['annotation_index']}==class_names
+  assert document['frame_annotations'][0]['boxes']==boxes
+  assert not any(job['kind']=='review' for job in request('/api/projects/'+pid+'/jobs'))
+  assert next(video for video in request('/api/video-library') if video['id']==vid)['finished']
+  return proof,job['export_id']
+ proof,export_id=deliver(revision)
+ updated=request('/api/projects/'+pid+'/settings',{'base_revision':revision,'name':before['name']+' revised','request_id':str(uuid.uuid4())},method='PATCH')
+ assert updated['revision']==revision+1 and updated['state']==before['state']
+ assert not next(video for video in request('/api/video-library') if video['id']==vid)['finished']
+ rejected('/api/projects/'+pid+'/exports',{'format':'annotations_json','video_id':vid,**proof},409)
+ rejected('/api/exports/'+export_id,None,409)
+ deliver(updated['revision'])
+ return updated['revision']
 def stop(proc):
  user=ctypes.WinDLL('user32');user.FindWindowW.argtypes=[ctypes.c_wchar_p,ctypes.c_wchar_p];user.FindWindowW.restype=ctypes.c_void_p
  user.PostMessageW.argtypes=[ctypes.c_void_p,ctypes.c_uint,ctypes.c_size_t,ctypes.c_ssize_t]
@@ -64,16 +96,17 @@ try:
  assert request('/api/projects/'+pid)['classes']==['Worker','Customer','Legacy visible','Legacy extended','person_extended']
  rejected('/api/videos/'+vid+'/finish',{'confirmed':True,'revision':1},422)
  rejected('/api/projects/'+pid+'/exports',{'format':'annotations_json','video_id':vid},422)
- review=wait_job(request('/api/videos/'+vid+'/review-jobs',{'revision':1}))
+ revision=structural_delivery(pid,vid,1,{'person_visible':observation['person_visible'],'person_ext':observation['person_ext'],**named_boxes},{'person_visible':'Legacy visible','person_ext':'Legacy extended',**{key:style['class_name'] for key,style in styles.items()}})
+ review=wait_job(request('/api/videos/'+vid+'/review-jobs',{'revision':revision}))
  metadata=request('/api/reviews/'+review['id'])
  assert metadata['frame_count']==24 and metadata['rendered_frames']==24 and not metadata['stale']
  import av
  with av.open(io.BytesIO(request('/api/reviews/'+review['id']+'/video',raw=True))) as video:
   frames=list(video.decode(video.streams.video[0]));assert len(frames)==24
   assert all(abs(float(frame.time)-metadata['frame_timestamps'][n])<1e-6 for n,frame in enumerate(frames))
- validation=request('/api/videos/'+vid+'/validate',{'revision':1,'review_job_id':review['id'],'visual_confirmed':True,'coverage':'selected_people'})
+ validation=request('/api/videos/'+vid+'/validate',{'revision':revision,'review_job_id':review['id'],'visual_confirmed':True,'coverage':'selected_people'})
  assert validation['passed'] and validation['coverage']=='selected_people' and validation['limitation'],validation
- proof={'revision':1,'review_job_id':review['id'],'validation_id':validation['validation_id']}
+ proof={'revision':revision,'review_job_id':review['id'],'validation_id':validation['validation_id']}
  request('/api/videos/'+vid+'/finish',{'confirmed':True,**proof})
  assert next(v for v in request('/api/video-library') if v['id']==vid)['finished']
  job=wait_job(request('/api/projects/'+pid+'/exports',{'format':'annotations_json','video_id':vid,**proof}))
@@ -88,12 +121,12 @@ try:
  assert export['frame_annotations'][0]['boxes']['person_ext']==[5,10,110,220]
  assert [(r['start'],r['end'],r['status']) for r in export['visibility_intervals']]==[(0,9,'not_visible'),(10,10,'visible'),(11,23,'not_visible')]
  stop(p)
- p=subprocess.Popen([str(root/'Frameinsight.exe')]);wait(lambda:request('/api/projects/'+pid)['revision']==1)
+ p=subprocess.Popen([str(root/'Frameinsight.exe')]);wait(lambda:request('/api/projects/'+pid)['revision']==revision)
  assert request('/api/projects/'+pid)['state']['identities'][who]==identity
  assert request('/api/videos/'+vid+'?confirmed=true',method='DELETE')['deleted']
  assert request('/api/video-library')==[] and fixture.exists()
  stop(p)
- report={'app_version':app_version,'runtime':'Windows embedded Python 3.13.12','environment':'Wine on Linux' if 'WINEPREFIX' in os.environ else 'Windows','checks':['native launcher','single instance','HTTP frontend','updater package kind','multipart video import','24 exact frames','PNG decoding','annotation save with class/color','class catalog and persistent random palette','video library','unreviewed finish and JSON export rejected','full 24-frame annotated review with exact timestamps','revision-bound structural validation and selected-person coverage','validated finish confirmation','annotations-only export with matching validation proof','JSON v3 with three named classes and legacy paired geometry sharing one identity','bulk-copy provenance and correction export','automatic visibility export','delete video preserves original file','graceful shutdown','relaunch persistence'],'project_id':pid}
+ report={'app_version':app_version,'runtime':'Windows embedded Python 3.13.12','environment':'Wine on Linux' if 'WINEPREFIX' in os.environ else 'Windows','checks':['native launcher','single instance','HTTP frontend','updater package kind','multipart video import','24 exact frames','PNG decoding','annotation save with class/color','class catalog and persistent random palette','video library','unvalidated finish and JSON export rejected','structural validation and media-free JSON without a review job or review hash','project settings preserve annotations and invalidate previous validation/export download','fresh structural validation after metadata edit','backwards-compatible full 24-frame annotated review with exact timestamps','revision-bound review validation and selected-person coverage','validated finish confirmation','annotations-only export with matching validation proof','JSON v3 with three named classes and legacy paired geometry sharing one identity','bulk-copy provenance and correction export','automatic visibility export','delete video preserves original file','graceful shutdown','relaunch persistence'],'project_id':pid}
  Path('windows-smoke-report.json').write_text(json.dumps(report,indent=2));print(json.dumps(report),flush=True)
 finally:
  if p.poll() is None:

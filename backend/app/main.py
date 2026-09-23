@@ -22,7 +22,9 @@ from .video import import_video, new_job, POOL, sha256
 from .worker import Worker
 from .formats import export_project, parse_cvat
 from .delete_video import delete_video
-from .review_delivery import create_review, get_review, review_metadata, validate_review, validation_proof
+from .review_delivery import create_review, get_review, review_metadata, validate_review, validate_annotations, validation_proof
+from .project_settings import ProjectSettings, update_settings
+from .library_metadata import video_dates
 worker=Worker(); exports_pool=ThreadPoolExecutor(max_workers=1,thread_name_prefix='export')
 @asynccontextmanager
 async def lifespan(app):
@@ -88,7 +90,7 @@ class ReviewVideo(BaseModel):
 
 class ValidateVideo(BaseModel):
     revision:int=Field(ge=0)
-    review_job_id:str
+    review_job_id:str|None=None
     visual_confirmed:bool
     coverage:str
 
@@ -127,9 +129,11 @@ def create_project(body:NewProject):
 @app.get('/api/video-library')
 def video_library():
     with db.connect() as c:
+        c.execute('BEGIN')
         rows=c.execute('SELECT v.id,v.project_id,v.data,p.name,p.revision FROM videos v JOIN projects p ON p.id=v.project_id ORDER BY v.rowid DESC').fetchall()
         validated={(r['id'],r['video_id'],r['revision']) for r in c.execute('SELECT id,video_id,revision,data FROM validations') if json.loads(r['data']).get('passed') and json.loads(r['data']).get('app_version') == APP_VERSION}
-    return [{**json.loads(r['data']), 'project_id':r['project_id'], 'project_name':r['name'],
+        dates=video_dates(c,rows)
+    return [{**json.loads(r['data']), **dates[r['id']], 'project_id':r['project_id'], 'project_name':r['name'],
              'finished':json.loads(r['data']).get('status')=='ready' and json.loads(r['data']).get('finished_revision')==r['revision'] and (json.loads(r['data']).get('validation_id'),r['id'],r['revision']) in validated} for r in rows]
 
 @app.post('/api/projects/{pid}/classes')
@@ -181,10 +185,14 @@ def review_video(jid:str):
 
 @app.post('/api/videos/{vid}/validate')
 def validate_video(vid:str,body:ValidateVideo):
-    return validate_review(vid,body.revision,body.review_job_id,body.visual_confirmed,body.coverage)
+    if body.review_job_id:
+        return validate_review(vid,body.revision,body.review_job_id,body.visual_confirmed,body.coverage)
+    return validate_annotations(vid,body.revision,body.visual_confirmed,body.coverage)
 
 @app.get('/api/projects/{pid}')
 def project(pid:str): return db.snapshot(pid)
+@app.patch('/api/projects/{pid}/settings')
+def project_settings(pid:str,body:ProjectSettings): return update_settings(pid,body)
 @app.post('/api/projects/{pid}/operations')
 def operation(pid:str,body:Operation): return db.apply(pid,body)
 @app.get('/api/projects/{pid}/operations')

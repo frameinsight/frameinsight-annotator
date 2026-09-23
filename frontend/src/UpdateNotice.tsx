@@ -54,8 +54,8 @@ export function UpdateNotice({beforeUpdate}:{beforeUpdate:()=>Promise<void>}) {
   const closingMessage=closing||(download?.status==='installing'?(download.message||'Closing Frameinsight to open the installer.'):'');
   const notesMatch=available&&(!hasDownload||download?.version===release?.latest_version);
   return <>
-    <button className={'icon-button update-trigger '+(available&&!skipped?'has-update':'')} aria-label="Check for updates" title={available?'Update available':'Check for updates'} onClick={()=>{setOpen(true);void check(true)}}><RefreshCw size={17}/></button>
-    {available&&!skipped&&!open&&<aside className="update-banner" aria-label="Update available"><span><strong>Frameinsight {release.latest_version} is available</strong><small>See what’s new and choose when to update.</small></span><Button onClick={()=>setOpen(true)}>View update</Button><button className="icon-button" aria-label="Skip update for now" onClick={()=>setSkipped(true)}><X size={17}/></button></aside>}
+    <Button variant="ghost" size="icon-sm" className={'icon-button update-trigger '+(available&&!skipped?'has-update':'')} aria-label="Check for updates" title={available?'Update available':'Check for updates'} onClick={()=>{setOpen(true);void check(true)}}><RefreshCw size={17}/></Button>
+    {available&&!skipped&&!open&&<aside className="update-banner" aria-label="Update available"><span><strong>Frameinsight {release.latest_version} is available</strong><small>See what’s new and choose when to update.</small></span><Button onClick={()=>setOpen(true)}>View update</Button><Button variant="ghost" size="icon-sm" className="icon-button" aria-label="Skip update for now" onClick={()=>setSkipped(true)}><X size={17}/></Button></aside>}
     {open&&<Modal title={visibleVersion?`Frameinsight ${visibleVersion}`:'App updates'} onClose={()=>setOpen(false)} busy={busy||!!closingMessage}>
       <p>Installed version: <strong>{release?.current_version||APP_VERSION}</strong></p>
       {error&&<p className="error" role="alert">{error}</p>}

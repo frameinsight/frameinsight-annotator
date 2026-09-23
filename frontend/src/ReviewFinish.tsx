@@ -1,614 +1,220 @@
-import { Button } from "./components/ui/button";
-import { useEffect, useRef, useState } from "react";
-import {
-  AlertTriangle,
-  Check,
-  CheckCircle2,
-  ChevronLeft,
-  ChevronRight,
-  Download,
-  Film,
-  LoaderCircle,
-  Pause,
-  Play,
-  RotateCcw,
-  ShieldCheck,
-} from "lucide-react";
-import { api, post } from "./api";
-import { useStore } from "./store";
-import type { Job, Project } from "./types";
-import { reviewClock, reviewFrameAt } from "./review-utils";
+import {useEffect, useMemo, useRef, useState} from "react";
+import {AlertTriangle, ArrowLeft, Check, CheckCircle2, Download, FileJson2, FolderArchive, LoaderCircle, Settings2, ShieldCheck} from "lucide-react";
+import {Badge} from "./components/ui/badge";
+import {Button} from "./components/ui/button";
+import {Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle} from "./components/ui/card";
+import {NativeSelect} from "./components/ui/native-select";
+import {api, post} from "./api";
+import {useStore} from "./store";
+import {boxKeys, classColor, type Job, type Project} from "./types";
 import "./review-finish.css";
 
-type ReviewJob = Job & { revision?: number };
-type ReviewMedia = {
-  revision: number;
-  stale: boolean;
-  status: string;
-  frame_count: number;
-  frame_timestamps: number[];
-  duration_seconds: number;
-  video_url: string;
-  rendered_frames: number;
-};
-type Finding = {
-  code: string;
-  message: string;
-  frame_index?: number;
-  identity_uuid?: string;
-  person_id?: number;
-};
+type Finding = {code: string; message: string; frame_index?: number; identity_uuid?: string; person_id?: number};
 type Report = {
   passed: boolean;
   revision: number;
-  review_job_id: string;
   validation_id?: string;
   errors: Finding[];
   warnings: Finding[];
-  checks: { name: string; passed: boolean; detail?: string }[];
+  checks: {name: string; passed: boolean; detail?: string}[];
   summary: Record<string, unknown>;
 };
-
-export function ReviewFinish({
-  project,
-  videoId,
-  jobs,
-  onEdit,
-  onBackup,
-}: {
+type Coverage = "all_people" | "selected_people";
+type FinishProps = {
   project: Project;
   videoId: string;
-  jobs: Job[];
+  jobs?: Job[];
+  visualConfirmed: boolean;
   onEdit: (frame: number, identity?: string) => void;
   onBackup: () => void;
-}) {
+  onSettings: () => void;
+  onBack: () => void;
+};
+const message = (error: unknown) => error instanceof Error ? error.message : String(error);
+const checkLabels: Record<string, string> = {
+  "JSON serialization": "Valid JSON",
+  "Boxes, classes, identities, segments, gaps and links": "Annotation records and references",
+  "Positive unique person IDs": "Unique track IDs",
+  "Complete source frame ledger and timestamps": "Frame numbers and timestamps",
+  "Exported index, class presence and shared track identity consistency": "Consistent classes, tracks and exported data",
+};
+
+/** Finish checks the saved annotation document; visual review happens in the editor. */
+export function ReviewFinish({project, videoId, visualConfirmed, onEdit, onBackup, onSettings, onBack}: FinishProps) {
   const source = project.videos[videoId];
-  const [reviewJob, setReviewJob] = useState<ReviewJob | null>(
-    () =>
-      (jobs as ReviewJob[]).find(
-        (j) =>
-          j.kind === "review" &&
-          j.video_id === videoId &&
-          (j.revision ?? j.settings?.revision) === project.revision &&
-          j.status !== "failed",
-      ) || null,
-  );
-  const [media, setMedia] = useState<ReviewMedia | null>(null);
   const [report, setReport] = useState<Report | null>(null);
   const [exportJob, setExportJob] = useState<Job | null>(null);
-  const [busy, setBusy] = useState(false),
-    [error, setError] = useState("");
-  const [visualConfirmed, setVisualConfirmed] = useState(false),
-    [notesConfirmed, setNotesConfirmed] = useState(false);
-  const [coverage, setCoverage] = useState<"all_people" | "selected_people">(
-    "all_people",
-  );
-  const [playbackRate, setPlaybackRate] = useState(0.5),
-    [playing, setPlaying] = useState(false);
-  const [seconds, setSeconds] = useState(0),
-    [loaded, setLoaded] = useState(false);
-  const player = useRef<HTMLVideoElement>(null);
-  const results = useRef<HTMLDivElement>(null);
-  const snapshotRevision =
-    media?.revision ?? reviewJob?.revision ?? reviewJob?.settings?.revision;
-  const stale =
-    (snapshotRevision !== undefined && snapshotRevision !== project.revision) ||
-    !!media?.stale;
-  const frame = reviewFrameAt(media?.frame_timestamps || [], seconds);
-  const passed =
-    !!report?.passed && report.revision === project.revision && !stale;
-  const renderComplete = reviewJob?.status === "completed" && !!media && !stale;
+  const [busy, setBusy] = useState<"validation" | "export" | null>(null);
+  const [error, setError] = useState("");
+  const [coverage, setCoverage] = useState<Coverage>("all_people");
+  const [changed, setChanged] = useState(false);
+  const [pollError, setPollError] = useState(false);
+  const [pollAttempt, setPollAttempt] = useState(0);
+  const snapshot = `${project.id}:${videoId}:${project.revision}`;
+  const previousSnapshot = useRef(snapshot);
+  const passed = !!report?.passed && report.revision === project.revision;
+  const exporting = !!exportJob && ["queued", "running"].includes(exportJob.status);
+  const counts = useMemo(() => {
+    const rows = Object.values(project.state.observations).filter(row => row.video_id === videoId);
+    const tracks = new Set(rows.map(row => row.identity_uuid));
+    for (const segment of Object.values(project.state.segments)) if (segment.video_id === videoId) tracks.add(segment.identity_uuid);
+    return {tracks: tracks.size, boxes: rows.reduce((total, row) => total + boxKeys(row).length, 0)};
+  }, [project.state, videoId]);
 
   useEffect(() => {
-    if (!reviewJob?.id) return;
-    let gone = false;
-    async function poll() {
-      try {
-        const next = await api<ReviewJob>("/jobs/" + reviewJob!.id);
-        if (gone) return;
-        setReviewJob(next);
-        if (next.status === "completed") {
-          const details = await api<ReviewMedia>("/reviews/" + next.id);
-          if (!gone) setMedia(details);
-        } else if (next.status !== "failed")
-          timer = window.setTimeout(poll, 1000);
-      } catch (e) {
-        if (!gone) setError(String(e));
-      }
-    }
-    let timer = 0;
-    void poll();
-    return () => {
-      gone = true;
-      clearTimeout(timer);
-    };
-  }, [reviewJob?.id]);
+    if (previousSnapshot.current === snapshot) return;
+    previousSnapshot.current = snapshot;
+    setReport(null);
+    setExportJob(null);
+    setPollError(false);
+    setError("");
+    setChanged(true);
+  }, [snapshot]);
 
   useEffect(() => {
-    if (!exportJob?.id || ["completed", "failed"].includes(exportJob.status))
-      return;
-    let gone = false,
-      timer = 0;
+    if (!exportJob?.id || ["completed", "failed"].includes(exportJob.status)) return;
+    let gone = false, timer = 0;
     async function poll() {
       try {
         const job = await api<Job>("/jobs/" + exportJob!.id);
-        if (!gone) {
-          setExportJob(job);
-          if (!["completed", "failed"].includes(job.status))
-            timer = window.setTimeout(poll, 800);
-        }
-      } catch (e) {
-        if (!gone) setError(String(e));
+        if (gone) return;
+        setPollError(false);
+        setExportJob(job);
+        if (!["completed", "failed"].includes(job.status)) timer = window.setTimeout(poll, 800);
+      } catch {
+        if (!gone) setPollError(true);
       }
     }
     void poll();
-    return () => {
-      gone = true;
-      clearTimeout(timer);
-    };
-  }, [exportJob?.id]);
+    return () => {gone = true; clearTimeout(timer);};
+  }, [exportJob?.id, pollAttempt]);
 
-  useEffect(() => {
-    if (stale) {
-      setVisualConfirmed(false);
-      setReport(null);
-      setExportJob(null);
-      player.current?.pause();
-    }
-  }, [stale]);
-  useEffect(() => {
-    if (!report) return;
-    results.current?.scrollIntoView({ block: "start", behavior: "smooth" });
-    results.current?.focus({ preventScroll: true });
-  }, [report]);
-  useEffect(() => {
-    if (player.current) player.current.playbackRate = playbackRate;
-  }, [playbackRate, loaded]);
-
-  async function run(task: () => Promise<void>) {
-    setBusy(true);
-    setError("");
-    try {
-      await task();
-    } catch (e) {
-      setError(String(e));
-    } finally {
-      setBusy(false);
-    }
-  }
-  function seekFrame(target: number) {
-    if (!player.current || !media) return;
-    player.current.pause();
-    const index = Math.max(0, Math.min(media.frame_count - 1, target));
-    const start = media.frame_timestamps[index];
-    const end = media.frame_timestamps[index + 1] ?? media.duration_seconds;
-    // Seek inside the frame interval to avoid a browser showing the preceding
-    // frame after rounding an exact presentation timestamp.
-    const time = start + Math.min(0.001, Math.max(0, (end - start) / 2));
-    if (Number.isFinite(time)) {
-      player.current.currentTime = time;
-      setSeconds(time);
-    }
-  }
-  async function prepare() {
-    await run(async () => {
-      await useStore.getState().saveNow();
-      const current = useStore.getState().project!;
-      player.current?.pause();
-      setMedia(null);
-      setReport(null);
-      setExportJob(null);
-      setLoaded(false);
-      setVisualConfirmed(false);
-      setSeconds(0);
-      setReviewJob(
-        await post<ReviewJob>(`/videos/${videoId}/review-jobs`, {
-          revision: current.revision,
-        }),
-      );
-    });
-  }
   async function validate() {
-    player.current?.pause();
-    await run(async () => {
+    setBusy("validation");
+    setError("");
+    setReport(null);
+    setExportJob(null);
+    setPollError(false);
+    try {
       await useStore.getState().saveNow();
-      const current = useStore.getState().project!;
-      if (current.revision !== media?.revision)
-        throw new Error(
-          "Annotations changed. Prepare a new review video before validation.",
-        );
-      setNotesConfirmed(false);
-      setExportJob(null);
-      setReport(
-        await post<Report>(`/videos/${videoId}/validate`, {
-          review_job_id: reviewJob!.id,
-          revision: current.revision,
-          visual_confirmed: visualConfirmed,
-          coverage,
-        }),
-      );
-    });
+      const current = useStore.getState().project;
+      if (!current || current.id !== project.id || !visualConfirmed) throw new Error("Review your annotations in the editor before finishing.");
+      const next = await post<Report>(`/videos/${videoId}/validate`, {revision: current.revision, visual_confirmed: true, coverage});
+      const latest = useStore.getState().project;
+      if (latest?.id !== current.id || latest.revision !== next.revision) throw new Error("Annotations changed. Run validation again before exporting.");
+      setReport(next);
+      setChanged(false);
+    } catch (e) {setError(message(e));}
+    finally {setBusy(null);}
   }
-  async function exportAnnotations() {
-    await run(async () => {
-      await useStore.getState().saveNow();
-      setExportJob(
-        await post<Job>(`/projects/${project.id}/exports`, {
-          format: "annotations_json",
-          video_id: videoId,
-          include_videos: false,
-          revision: report!.revision,
-          review_job_id: reviewJob!.id,
-          validation_id: report!.validation_id,
-        }),
-      );
-    });
-  }
-  const rendering =
-    !!reviewJob && ["queued", "running"].includes(reviewJob.status);
 
-  return (
-    <div className="review-finish">
-      <ol className="review-steps" aria-label="Finish steps">
-        <li className={!passed ? "current" : "done"}>
-          <span>1</span> Review video
-        </li>
-        <li className={report ? (passed ? "done" : "current") : ""}>
-          <span>2</span> Validate annotations
-        </li>
-        <li className={passed ? "current" : ""}>
-          <span>3</span> Export JSON
-        </li>
-      </ol>
-      <div className="review-intro">
-        <div>
-          <h3>{source.name}</h3>
-          <p>
-            Review every object, class and ID through the whole
-            video. Boxes hidden in the editor are included here.
-          </p>
+  async function exportAnnotations() {
+    if (!passed || !report?.validation_id) return;
+    setBusy("export");
+    setError("");
+    setPollError(false);
+    try {
+      await useStore.getState().saveNow();
+      const current = useStore.getState().project;
+      if (current?.id !== project.id || current.revision !== report.revision) throw new Error("Annotations changed. Run validation again before exporting.");
+      const job = await post<Job>(`/projects/${project.id}/exports`, {format: "annotations_json", video_id: videoId, include_videos: false, revision: report.revision, validation_id: report.validation_id});
+      const latest = useStore.getState().project;
+      if (latest?.id !== current.id || latest.revision !== report.revision) throw new Error("Annotations changed. Run validation again before exporting.");
+      setExportJob(job);
+    } catch (e) {setError(message(e));}
+    finally {setBusy(null);}
+  }
+
+  if (!source) return <main className="finish-page"><div className="finish-shell"><p role="alert">This video is no longer available.</p><Button variant="outline" onClick={onBack}>Back to annotation</Button></div></main>;
+
+  return <main className="finish-page" aria-labelledby="finish-title">
+    <div className="finish-shell">
+      <header className="finish-heading">
+        <div className="finish-heading-copy">
+          <Button variant="ghost" size="sm" className="self-start" onClick={onBack}><ArrowLeft/>Back to annotation</Button>
+          <h1 id="finish-title">Validate & export</h1>
+          <p>Check the saved annotation data, then download your JSON file.</p>
         </div>
-        <Button variant="outline" className="subtle" onClick={onBackup}>
-          Back up project
-        </Button>
-      </div>
-      {error && (
-        <div className="error" role="alert">
-          {error}
-        </div>
-      )}
-      {stale && (
-        <div className="review-warning" role="alert">
-          <AlertTriangle size={18} />
-          <div>
-            <strong>Annotations changed after this preview.</strong>
-            <p>
-              Prepare the video again so your visual review, validation and
-              export use the same saved work.
-            </p>
-          </div>
-        </div>
-      )}
-      {(!reviewJob || stale || reviewJob.status === "failed") && (
-        <div className="review-prepare">
-          <Film size={36} />
-          <h3>See your annotations in motion</h3>
-          <p>
-            Prepare a complete review video with boxes, classes and track IDs.
-            The preview stays on this computer; your annotation JSON contains no
-            video or images.
-          </p>
-          {reviewJob?.status === "failed" && (
-            <p className="error">
-              {reviewJob.error ||
-                "The review video could not be prepared. Your annotations are saved."}
-            </p>
-          )}
-          <Button
-            variant="default"
-            className="primary"
-            disabled={busy}
-            onClick={() => void prepare()}
-          >
-            {busy ? (
-              <LoaderCircle className="spin" size={17} />
-            ) : (
-              <Film size={17} />
-            )}{" "}
-            {stale ? "Prepare updated review video" : "Prepare review video"}
-          </Button>
-        </div>
-      )}
-      {rendering && !stale && (
-        <div className="review-prepare" role="status">
-          <LoaderCircle className="spin" size={30} />
-          <h3>Preparing the complete video…</h3>
-          <progress
-            value={reviewJob.progress || 0}
-            max={reviewJob.total || source.frame_count}
-          />
-          <p>
-            {reviewJob.progress || 0} / {reviewJob.total || source.frame_count}{" "}
-            frames · {reviewJob.phase || "Drawing all saved boxes and IDs"}
-          </p>
-          <p>You can close this window while it prepares.</p>
-        </div>
-      )}
-      {renderComplete && (
-        <>
-          <div className="review-player">
-            <video
-              ref={player}
-              data-testid="review-video"
-              aria-label="Complete annotated video"
-              src={media.video_url}
-              controls
-              playsInline
-              preload="auto"
-              onLoadedMetadata={() => {
-                setLoaded(true);
-                if (player.current) player.current.playbackRate = playbackRate;
-              }}
-              onTimeUpdate={() => setSeconds(player.current?.currentTime || 0)}
-              onSeeked={() => setSeconds(player.current?.currentTime || 0)}
-              onPlay={() => setPlaying(true)}
-              onPause={() => setPlaying(false)}
-              onEnded={() => setPlaying(false)}
-              onError={() =>
-                setError(
-                  "This browser could not play the review video. Your original video and annotations are unchanged. Try opening Frameinsight in Chrome.",
-                )
-              }
-            />
-          </div>
-          <div className="review-transport">
-            <Button
-              variant="outline"
-              aria-label="Restart review"
-              onClick={() => seekFrame(0)}
-              disabled={!loaded}
-            >
-              <RotateCcw size={16} />
-            </Button>
-            <Button
-              variant="outline"
-              aria-label="Previous review frame"
-              onClick={() => seekFrame(frame - 1)}
-              disabled={!loaded || frame === 0}
-            >
-              <ChevronLeft size={18} />
-            </Button>
-            <Button
-              variant="outline"
-              aria-label={playing ? "Pause review" : "Play review"}
-              onClick={() => {
-                if (playing) player.current?.pause();
-                else
-                  void player.current?.play().catch((e) => setError(String(e)));
-              }}
-              disabled={!loaded}
-            >
-              {playing ? <Pause size={17} /> : <Play size={17} />}
-            </Button>
-            <Button
-              variant="outline"
-              aria-label="Next review frame"
-              onClick={() => seekFrame(frame + 1)}
-              disabled={!loaded || frame >= media.frame_count - 1}
-            >
-              <ChevronRight size={18} />
-            </Button>
-            <label className="review-speed">
-              Speed
-              <select
-                aria-label="Review playback speed"
-                value={playbackRate}
-                onChange={(e) => setPlaybackRate(Number(e.target.value))}
-              >
-                <option value="0.125">0.125× · very slow</option>
-                <option value="0.25">0.25× · quarter speed</option>
-                <option value="0.5">0.5× · half speed</option>
-                <option value="1">1× · normal</option>
-              </select>
-            </label>
-            <span className="review-position">
-              Frame {frame} / {media.frame_count - 1} · {reviewClock(seconds)}
-            </span>
-            <Button
-              variant="outline"
-              onClick={() => {
-                player.current?.pause();
-                onEdit(frame);
-              }}
-            >
-              Fix this frame
-            </Button>
-          </div>
-          <div className="review-confirmation">
-            <label>
-              Annotation coverage
-              <select
-                aria-label="Annotation coverage"
-                value={coverage}
-                onChange={(e) => {
-                  setCoverage(e.target.value as typeof coverage);
+        <Badge variant={passed ? "default" : "secondary"}>{passed ? <CheckCircle2/> : <ShieldCheck/>}{passed ? "Ready to export" : "Final data check"}</Badge>
+      </header>
+
+      {error && <div className="finish-notice finish-notice-error" role="alert"><AlertTriangle/><p>{error}</p></div>}
+      {changed && !passed && <div className="finish-notice" role="status"><ShieldCheck/><p>Annotations changed. Run validation again before exporting.</p></div>}
+      {!visualConfirmed && <div className="finish-notice" role="alert"><AlertTriangle/><div><strong>Review your annotations first.</strong><p>Use the annotation canvas to check your boxes and track IDs, then select Finish again.</p></div><Button variant="outline" onClick={onBack}>Review in editor</Button></div>}
+
+      <div className="finish-grid">
+        <section className="finish-main" aria-label="Annotation validation">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2"><ShieldCheck className="size-5"/>Check annotations</CardTitle>
+              <CardDescription>Validation checks the JSON structure, track IDs, classes, frame references and internal consistency.</CardDescription>
+            </CardHeader>
+            <CardContent className="flex flex-col gap-5">
+              <label className="finish-coverage">
+                <span>Annotation coverage</span>
+                <NativeSelect aria-label="Annotation coverage" className="w-full" value={coverage} disabled={!!busy || exporting} onChange={event => {
+                  setCoverage(event.target.value as Coverage);
                   setReport(null);
                   setExportJob(null);
-                  setVisualConfirmed(false);
-                }}
-              >
-                <option value="all_people">
-                  All visible objects in the whole video
-                </option>
-                <option value="selected_people">
-                  Only the objects I chose to annotate
-                </option>
-              </select>
-            </label>
-            <label className="checkbox">
-              <input
-                aria-label="Visual review complete"
-                type="checkbox"
-                checked={visualConfirmed}
-                disabled={!loaded || busy}
-                onChange={(e) => {
-                  setVisualConfirmed(e.target.checked);
-                  setReport(null);
-                  setExportJob(null);
-                }}
-              />
-              I reviewed the video: boxes fit the objects, each real object keeps
-              the same ID, and the coverage selected above is correct.
-            </label>
-            <p>
-              Automatic checks verify the data structure. They cannot tell
-              whether two IDs belong to the same real object or whether an object
-              was missed. Your visual review checks that.
-            </p>
-            <Button
-              variant="default"
-              className="primary"
-              disabled={!loaded || !visualConfirmed || busy}
-              onClick={() => void validate()}
-            >
-              {busy ? (
-                <LoaderCircle className="spin" size={17} />
-              ) : (
-                <ShieldCheck size={17} />
-              )}
-              Run annotation validation
-            </Button>
-          </div>
-        </>
-      )}
-      {report && !stale && (
-        <div ref={results} tabIndex={-1} className="validation-report" data-testid="validation-report">
-          <div
-            className={
-              passed ? "validation-heading passed" : "validation-heading failed"
-            }
-          >
-            {passed ? <CheckCircle2 size={25} /> : <AlertTriangle size={25} />}
-            <div>
-              <h3>
-                {passed
-                  ? "Validation passed — you can export"
-                  : "Fix these issues before exporting"}
-              </h3>
-              <p>
-                {passed
-                  ? "The saved annotations and JSON passed the structural checks. Visual correctness is based on your confirmation."
-                  : "Your work is saved. Open an affected frame, make corrections, then review and validate again."}
-              </p>
-            </div>
-          </div>
-          <ul className="validation-checks">
-            {report.checks.map((check, i) => (
-              <li key={i} className={check.passed ? "passed" : "failed"}>
-                {check.passed ? (
-                  <Check size={15} />
-                ) : (
-                  <AlertTriangle size={15} />
-                )}
-                <span>
-                  {check.name}
-                  {check.detail && <small>{check.detail}</small>}
-                </span>
-              </li>
-            ))}
-          </ul>
-          {report.errors.length > 0 && (
-            <div className="validation-findings">
-              <h4>Must fix</h4>
-              {report.errors.map((item, i) => (
-                <div key={i}>
-                  <span>{item.message}</span>
-                  {item.frame_index != null && (
-                    <Button
-                      variant="outline"
-                      onClick={() =>
-                        onEdit(item.frame_index!, item.identity_uuid)
-                      }
-                    >
-                      Open frame {item.frame_index}
-                    </Button>
-                  )}
-                </div>
-              ))}
-            </div>
-          )}
-          {report.warnings.length > 0 && (
-            <div className="validation-findings warnings">
-              <h4>Review notes</h4>
-              {report.warnings.map((item, i) => (
-                <div key={i}>
-                  <span>{item.message}</span>
-                  {item.frame_index != null && (
-                    <Button
-                      variant="outline"
-                      onClick={() =>
-                        onEdit(item.frame_index!, item.identity_uuid)
-                      }
-                    >
-                      Inspect frame {item.frame_index}
-                    </Button>
-                  )}
-                </div>
-              ))}
-              {passed && (
-                <label className="checkbox">
-                  <input
-                    aria-label="Review notes checked"
-                    type="checkbox"
-                    checked={notesConfirmed}
-                    onChange={(e) => setNotesConfirmed(e.target.checked)}
-                  />
-                  I checked these notes and they match my intended annotations.
-                </label>
-              )}
-            </div>
-          )}
-          {passed && (
-            <div className="review-export">
-              <p>
-                <strong>Annotations JSON</strong> · IDs, classes, boxes, exact
-                frame times and validation results. No video or images.
-              </p>
-              <Button
-                variant="default"
-                className="primary"
-                disabled={
-                  busy ||
-                  (report.warnings.length > 0 && !notesConfirmed) ||
-                  (!!exportJob &&
-                    ["queued", "running"].includes(exportJob.status))
-                }
-                onClick={() => void exportAnnotations()}
-              >
-                <Download size={17} />
-                {exportJob && ["queued", "running"].includes(exportJob.status)
-                  ? "Preparing JSON…"
-                  : "Prepare validated JSON"}
+                  setPollError(false);
+                  setError("");
+                }}>
+                  <option value="all_people">All visible objects in the whole video</option>
+                  <option value="selected_people">Only the objects I chose to annotate</option>
+                </NativeSelect>
+                <small>Choose the scope you completed. This is recorded in the export.</small>
+              </label>
+              <div className="finish-review-note">{visualConfirmed ? <CheckCircle2/> : <AlertTriangle/>}<p>{visualConfirmed ? "You confirmed your visual review in the annotation canvas." : "Visual review has not been confirmed."} Automatic validation does not judge box placement or whether IDs match real objects.</p></div>
+              {!report && <ul className="finish-check-preview">
+                {["Track IDs and class references", "Frame numbers and timestamps", "JSON structure and export consistency"].map(label => <li key={label}><ShieldCheck/><span>{label}</span></li>)}
+              </ul>}
+              <Button className="self-start" disabled={!visualConfirmed || !!busy || exporting || source.status !== "ready"} onClick={() => void validate()}>
+                {busy === "validation" ? <LoaderCircle className="spin"/> : <ShieldCheck/>}
+                {busy === "validation" ? "Checking annotations…" : "Run annotation validation"}
               </Button>
-              {exportJob?.status === "failed" && (
-                <p className="error" role="alert">
-                  {exportJob.error}
-                </p>
-              )}
-              {exportJob?.status === "completed" && exportJob.export_id && (
-                <a
-                  className="download-link"
-                  href={"/api/exports/" + exportJob.export_id}
-                  download
-                >
-                  <Download size={17} />
-                  Download annotations (.json)
-                </a>
-              )}
-            </div>
-          )}
-        </div>
-      )}
+            </CardContent>
+            {report && <CardFooter className="block border-t" data-testid="validation-report">
+              <div className={"validation-heading " + (passed ? "passed" : "failed")} role="status">
+                {passed ? <CheckCircle2/> : <AlertTriangle/>}
+                <div><h2>{passed ? "Validation passed. You can export." : "Fix these issues before exporting"}</h2><p>{passed ? "Your saved annotations passed all structural checks." : "Your work is saved. Open an affected frame to correct the data, then validate again."}</p></div>
+              </div>
+              <ul className="validation-checks">
+                {report.checks.map((check, index) => <li key={index} className={check.passed ? "passed" : "failed"}>{check.passed ? <Check/> : <AlertTriangle/>}<span>{checkLabels[check.name] || check.name}{check.detail && <small>{check.detail}</small>}</span></li>)}
+              </ul>
+              {report.errors.length > 0 && <div className="validation-findings"><h3>Issues to fix</h3>{report.errors.map((item, index) => <div key={index}><span>{item.message}</span>{item.frame_index != null && <Button variant="outline" size="sm" onClick={() => onEdit(item.frame_index!, item.identity_uuid)}>Open frame {item.frame_index}</Button>}</div>)}</div>}
+              {report.warnings.length > 0 && <div className="validation-findings warnings"><h3>Notes</h3>{report.warnings.map((item, index) => <div key={index}><span>{item.message}</span>{item.frame_index != null && <Button variant="outline" size="sm" onClick={() => onEdit(item.frame_index!, item.identity_uuid)}>Inspect frame {item.frame_index}</Button>}</div>)}</div>}
+            </CardFooter>}
+          </Card>
+        </section>
+
+        <aside className="finish-sidebar" aria-label="Export and project details">
+          <Card>
+            <CardHeader><CardTitle className="flex items-center gap-2"><FileJson2 className="size-5"/>Annotations JSON</CardTitle><CardDescription>Save annotations without video or image files.</CardDescription></CardHeader>
+            <CardContent className="flex flex-col gap-4">
+              <ul className="finish-export-content"><li>Track IDs, classes and boxes</li><li>Frame numbers and exact timestamps</li><li>Annotation history and validation results</li></ul>
+              {!passed && <p className="finish-export-hint">Run validation to enable export.</p>}
+              <Button disabled={!passed || !report?.validation_id || !!busy || exporting} onClick={() => void exportAnnotations()}>
+                {busy === "export" || exporting ? <LoaderCircle className="spin"/> : <Download/>}
+                {busy === "export" || exporting ? "Preparing JSON…" : "Prepare validated JSON"}
+              </Button>
+              {exportJob?.status === "failed" && <p className="finish-inline-error" role="alert">{exportJob.error || "The export could not be prepared. Try again."}</p>}
+              {pollError && <div className="finish-export-retry"><p role="alert">The connection was interrupted while checking the export.</p><Button variant="outline" size="sm" onClick={() => {setPollError(false); setPollAttempt(value => value + 1);}}>Check export status</Button></div>}
+              {passed && exportJob?.status === "completed" && exportJob.export_id && <div className="finish-download" role="status"><p><CheckCircle2/>Your annotation file is ready.</p><Button variant="outline" asChild><a href={"/api/exports/" + exportJob.export_id} download><Download/>Download annotations (.json)</a></Button></div>}
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader><CardTitle>Project details</CardTitle><CardDescription>Names can be updated before you export.</CardDescription></CardHeader>
+            <CardContent className="flex flex-col gap-5">
+              <div className="finish-file"><strong>{project.name}</strong><span title={source.name}>{source.name}</span></div>
+              <dl className="finish-counts"><div><dt>Tracks</dt><dd>{counts.tracks.toLocaleString()}</dd></div><div><dt>Frames</dt><dd>{source.frame_count.toLocaleString()}</dd></div><div><dt>Boxes</dt><dd>{counts.boxes.toLocaleString()}</dd></div></dl>
+              <div className="finish-class-list" aria-label="Project classes">{(project.classes || []).map(name => <Badge variant="outline" className="h-auto min-h-6 whitespace-normal break-words" key={name}><span className="finish-class-dot" style={{background: classColor(project, name)}}/>{name}</Badge>)}</div>
+              <Button variant="outline" disabled={!!busy || exporting} onClick={onSettings}><Settings2/>Edit project & classes</Button>
+            </CardContent>
+            <CardFooter className="border-t"><Button variant="ghost" size="sm" disabled={!!busy} onClick={onBackup}><FolderArchive/>Back up project</Button></CardFooter>
+          </Card>
+        </aside>
+      </div>
     </div>
-  );
+  </main>;
 }

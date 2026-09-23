@@ -59,6 +59,10 @@ def delete_video(vid):
                 if job.get('kind')=='review' and job.get('snapshot_path'):
                     files.append((Path(job['snapshot_path']).parent,DATA/'reviews'))
                 c.execute('DELETE FROM jobs WHERE id=?', (job['id'],))
+        for validation in c.execute('SELECT data FROM validations WHERE video_id=?', (vid,)).fetchall():
+            report = json.loads(validation['data'])
+            if report.get('mode') == 'structural' and report.get('snapshot_path'):
+                files.append((Path(report['snapshot_path']).parent, DATA / 'validations'))
         c.execute('DELETE FROM validations WHERE video_id=?',(vid,))
         c.execute('UPDATE projects SET revision=revision+1 WHERE id=?', (pid,))
         if video.get('source'):

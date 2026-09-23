@@ -1,6 +1,6 @@
 # Windows installation
 
-Give the annotator the **3.1.0** `Window_setup.exe` and `START-HERE.txt` from the
+Give the annotator the **3.2.0** `Window_setup.exe` and `START-HERE-WINDOWS.txt` from the
 [official release](https://github.com/frameinsight/frameinsight-annotator/releases/latest).
 Double-click the installer, follow its pages, then use the desktop shortcut.
 Windows 11, **64-bit**, is the release target. Edge or Chrome is sufficient.
@@ -10,14 +10,34 @@ downloading updates requires internet. This is an unsigned installer, so
 Windows may identify its publisher as unknown.
 
 Installation is per user, without administrator rights. It includes the Python
-runtime, CPU video decoding, annotation UI and editable interpolation. The app
-starts with a video library, asks for named classes before upload, and includes
-an optional beginner walkthrough. Any number of class boxes can share one
-object track. Finish creates the full annotated review video, lets the annotator
-confirm coverage, runs structural validation, and prepares annotations-only
-JSON. Changes made after review require a fresh review and validation.
+runtime, CPU video decoding, annotation UI and editable interpolation. Create a
+project with named classes, then add videos inside it. The project's video table
+shows progress, creation and update dates, and an **Open** or **Resume** action.
+An optional beginner walkthrough explains the editor. Any number of class boxes
+can share one object track. Project and class names remain editable, including
+while preparing an export.
 No user videos, annotations, projects, model weights or test fixtures are
 included in the installer.
+
+## Finish and share annotations
+
+1. Click **Finish**, then **Review in editor** to check the video already on the
+   canvas. Playback starts at frame 0 with every track and class shown at 0.5×.
+   Use the playback speed and frame controls below the canvas to check and
+   correct boxes and track IDs.
+2. Click **Finish** again, then **I reviewed — continue**. Choose whether you
+   annotated all objects or only selected objects on the **Validate & export**
+   page.
+3. Click **Run annotation validation**. After **Validation passed. You can
+   export.**, choose **Prepare validated JSON**, then **Download annotations
+   (.json)**.
+
+This flow uses the existing canvas; it does not render another video. Validation
+checks the saved annotation structure, track and class references, and JSON
+data. It cannot judge box placement, missed objects or whether two tracks belong
+to the same real object. The JSON contains annotations, not video or images.
+Use **Edit project & classes** to rename labels before export. Changes invalidate
+the previous validation, so run it again to export the updated data.
 
 Closing the browser leaves the local server running. Use the tray icon near
 the clock to reopen the editor, open the data folder, or exit after saving.
@@ -71,9 +91,10 @@ when both the Windows and Debian checks pass. See [release maintenance](RELEASES
 Local packaging checks use Wine in an isolated container. CI is configured to
 run the installed runtime on its Windows Server runner. The synthetic-video
 suite exercises imports, frame decoding, multiple classes sharing a track,
-persistence, full annotated MP4 rendering with exact source timing,
-review/validation guards, JSON export, graceful exit, relaunch, upgrade,
-shortcuts and preservation of data during uninstall.
+persistence, validation and JSON export, graceful exit, relaunch, upgrade,
+shortcuts and preservation of data during uninstall. Compatibility checks may
+also exercise annotated MP4 rendering through the API; rendering is not part
+of the editor's Finish flow.
 
 **Neither environment substitutes for a test on an actual Windows 11 laptop.**
 SmartScreen, antivirus behavior, the native browser picker and performance on

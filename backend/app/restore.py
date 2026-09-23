@@ -72,7 +72,7 @@ def restore_archive(path, jid):
                 for col,entities in state.items():
                     for ident,e in entities.items():c.execute('INSERT INTO entities VALUES(?,?,?,?)',(pid,col,ident,json.dumps(e)))
                 c.execute('CREATE TABLE IF NOT EXISTS restored_history(project_id TEXT PRIMARY KEY, data TEXT NOT NULL)')
-                c.execute('INSERT INTO restored_history VALUES(?,?)',(pid,json.dumps({'source_project_id':original['id'],'source_revision':original['revision'],'operations':original.get('operations',[]),'previous_restored_history':original.get('restored_history')})))
+                c.execute('INSERT INTO restored_history VALUES(?,?)',(pid,json.dumps({'source_project_id':original['id'],'source_revision':original['revision'],'operations':original.get('operations',[]),'project_settings_history':original.get('project_settings_history',[]),'previous_restored_history':original.get('restored_history')})))
                 for p in original.get('proposals',[]):
                     p=copy.deepcopy(p);old_id=p['id'];p['id']=str(uuid.uuid5(uuid.NAMESPACE_URL,pid+old_id));p['video_id']=mapping[p['video_id']]
                     # Keep an audit reference while live provenance uses remapped IDs.

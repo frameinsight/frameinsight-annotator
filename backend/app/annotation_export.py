@@ -24,6 +24,7 @@ def annotation_document(pid, video_id=None):
         table = c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='restored_history'").fetchone()
         restored = c.execute('SELECT data FROM restored_history WHERE project_id=?', (pid,)).fetchone() if table else None
         restored_history = json.loads(restored['data']) if restored else None
+        settings_history = [json.loads(row['data']) for row in c.execute('SELECT data FROM project_settings_events WHERE project_id=? ORDER BY revision', (pid,))]
     if video_id is not None:
         if video_id not in project['videos']:raise ValueError('Video does not belong to this project')
         state=project['state']
@@ -98,7 +99,7 @@ def annotation_document(pid, video_id=None):
             'frame_annotations': 'One row per track per annotated frame; boxes maps class_key to source-image xyxy coordinates. An omitted class has no saved box on that frame.',
             'source_references': 'Video names, hashes and paths are metadata only. No video, image, thumbnail or binary media is embedded.',
             'history_scope': 'Selected-video changes only; project backups preserve full replayable history.' if video_id else 'Full project history.',
-            'history': 'Operations preserve before/after values and undo links. recorded_at is server UTC time; no annotator identity is invented.',
+            'history': 'Operations preserve before/after values and undo links. Class keys and labels in recovery history follow project renames; project_settings_history records those mappings. recorded_at is server UTC time; no annotator identity is invented.',
         },
         'summary': {'videos': len(project['videos']), 'people': len(state['identities']),
                     'observations': len(state['observations']), 'boxes': len(annotation_index),
@@ -110,6 +111,6 @@ def annotation_document(pid, video_id=None):
                     'operations': len(operations)},
         'videos': project['videos'], 'frames': frames,
         'annotation_index': annotation_index, 'frame_annotations': frame_annotations, 'visibility_intervals': visibility_intervals(state, project['videos']), 'presence_intervals': presence_intervals(state, project['videos']),
-        'state': state, 'operations': operations, 'restored_history': restored_history,
+        'state': state, 'operations': operations, 'restored_history': restored_history, 'project_settings_history': settings_history,
         'detector': {'proposals': proposals, 'processed_frames': proposal_frames, 'jobs': detector_jobs},
     }

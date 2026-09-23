@@ -23,9 +23,9 @@ args = parser.parse_args()
 uid = lambda: str(uuid.uuid4())
 
 
-def request(path, data=None, raw=False):
+def request(path, data=None, raw=False, method=None):
     body = json.dumps(data).encode() if data is not None else None
-    query = urllib.request.Request('http://127.0.0.1:8765' + path, body, headers={'Content-Type': 'application/json'} if body else {})
+    query = urllib.request.Request('http://127.0.0.1:8765' + path, body, headers={'Content-Type': 'application/json'} if body else {}, method=method)
     with urllib.request.urlopen(query, timeout=20) as response:
         return response.read() if raw else json.load(response)
 
@@ -39,10 +39,44 @@ def finished(job):
     raise AssertionError('Job did not finish: ' + job['id'])
 
 
-def rejected(path, data):
+def rejected(path, data, status=422):
     try: request(path, data)
-    except urllib.error.HTTPError as error: assert error.code == 422, error.read()
-    else: raise AssertionError('Unreviewed delivery was accepted')
+    except urllib.error.HTTPError as error: assert error.code == status, (error.code, error.read())
+    else: raise AssertionError('Expected request rejection: ' + path)
+
+
+def structural_delivery(pid, vid, revision, boxes, class_names):
+    before = request('/api/projects/' + pid)
+    def deliver(current_revision):
+        validation = request('/api/videos/' + vid + '/validate', {'revision': current_revision, 'visual_confirmed': True, 'coverage': 'selected_people'})
+        assert validation['passed'] and validation['mode'] == 'structural', validation
+        assert validation['coverage'] == 'selected_people' and validation['limitation']
+        assert 'review_job_id' not in validation and 'review_video_hash' not in validation
+        assert not any('render' in check['name'].lower() for check in validation['checks'])
+        proof = {'revision': current_revision, 'validation_id': validation['validation_id']}
+        request('/api/videos/' + vid + '/finish', {'confirmed': True, **proof})
+        job = finished(request('/api/projects/' + pid + '/exports', {'format': 'annotations_json', 'video_id': vid, 'include_videos': False, **proof}))
+        document = request('/api/exports/' + job['export_id'])
+        assert document['schema_version'] == 3 and document['app_version'] == manifest['version'] and document['media_included'] is False
+        assert document['validation']['mode'] == 'structural' and document['validation']['validation_id'] == validation['validation_id']
+        assert 'review_job_id' not in document['validation'] and 'review_video_hash' not in document['validation']
+        assert document['project']['revision'] == current_revision and document['state'] == before['state']
+        assert {row['track_id'] for row in document['annotation_index']} == {7}
+        assert {row['person_id'] for row in document['annotation_index']} == {7}
+        assert len(document['annotation_index']) == len(boxes)
+        assert {row['class_key']: row['class_name'] for row in document['annotation_index']} == class_names
+        assert document['frame_annotations'][0]['boxes'] == boxes
+        assert not any(job['kind'] == 'review' for job in request('/api/projects/' + pid + '/jobs'))
+        assert next(video for video in request('/api/video-library') if video['id'] == vid)['finished']
+        return proof, job['export_id']
+    proof, export_id = deliver(revision)
+    updated = request('/api/projects/' + pid + '/settings', {'base_revision': revision, 'name': before['name'] + ' revised', 'request_id': str(uuid.uuid4())}, method='PATCH')
+    assert updated['revision'] == revision + 1 and updated['state'] == before['state']
+    assert not next(video for video in request('/api/video-library') if video['id'] == vid)['finished']
+    rejected('/api/projects/' + pid + '/exports', {'format': 'annotations_json', 'video_id': vid, **proof}, 409)
+    rejected('/api/exports/' + export_id, None, 409)
+    deliver(updated['revision'])
+    return updated['revision']
 
 
 binary = '/usr/bin/frameinsight'
@@ -84,15 +118,16 @@ try:
     request('/api/projects/' + pid + '/operations', {'id': uid(), 'base_revision': 0, 'label': 'Linux named classes', 'changes': changes})
     rejected('/api/videos/' + vid + '/finish', {'confirmed': True, 'revision': 1})
     rejected('/api/projects/' + pid + '/exports', {'format': 'annotations_json', 'video_id': vid})
-    review = finished(request('/api/videos/' + vid + '/review-jobs', {'revision': 1}))
+    revision = structural_delivery(pid, vid, 1, boxes, {key: style['class_name'] for key, style in styles.items()})
+    review = finished(request('/api/videos/' + vid + '/review-jobs', {'revision': revision}))
     metadata = request('/api/reviews/' + review['id'])
     assert metadata['rendered_frames'] == metadata['frame_count'] == 24 and not metadata['stale']
     with av.open(io.BytesIO(request('/api/reviews/' + review['id'] + '/video', raw=True))) as rendered:
         frames = list(rendered.decode(rendered.streams.video[0])); assert len(frames) == 24
         assert all(abs(float(frame.time) - metadata['frame_timestamps'][n]) < 1e-6 for n, frame in enumerate(frames))
-    validation = request('/api/videos/' + vid + '/validate', {'revision': 1, 'review_job_id': review['id'], 'visual_confirmed': True, 'coverage': 'selected_people'})
+    validation = request('/api/videos/' + vid + '/validate', {'revision': revision, 'review_job_id': review['id'], 'visual_confirmed': True, 'coverage': 'selected_people'})
     assert validation['passed'], validation
-    proof = {'revision': 1, 'review_job_id': review['id'], 'validation_id': validation['validation_id']}
+    proof = {'revision': revision, 'review_job_id': review['id'], 'validation_id': validation['validation_id']}
     request('/api/videos/' + vid + '/finish', {'confirmed': True, **proof})
     exported = finished(request('/api/projects/' + pid + '/exports', {'format': 'annotations_json', 'video_id': vid, **proof}))
     document = request('/api/exports/' + exported['export_id'])
@@ -106,7 +141,7 @@ try:
     assert next(video for video in request('/api/video-library') if video['id'] == vid)['finished']
     subprocess.run([binary, '--stop', '--yes'], check=True, timeout=40)
     report = {'app_version': manifest['version'], 'environment': 'Debian 12 container, non-root desktop user, headless runtime',
-              'checks': ['installed desktop launcher', 'frozen update helper entrypoint', 'single instance', 'running-runtime upgrade/removal guard', 'HTTP frontend', 'updater package kind', 'multipart video import', '24 exact source frames', 'PNG decoding', 'three named classes share track ID', 'unreviewed finish/export rejected', 'full review MP4 and exact timestamps', 'revision-bound validation', 'media-free JSON v3', 'graceful stop', 'restart preserves annotations and finished state'],
+              'checks': ['installed desktop launcher', 'frozen update helper entrypoint', 'single instance', 'running-runtime upgrade/removal guard', 'HTTP frontend', 'updater package kind', 'multipart video import', '24 exact source frames', 'PNG decoding', 'three named classes share track ID', 'unvalidated finish/export rejected', 'structural validation and media-free JSON without a review job or review hash', 'project settings preserve annotations and invalidate previous validation/export download', 'fresh structural validation after metadata edit', 'backwards-compatible full review MP4 and exact timestamps', 'revision-bound review validation', 'media-free JSON v3', 'graceful stop', 'restart preserves annotations and finished state'],
               'database': str(data / 'projects.sqlite3'), 'database_sha256': hashlib.sha256((data / 'projects.sqlite3').read_bytes()).hexdigest(),
               'native_desktop_gui_tested': False}
     args.report.write_text(json.dumps(report, indent=2) + '\n')

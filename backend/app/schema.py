@@ -135,7 +135,7 @@ def issues(o: dict, *, visible_only: bool = False) -> list[str]:
         if o['occluded'] is not False: result.append('Equal link requires occlusion Off')
     return result
 
-def validate_state(state: dict, videos: dict, *, visible_only: bool = False):
+def validate_state(state: dict, videos: dict, *, visible_only: bool = False, structural_only: bool = False):
     numbers, seen = set(), set()
     for person in state['identities'].values():
         pid = person['person_id']
@@ -164,16 +164,19 @@ def validate_state(state: dict, videos: dict, *, visible_only: bool = False):
                     raise ValueError('A missing-box gap cannot contain that box type')
         v = videos[o['video_id']]
         for name, box in box_items(o):
-            if box and (not all(math.isfinite(x) for x in box) or not (0 <= box[0] < box[2] <= v['width'] and 0 <= box[1] < box[3] <= v['height'])):
+            if structural_only:
+                if box and (len(box) != 4 or not all(type(x) in (int, float) and math.isfinite(x) for x in box) or not (box[0] < box[2] and box[1] < box[3])):
+                    raise ValueError('Box coordinates must be four finite numbers describing a positive-area rectangle')
+            elif box and (not all(math.isfinite(x) for x in box) or not (0 <= box[0] < box[2] <= v['width'] and 0 <= box[1] < box[3] <= v['height'])):
                 raise ValueError('Box must have positive area within source-image boundaries')
-        if o['review_state'] == 'approved' and issues(o, visible_only=visible_only): raise ValueError('; '.join(issues(o, visible_only=visible_only)))
-        if o['review_state'] == 'approved' and s['status'] != 'verified': raise ValueError('Resolve segment identity before approval')
+        if not structural_only and o['review_state'] == 'approved' and issues(o, visible_only=visible_only): raise ValueError('; '.join(issues(o, visible_only=visible_only)))
+        if not structural_only and o['review_state'] == 'approved' and s['status'] != 'verified': raise ValueError('Resolve segment identity before approval')
     for link in state['links'].values():
         if link['source'] not in state['identities'] or link['target'] not in state['identities'] or link['source'] == link['target']:
             raise ValueError('Identity link requires two existing distinct identities')
-        if not link['evidence_note'].strip(): raise ValueError('Identity decisions require evidence')
+        if not structural_only and not link['evidence_note'].strip(): raise ValueError('Identity decisions require evidence')
     for r in state['reviews'].values():
-        if r['complete']:
+        if r['complete'] and not structural_only:
             if not r['checked_all_people']: raise ValueError('Confirm the full-frame completeness check')
             obs = [o for o in state['observations'].values() if o['video_id'] == r['video_id'] and o['frame_index'] == r['frame_index']]
             if any((not visible_only and o['review_state'] != 'approved') or issues(o, visible_only=visible_only) or state['segments'][o['segment_id']]['status'] != 'verified' for o in obs): raise ValueError('Resolve invalid observations and identities before marking the frame complete')

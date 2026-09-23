@@ -1,4 +1,4 @@
-"""Structural checks on the exact annotation document used for video review."""
+"""Structural checks on saved annotation JSON, without visual or class assumptions."""
 import json
 import math
 from fractions import Fraction
@@ -6,7 +6,7 @@ from .schema import MODELS, validate_state
 from .geometry import box_items, box_style
 from .visibility import presence_intervals
 
-LIMITATION = 'Structural checks cannot determine whether two boxes show the same real object or whether an object was missed. Visual review and the stated coverage are the annotator’s confirmation.'
+LIMITATION = 'Validation checks JSON structure, coordinates, IDs, class references and internal consistency. It does not judge box placement, image bounds, class containment or whether annotations match real objects.'
 
 
 def numeric_box(box):
@@ -38,12 +38,22 @@ def group_warnings(warnings):
 def validate_document(document):
     errors, warnings, checks = [], [], []
     def error(code, message, **location): errors.append({'code': code, 'message': message, **location})
-    def warning(code, message, **location): warnings.append({'code': code, 'message': message, **location})
     def check(name, before): checks.append({'name': name, 'passed': len(errors) == before})
     before = len(errors)
     try: json.loads(json.dumps(document, allow_nan=False, ensure_ascii=False))
     except (ValueError, TypeError) as e: error('json_serialization', f'The annotation document cannot be serialized as JSON: {e}')
     check('JSON serialization', before)
+    before = len(errors)
+    if document.get('format') != 'frameinsight.annotations' or document.get('schema_version') != 3:
+        error('document_schema', 'The annotation document must use the supported Frameinsight JSON schema.')
+    project = document.get('project', {})
+    if not isinstance(project, dict) or not isinstance(project.get('id'), str) or not project.get('id') or type(project.get('revision')) is not int or project.get('revision', -1) < 0:
+        error('project_reference', 'The annotation document needs a project ID and a valid saved revision.')
+    classes = document.get('classes', [])
+    valid_catalog = isinstance(classes, list) and len(classes) <= 100 and all(isinstance(name, str) and name.strip() == name and 0 < len(name) <= 80 for name in classes)
+    if not valid_catalog or len(set(classes)) != len(classes):
+        error('class_catalog', 'Class names must be unique, non-empty strings of at most 80 characters.')
+    check('Annotation schema, project revision and class catalog', before)
     state, videos, ledgers = document.get('state', {}), document.get('videos', {}), document.get('frames', {})
     before = len(errors)
     for collection, model in MODELS.items():
@@ -52,8 +62,18 @@ def validate_document(document):
                 model.model_validate(value)
                 if value.get('id') != key: raise ValueError('Entity key and ID differ')
             except (ValueError, TypeError) as e: error('entity_schema', f'{collection}: {e}', entity_id=key)
+    if valid_catalog:
+        for ident, identity in state.get('identities', {}).items():
+            styles = identity.get('box_styles', {}) if isinstance(identity, dict) else {}
+            for key, style in (styles.items() if isinstance(styles, dict) else []):
+                if isinstance(key, str) and key.startswith('class:') and (not isinstance(style, dict) or style.get('class_name') not in classes):
+                    error('unknown_class', 'A track class is missing from the project class catalog.', identity_uuid=ident)
+        for gap in state.get('intervals', {}).values():
+            key = (gap.get('geometry') or '') if isinstance(gap, dict) else ''
+            if isinstance(key, str) and key.startswith('class:') and key[6:] not in classes:
+                error('unknown_class', 'A hidden interval class is missing from the project class catalog.', identity_uuid=gap.get('identity_uuid'))
     schema_invalid = any(item['code'] == 'entity_schema' for item in errors)
-    try: validate_state(state, videos, visible_only=True)
+    try: validate_state(state, videos, visible_only=True, structural_only=True)
     except (ValueError, TypeError, KeyError, IndexError, AttributeError) as e: error('domain_integrity', str(e))
     check('Boxes, classes, identities, segments, gaps and links', before)
     if schema_invalid:
@@ -111,7 +131,7 @@ def validate_document(document):
             if style['class_name'] in frame_classes:
                 error('duplicate_frame_class', 'One track has more than one box for the same class on this frame.', frame_index=frame, identity_uuid=ident)
             frame_classes.add(style['class_name'])
-            if geometry.startswith('class:') and geometry[6:] not in document.get('classes', []):
+            if geometry.startswith('class:') and (not valid_catalog or geometry[6:] not in classes):
                 error('unknown_class', 'A named box class is missing from the project class catalog.', frame_index=frame, identity_uuid=ident)
             provenance = o.get('provenance', {}).get(geometry, {})
             generated = provenance.get('origin') in ('interpolated', 'model_track', 'copied_track') and not provenance.get('human_corrected')
@@ -122,9 +142,6 @@ def validate_document(document):
                 'annotation_type': ('interpolated' if provenance.get('origin') == 'interpolated' else 'generated') if generated else 'keyframe', 'presence': 'present',
                 'protected_from_interpolation': o['review_state'] == 'approved' or not generated,
                 'timestamp_seconds': times.get((vid, frame))}
-        a, b = o.get('person_ext'), o.get('person_visible')
-        if numeric_box(a) and numeric_box(b) and any((b[0] < a[0]-.01, b[1] < a[1]-.01, b[2] > a[2]+.01, b[3] > a[3]+.01)):
-            warning('visible_outside_extended', 'The Visible box extends outside the Extended box. Check both edges.', frame_index=frame, identity_uuid=ident, person_id=number)
     seen = set()
     for row in document.get('annotation_index', []):
         key = (row.get('video_id'), row.get('frame_index'), row.get('identity_uuid'), row.get('class_key'))
@@ -156,11 +173,6 @@ def validate_document(document):
     except (ValueError, TypeError, KeyError, IndexError) as e:
         error('presence_intervals', f'Could not derive per-class presence: {e}')
     check('Exported index, class presence and shared track identity consistency', before)
-    if not annotated: warning('no_annotations', 'No annotation boxes are saved. Confirm that this is intentional for the chosen coverage.')
-    for s in state.get('segments', {}).values():
-        if s.get('status') == 'unresolved': warning('unresolved_segment', 'This segment’s real-world identity remains unresolved.', frame_index=s.get('start'), identity_uuid=s.get('identity_uuid'))
-    for link in state.get('links', {}).values():
-        if link.get('relation') == 'unresolved': warning('unresolved_link', 'A cross-camera identity link remains unresolved.')
     grouped_warnings = group_warnings(warnings)
     return {'passed': not errors, 'errors': errors, 'warnings': grouped_warnings, 'checks': checks,
             'summary': {'people': len(annotated), 'frames': sum(v.get('frame_count', 0) for v in videos.values()), 'boxes': len(expected),

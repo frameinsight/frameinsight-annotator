@@ -1,11 +1,11 @@
-FRAMEINSIGHT 3.1.0 — WINDOWS 11 (64-bit)
+FRAMEINSIGHT 3.2.0 — WINDOWS 11 (64-bit)
 
 INSTALL AND OPEN
 1. Download Window_setup.exe from the official Frameinsight release:
    https://github.com/frameinsight/frameinsight-annotator/releases/latest
 2. Open Window_setup.exe and follow the installer.
 3. Double-click Frameinsight on your desktop. Your normal browser opens.
-4. Check that the app says LOCAL · 3.1.0.
+4. Check that the app says LOCAL · 3.2.0.
 
 No terminal, Python, Node or GPU setup is needed. Annotation works offline;
 internet is needed for checking and downloading updates.
@@ -16,12 +16,22 @@ YOUR FIRST ANNOTATION
    To continue YOLO/MOT work, use Import annotations after it is ready.
 3. Once the video is ready, choose a class, press N and drag a box around
    one object (for example, a person).
-4. Press I to assign a track number, class and color. Select an existing
-   ID when continuing an object that was already annotated.
+4. Each new track gets its own ID. Press I to change its ID, class or color.
+   Select an existing ID when continuing an object already annotated.
 5. Keep that object and class selected. Move a few frames forward, then
    move or resize its box. Frames between corrections fill automatically.
 6. Go back and check those in-between frames. Correct any inaccurate box.
 7. Changes save automatically. Save or Ctrl+S saves immediately.
+
+Project videos appear in a table. Open starts editing; Resume returns to
+your saved frame. Search or filter the table to find a video.
+
+EDIT PROJECT AND CLASS NAMES
+Use Project settings from the project library or the editor's header.
+Edit classes is also beside the class buttons in the editor. Renaming a
+class updates its saved boxes and exports while keeping track IDs and box
+positions. You can add classes here too. Names can still be changed at the
+end using Edit project & classes on the Validate & export page.
 
 ONE OBJECT, MULTIPLE CLASSES
 Classes are the labels you created. For example, person_visible and
@@ -41,20 +51,26 @@ preview before applying. Ctrl+Z undoes the restoration.
 A missing box is recorded as absent for that class; the reason is not guessed.
 
 REVIEW, VALIDATE AND SHARE
-1. Click Finish. Generate the full annotated review video.
-2. Watch and scrub through it. Slow playback and frame controls help you
-   check box placement and IDs. Jump back to edit anything that is wrong.
-3. Choose whether you annotated every object or selected objects only.
-4. Confirm your visual review, then run annotation validation.
-5. Fix any errors. Review any notes, then prepare validated JSON.
-6. Download annotations (.json). This file contains no video or images.
+1. Click Finish, then Review in editor. The video already on your canvas
+   plays from frame 0 with all tracks and classes shown at 0.5x speed.
+2. Watch and check box placement and IDs. Use the controls below the canvas
+   to step through frames or play at 0.125x, 0.25x, 0.5x or 1x. Fix mistakes.
+3. Click Finish again, then I reviewed — continue.
+4. On Validate & export, choose whether you annotated all objects or only
+   selected objects. Click Run annotation validation.
+5. Fix any reported errors. When you see "Validation passed. You can export.",
+   click Prepare validated JSON, then Download annotations (.json).
 
-Automatic checks validate saved data. They cannot decide whether an
-object was missed or whether two IDs are really the same object.
-Editing after a review requires a fresh review and validation.
+No second video is rendered. The downloaded JSON contains no video or images.
+Automatic checks validate saved data, IDs and class references. They cannot
+judge box placement, decide whether an object was missed, or tell whether
+two IDs are really the same object. Check these yourself during playback.
+If you change annotations, project names or class names, run validation
+again before exporting. Use Back to annotation to make box corrections.
 Finished videos can be reopened. Edits return them to In progress.
-Use Back up project from Help for a ZIP you can restore later. Keep your
-original videos as well. Restore a backup is on the All videos screen.
+Use Back up project from Help or the export page for a ZIP you can restore
+later. Keep your original videos as well. Restore a backup is in the
+project library. Annotation JSON is for sharing/training, not backup restore.
 
 HELPFUL CONTROLS
 F / D = next / previous frame. Shift+F / Shift+D = jump 10 frames.
@@ -80,6 +96,6 @@ Back up the entire data folder while Frameinsight is closed, or use a
 project backup ZIP. The installer is unsigned; Windows may show an
 unknown-publisher warning. Use the official release download.
 
-To remove old work, open All videos and choose Delete video on its card.
+To remove old work, open its project and use the trash button in the video row.
 Confirm the filename. Deleting the video and annotations cannot be undone.
 Original files and downloaded exports are not deleted.

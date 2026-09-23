@@ -18,8 +18,9 @@ def native_manifest(project):
         table = c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='restored_history'").fetchone()
         row = c.execute('SELECT data FROM restored_history WHERE project_id=?', (project['id'],)).fetchone() if table else None
         restored_history = json.loads(row['data']) if row else None
+        settings_history = [json.loads(row['data']) for row in c.execute('SELECT data FROM project_settings_events WHERE project_id=? ORDER BY revision', (project['id'],))]
     # File references are informational only on import, never used as write paths.
-    return {**project, 'format': 'frameinsight', 'exported_at': now(), 'frames': frames, 'operations': operations, 'proposals': proposals, 'restored_history': restored_history}
+    return {**project, 'format': 'frameinsight', 'exported_at': now(), 'frames': frames, 'operations': operations, 'proposals': proposals, 'restored_history': restored_history, 'project_settings_history': settings_history}
 
 def cvat_xml(project, vid, *, visible_only=False):
     state = project['state']; video = project['videos'][vid]
