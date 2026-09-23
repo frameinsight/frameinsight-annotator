@@ -65,8 +65,7 @@ Right-click a box to select that exact track and class. The app’s menu offers 
 The larger bar at the bottom follows the selected track **and** class:
 
 - **Present:** the selected class color, whether the box was drawn or interpolated.
-- **Hidden:** red, for a range where boxes were explicitly removed. Use Restore range to refill it.
-- **No box:** gray, for frames without a saved box or explicit hidden range. This can include work you have not annotated yet.
+- **Hidden:** red, for every frame without a box for the selected track and class. This includes deleted boxes, frames before/after the track, and work you have not annotated yet. Drawing and interpolation fill ordinary empty frames; use Restore range to refill an explicitly deleted range.
 - **Current frame:** a white outline. Striped sections contain both present and hidden frames at the current overview scale.
 
 Click a section, scrub with the seek control, or enter a precise frame number. Thumbnails have been removed to leave more room for the video. The filename appears quietly beside playback controls. The top-bar panel buttons show or hide Tracks and Shortcuts.

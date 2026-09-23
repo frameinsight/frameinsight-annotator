@@ -32,3 +32,11 @@ it('a visible deletion is not an extended gap',()=>{
  expect(timelineBins(d,'v',24,'p','person_visible')[1].gap).toBe(true);
  expect(timelineBins(d,'v',24,'p','person_ext')[1].gap).toBe(false);
 });
+it('counts present frames within a mixed range without counting another class or track',()=>{
+ const d=state();
+ for(const [frame,who] of [[0,'p'],[1,'q']] as const){const o=emptyObservation('v',frame,who,'s');o.person_visible=[0,0,10,10];o.person_ext=[0,0,10,20];d.observations[o.id]=o;}
+ const bins=timelineBins(d,'v',480,'p','person_visible');
+ expect(bins[0].end-bins[0].start).toBe(2);expect(bins[0].present).toBe(1);expect(bins[0].gap).toBe(false);
+ expect(bins[1].present).toBe(0);
+ expect(timelineBins(d,'v',480,'p')[0].present).toBe(1);
+});
