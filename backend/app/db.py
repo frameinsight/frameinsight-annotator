@@ -56,6 +56,7 @@ def init():
         CREATE INDEX IF NOT EXISTS proposal_frame ON proposals(video_id,frame_index);
         CREATE TABLE IF NOT EXISTS proposal_frames(video_id TEXT NOT NULL, cache_key TEXT NOT NULL, frame_index INTEGER NOT NULL, PRIMARY KEY(video_id,cache_key,frame_index));
         CREATE TABLE IF NOT EXISTS exports(id TEXT PRIMARY KEY, project_id TEXT NOT NULL, data TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS validations(id TEXT PRIMARY KEY, project_id TEXT NOT NULL, video_id TEXT NOT NULL, revision INTEGER NOT NULL, review_job_id TEXT NOT NULL, data TEXT NOT NULL);
         ''')
         if 'classes' not in {r['name'] for r in c.execute('PRAGMA table_info(projects)')}:
             c.execute("ALTER TABLE projects ADD COLUMN classes TEXT NOT NULL DEFAULT '[]'")

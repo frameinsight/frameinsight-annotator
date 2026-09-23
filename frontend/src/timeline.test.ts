@@ -1,6 +1,7 @@
 import {describe,it,expect} from 'vitest';
 import type {Domain} from './types';
 import {timelineBins} from './timeline';
+import {emptyObservation} from './types';
 const state=():Domain=>({identities:{},segments:{},observations:{},intervals:{},links:{},reviews:{},proposal_reviews:{}});
 describe('aggregated frame review timeline',()=>{
  it('never marks a bin complete when one of its source frames is incomplete',()=>{
@@ -17,6 +18,14 @@ describe('aggregated frame review timeline',()=>{
   expect(timelineBins(d,'v',613,'p')[0].gap).toBe(true);
   expect(timelineBins(d,'other',613,'p')[0].gap).toBe(false);
  });
+});
+it('shows selected person keyframes separately from generated boxes and other people',()=>{
+ const d=state();
+ for(const [frame,who,generated] of [[0,'p',false],[1,'p',true],[2,'q',false]] as const){const o=emptyObservation('v',frame,who,'s');o.person_visible=[0,0,10,10];o.provenance.person_visible={origin:generated?'interpolated':'manual',proposal_id:null,human_corrected:false};d.observations[o.id]=o;}
+ const bins=timelineBins(d,'v',3,'p','person_visible');
+ expect(bins[0].manual).toBe(true);expect(bins[0].generated).toBe(false);
+ expect(bins[1].generated).toBe(true);expect(bins[1].manual).toBe(false);
+ expect(bins[2].draft).toBe(false);
 });
 it('a visible deletion is not an extended gap',()=>{
  const d=state();d.intervals.g={id:'g',video_id:'v',identity_uuid:'p',start:1,end:1,reason:'unknown',evidence_note:'',geometry:'person_visible'};

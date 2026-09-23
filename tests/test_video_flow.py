@@ -35,16 +35,13 @@ def test_finish_requires_confirmation_current_revision_and_ready_video(project):
     with TestClient(app) as client:
         assert client.post('/api/videos/'+v+'/finish',json={'confirmed':False,'revision':0}).status_code==422
         assert client.post('/api/videos/'+v+'/finish',json={'confirmed':True,'revision':1}).status_code==409
-        r=client.post('/api/videos/'+v+'/finish',json={'confirmed':True,'revision':0});assert r.status_code==200
-        assert r.json()['finished_revision']==0
-        assert next(x for x in client.get('/api/video-library').json() if x['id']==v)['finished']
-        # Finishing never fabricates per-frame review decisions.
-        assert client.get('/api/projects/'+p['id']).json()['state']['reviews']=={}
-        i=str(uuid.uuid4());value={'id':i,'person_id':None,'name':'Person'}
-        db.apply(p['id'],Operation(id=str(uuid.uuid4()),base_revision=0,label='Edit after finish',changes=[{'collection':'identities','id':i,'before':None,'after':value}]))
+        # A visual checkbox alone cannot bypass full review and structural validation.
+        r=client.post('/api/videos/'+v+'/finish',json={'confirmed':True,'revision':0});assert r.status_code==422
         assert not next(x for x in client.get('/api/video-library').json() if x['id']==v)['finished']
+        assert client.get('/api/projects/'+p['id']).json()['state']['reviews']=={}
         db.update_video(v,status='indexing')
-        assert client.post('/api/videos/'+v+'/finish',json={'confirmed':True,'revision':1}).status_code==422
+        assert client.post('/api/videos/'+v+'/finish',json={'confirmed':True,'revision':0}).status_code==422
+
 
 
 def test_selected_video_json_excludes_other_video_annotations_and_history(project):

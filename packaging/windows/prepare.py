@@ -41,17 +41,23 @@ shutil.copy(ROOT/'packaging/windows/START-HERE.txt',PAYLOAD/'START-HERE.txt')
 
 shutil.copy(ROOT/'packaging/windows/THIRD-PARTY.txt',licenses/'THIRD-PARTY.txt')
 shutil.copy('/usr/share/common-licenses/GPL-3',licenses/'FFmpeg-GPL-3.txt')
-for dep in ('react','react-dom','konva','react-konva','zustand','idb-keyval','lucide-react','scheduler','react-reconciler'):
- for pattern in ('LICENSE*','license*'):
-  for f in (ROOT/'frontend/node_modules'/dep).glob(pattern):
-   if f.is_file():shutil.copy(f,licenses/(dep+'-'+f.name))
+frontend_package=json.loads((ROOT/'frontend/package.json').read_text())
+frontend_lock=json.loads((ROOT/'frontend/package-lock.json').read_text())
+for relative, metadata in frontend_lock['packages'].items():
+ if not relative.startswith('node_modules/') or metadata.get('dev') and relative!='node_modules/tailwindcss':continue
+ dependency=ROOT/'frontend'/relative
+ for f in dependency.iterdir():
+  if f.is_file() and f.name.lower().startswith(('license','copying','notice')):
+   destination=licenses/'frontend'/relative.removeprefix('node_modules/')/f.name
+   destination.parent.mkdir(parents=True,exist_ok=True);shutil.copy(f,destination)
+shutil.copy(ROOT/'frontend/src/components/ui/LICENSE',licenses/'shadcn-ui-LICENSE.txt')
 source=app/'frontend-source';source.mkdir()
 shutil.copytree(ROOT/'frontend/src',source/'src')
-for name in ('package.json','package-lock.json','index.html','vite.config.ts','tsconfig.json','tsconfig.app.json','tsconfig.node.json'):
+for name in ('package.json','package-lock.json','index.html','components.json','vite.config.ts','tsconfig.json','tsconfig.app.json','tsconfig.node.json'):
  f=ROOT/'frontend'/name
  if f.exists():shutil.copy(f,source/name)
 
-manifest={'app':'Frameinsight','version':'1.7.1','target':'Windows 11 x64','python':VERSION,'python_sha256':SHA,'wheels':{f.name:hashlib.sha256(f.read_bytes()).hexdigest() for f in sorted((BUILD/'wheels').glob('*.whl'))},'media_included':False}
+manifest={'app':'Frameinsight','version':frontend_package['version'],'target':'Windows 11 x64','python':VERSION,'python_sha256':SHA,'wheels':{f.name:hashlib.sha256(f.read_bytes()).hexdigest() for f in sorted((BUILD/'wheels').glob('*.whl'))},'media_included':False}
 (PAYLOAD/'build-manifest.json').write_text(json.dumps(manifest,indent=2))
 im=Image.new('RGBA',(256,256),'#151d24');draw=ImageDraw.Draw(im);draw.rounded_rectangle((24,24,232,232),radius=32,outline='#7fe5c0',width=16);draw.line((82,188,82,70,174,70),fill='#baa7ff',width=20);draw.line((82,126,155,126),fill='#baa7ff',width=20)
 im.save(BUILD/'frameinsight.ico',sizes=[(16,16),(32,32),(48,48),(64,64),(128,128),(256,256)])

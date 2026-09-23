@@ -1,12 +1,12 @@
 # Annotation JSON v2
 
-Wait for **Saved**, then choose **Finish → Finish & choose export → Annotations JSON (recommended) → Prepare download → Download annotations (.json)**. Confirm the actual annotation coverage before finishing. The result is one UTF-8 JSON file with no embedded videos, frames, crops, thumbnails, or model weights. Keep the original footage separately.
+Wait for **Saved**, then choose **Finish → Prepare review video**. Watch the full annotated preview, choose coverage, confirm visual review, and **Run annotation validation**. After it passes and you acknowledge any review notes, choose **Prepare validated JSON → Download annotations (.json)**. The result is one UTF-8 JSON file with no embedded videos, frames, crops, thumbnails, or model weights. Keep the original footage separately.
 
-The editor exports the selected video (`video_scope`) at one consistent saved revision. The underlying exporter can also export all videos in a project when no video scope is supplied. Saved drafts and single-person work are retained; export does not invent whole-frame reviews.
+The editor exports the selected video (`video_scope`) at one consistent saved revision. The public annotations-JSON route requires a video scope and matching completed review/validation proof. Project backup ZIPs can still include all videos and do not require final validation. Saved drafts and single-person work are retained; export does not invent whole-frame reviews.
 
 ## One person, two box types
 
-A physical person has one `identity_uuid` and optional numeric `person_id`. Each frame can contain an independently drawn/interpolated **visible** and **extended** rectangle. The extended rectangle describes estimated full extent; it is not itself evidence that the person is visible.
+A physical person has one `identity_uuid` and numeric `person_id`. Older files may have a null number; new validated deliveries require positive unique numbers. Each frame can contain an independently drawn/interpolated **visible** and **extended** rectangle. The extended rectangle describes estimated full extent; it is not itself evidence that the person is visible.
 
 `frame_annotations` gives one row per saved person/frame:
 
@@ -34,6 +34,7 @@ Either box slot can be `null`. Frames with neither box generally have no observa
 | Field | Meaning |
 |---|---|
 | `format`, `schema_version` | `frameinsight.annotations`, version `2` |
+| `app_version`, `validation` | Added in app 2.0.0: app version and the revision-bound validation report (see below) |
 | `exported_at`, `media_included` | UTC export time; media is always `false` |
 | `project`, `video_scope`, `classes`, `class_colors` | Project metadata/revision, selected video ID, saved class catalog, and persistent default class colors |
 | `videos` | Video metadata keyed by video ID: name, dimensions, nominal FPS, source hash and path references |
@@ -54,7 +55,7 @@ Each `annotation_index` row includes:
 - `class_colors` at the document root maps class names to saved default colors. Per-box `color` is authoritative when an annotator has customized a track.
 - `class_name`, `color`: settings for this box type, taken from `state.identities[identity_uuid].box_styles`. The same person can have different classes and colors for the two types. Older visible labels fall back to identity-level `class_name` and `color`.
 - `box_xyxy`: `[left, top, right, bottom]`; `box_xywh`: `[left, top, width, height]`. Both use unrounded original-image pixels, with origin at the upper-left, x rightwards and y downwards.
-- `frame_index`: zero-based source frame; `timestamp_seconds`: actual source time, or `null` when unavailable. Use the ledger rather than estimating from nominal FPS.
+- `frame_index`: zero-based source frame; `timestamp_seconds`: actual source time. Current validated deliveries require a complete exact timestamp ledger; older files may contain `null`. Use the ledger rather than estimating from nominal FPS.
 - `annotation_type`: `keyframe` or `interpolated`, independently for each type. There are no `missing_box` rows in the v2 flat index.
 - `origin`: manual, copied, copied_track, model, interpolated, or null if not recorded. `human_corrected` preserves corrections; corrected interpolation becomes a keyframe while retaining its origin. **Copy Visible → Extended (all frames)** records `copied_track` on each new Extended box, keeps the same identity/ID, and leaves Visible coordinates and provenance unchanged. Unadjusted `copied_track` boxes can be updated by interpolation between Extended corrections; resizing marks them `human_corrected: true`. Older `copied` boxes remain fixed anchors. Class colors are saved per person and box type.
 - `protected_from_interpolation`: whether this box is an anchor or part of a historical approved observation.
@@ -66,7 +67,17 @@ Visible status is derived from visible geometry: no visible box means `not_visib
 
 **Delete** and **Shift+Delete** affect only the selected box type. A deletion creates a `state.intervals` record with `geometry: "person_visible"` or `"person_ext"` to prevent that type from being regenerated across the range. The other type can still exist and interpolate. Legacy intervals without a geometry apply to both types until scoped by editing/conversion. `start` and `end` are inclusive; legacy null ends are open.
 
-Drawing a type again restores that frame and trims its deletion interval. Finite deleted ranges retain their other missing frames; drawing after an old open gap resumes the selected type. Undo restores boxes and intervals together. Eye/focus and **Show both** change display only.
+Drawing a type again restores that frame and trims its deletion interval. Finite deleted ranges retain their other missing frames; drawing after an old open gap resumes the selected type. **Restore deleted range** can remove the selected type’s barrier and fill between current anchors, or recover original boxes from saved history without overwriting newer boxes. Any unrecoverable frames remain blocked. Undo restores boxes and intervals together. Eye/focus and **Show both** change display only.
+
+## Final validation (app 2.0.0+)
+
+`validation` includes `passed`, `checks`, `errors`, `warnings`, `summary`, `revision`, `video_id`, `project_id`, `validation_id`, `review_job_id`, `created_at`, `app_version`, snapshot/review hashes, `coverage`, `visual_confirmed`, and `limitation`. Coverage is `all_people` or `selected_people`. Treat visual confirmation as the annotator’s assertion, not an automatic identity or completeness judgment.
+
+The app checks JSON serialization, entity schemas and references, positive unique numeric IDs, box bounds and dimensions, complete frame/timestamp metadata, paired-box identity consistency, flat-index/count agreement, and successful rendering of every source frame. Notes flag visible boxes outside their extended estimates and unresolved identity segments/links. Missing annotations can be intentional: a blank or partially annotated video is not automatically an exhaustive negative-label dataset.
+
+A review uses a frozen annotation snapshot. Changes to the saved data or relevant class/source metadata invalidate that proof; the API rejects stale export requests and stale download links. Exported JSON adds the report to that reviewed snapshot, so `state` and the box indexes refer to the same data shown in the preview. Previous JSON v2 files without validation remain readable but do not have this proof. These added fields do not change the box schema version.
+
+The preview is a silent MP4 generated locally, with original frame timing and labels burned into the pixels. The delivery JSON does not contain that MP4 or any media. Keep backups separately; restoring a backup clears old validation status and requires a fresh review.
 
 ## Reading earlier files and converting earlier work
 

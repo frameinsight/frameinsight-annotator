@@ -42,6 +42,9 @@ def restore_archive(path, jid):
             with db.transaction() as c:c.execute('INSERT INTO projects(id,name,created_at,classes,class_colors) VALUES(?,?,?,?,?)',(pid,original['name']+' (restored)',db.now(),json.dumps(original.get('classes',[])),json.dumps(db.class_palette(original.get('classes',[]),palette))))
             for old,v in original['videos'].items():
                 vid=str(uuid.uuid4());mapping[old]=vid;new={**v,'id':vid,'project_id':pid,'status':'indexing','frame_count':0,'source':str(DATA/'originals'/(vid+sources[old].suffix))};videos[vid]=new
+                # Review proofs belong to the original project/video snapshot.
+                # A restored backup is editable work and must be reviewed again.
+                for key in ('finished_revision','finished_at','validation_id','review_job_id','coverage','finish_confirmation'):new.pop(key,None)
                 with db.transaction() as c:c.execute('INSERT INTO videos VALUES(?,?,?)',(vid,pid,json.dumps(new)))
                 sub=new_job(pid,'index',video_id=vid);index_video(vid,sources[old],Path(new['source']),sub['id'])
                 if db.job_get(sub['id'])['status']!='completed':raise ValueError('Restored source failed indexing')

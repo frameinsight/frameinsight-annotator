@@ -1,8 +1,8 @@
 # Windows installation
 
-Give the annotator `Window_setup.exe` and `START-HERE.txt`.
+Give the annotator the **2.0.0** `Window_setup.exe` and `START-HERE.txt`.
 Double-click the installer, follow its pages, then use the desktop shortcut.
-Windows 10 or 11, **64-bit**, is required. A normal browser such as Edge or
+Windows 11, **64-bit**, is the release target. A normal browser such as Edge or
 Chrome is sufficient. Python, Node, AI models and GPU setup are not required.
 The app runs locally and opens in the default browser. Internet is not needed
 after installation. This is an unsigned installer, so Windows may identify its
@@ -11,7 +11,11 @@ publisher as unknown.
 The installation is per user, without administrator rights. It includes the
 Python runtime, CPU video decoding, annotation UI and editable interpolation.
 The app starts with a video library, asks for classes before upload, shows a
-shortcut guide while drawing, and uses Save and Finish for completion. No user videos, annotations, projects,
+shortcut guide while drawing, and includes an optional beginner walkthrough.
+Finish creates the full annotated review video, lets the annotator confirm
+coverage, runs structural validation, and then prepares annotations-only JSON.
+Changes made after review require a fresh review and validation.
+No user videos, annotations, projects,
 model weights or test fixtures are included in the installer.
 
 Closing the browser leaves the local server running. Use the tray icon near
@@ -46,7 +50,8 @@ are in `.frameinsight/windows-build`; deliverables are in `deliverables/windows`
 The editor has automated browser tests and manual Chrome verification on
 Ubuntu. The bundled Windows runtime, native launcher and installer are tested
 under Wine in an isolated container using a synthetic video. This exercises
-imports, frame decoding, annotation persistence, JSON export, graceful exit,
+imports, frame decoding, annotation persistence, full annotated MP4 rendering
+with exact source timing, review/validation guards, JSON export, graceful exit,
 relaunch, upgrade, shortcuts and preservation of data during uninstall.
 **This does not substitute for a test on an actual Windows 11 laptop.**
 No physical Windows machine was available for this build. SmartScreen,

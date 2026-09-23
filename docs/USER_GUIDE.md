@@ -7,7 +7,7 @@
    **Continue to upload**, choose the video, and wait until it is ready.
 3. Find the first frame where the person appears. Press **N**, then drag a
    rectangle around the visible part of them (**1 / Visible**).
-4. Press **I**. Assign a person number, choose/type a class name, and choose
+4. A person number is assigned automatically. Press **I** to change/reuse it, choose/type a class name, and choose
    a box color. Click **Save ID**. Keep the same number for the same person.
    For their full/extended rectangle, click **Copy Visible → Extended (all frames)** above
    the video once. It copies all Visible boxes for this person throughout the
@@ -26,15 +26,20 @@
 7. Repeat for each person. Use the left panel to switch between people.
 8. Changes save automatically. Click **Save** or press **Ctrl+S** whenever you
    want to check they have saved. Wait until the top bar says **Saved**.
-9. When done, click **Finish**. Confirm you annotated and tracked every person,
-   then choose **Annotations JSON → Prepare download → Download annotations**.
-   This file contains annotations and metadata, **no video or images**.
-   Keep the original video separately.
+9. When done, follow **Finish and check your work** below. You can continue editing afterwards.
 
-Finished videos remain editable. Making a change marks the video **In progress**
-again. The Finish confirmation records your own check; it does not automatically
-judge whether your boxes are correct. If you have more work to do, choose
-**Keep annotating**.
+## Finish and check your work
+
+1. Click **Finish**, then **Prepare review video**. Wait while the app draws all boxes and IDs onto the complete video. This preview stays on your computer.
+2. Play the video. Use **0.5×** for half speed, **0.25×** or **0.125×** for slower review. Use the seek bar to jump backwards or forwards and the arrow buttons to move one frame at a time.
+3. Check that each box fits, each person keeps the same ID, and both box types belong to the correct person. All saved boxes appear here, even those you hid while editing.
+4. If something is wrong, click **Fix this frame**. Correct it in the editor, then return to **Finish** and prepare the updated review video.
+5. Choose your coverage: **All visible people in the whole video**, or **Only the people I chose to annotate**. Only choose all people after actually checking everyone.
+6. Tick the visual-review confirmation, then click **Run annotation validation**. The computer checks IDs, box data, frame times and the JSON structure. It cannot judge whether a box belongs to the right real person; that is why you watched the video first.
+7. Fix any errors using **Open frame**. Check any review notes and confirm them if correct.
+8. When you see **Validation passed — you can export**, click **Prepare validated JSON**, then **Download annotations (.json)**. Send that file to your supervisor. It contains annotations and metadata, **no video or images**.
+
+Keep the original video separately. Finished videos remain editable; a later annotation change requires fresh review and validation before another delivery. You can close the Finish window to continue annotating. For a copy you can reopen in this app, use **Help → Back up project** at any time, even before validation, and keep the backup ZIP with the original video.
 
 ## Copying and adjusting Extended
 
@@ -84,7 +89,7 @@ annotations, interpolation, the source video or exports.
 | Mouse wheel | Zoom |
 
 The right side of the editor also lists the useful shortcuts. **Help** lets you
-change key bindings.
+change key bindings. **Start guide** explains the workflow; **About** shows the app version when reporting a problem.
 
 # Working with overlapping people
 
@@ -120,8 +125,7 @@ their last box. There is no separate visibility or occlusion button to press.
 - For several frames, click **Delete boxes in range** or press **Shift+Delete**.
   Enter the first and last frame, then click **Delete boxes**. Both are included.
 - Deleted frames stay empty for that type when interpolation runs again.
-- If you deleted too much, draw a box again on the frame to make the person
-  visible. This restores that frame without filling other deleted frames.
+- If you deleted too much, use **Restore deleted range**, described below. Drawing a box again restores only that single frame; it does not remove the rest of a deleted interval.
 - **Ctrl+Z** undoes the entire action; **Ctrl+Shift+Z** redoes it.
 
 Example: keep boxes at **39 and 60**, and delete **40–59**. The same person ID
@@ -133,6 +137,18 @@ and the cause is Unknown unless previously recorded. While you are still working
 Not visible can also mean you have not drawn that box yet: check the whole video
 before finishing. Eye/Focus only change your display; a hidden-on-screen box
 still counts as Visible in the exported annotations.
+
+# Accidentally deleted many frames?
+
+1. Select the correct person on the left and the correct **Visible** or **Extended** box type.
+2. Click **Restore deleted range** above the video or in the right panel.
+3. Enter the first and last frames you want back, for example **1000** and **1100**. Both endpoints count.
+4. Choose **Fill between my boxes** if you want to generate the missing boxes between your current drawn/corrected boxes. Make sure there is a box at or before the start and at or after the end. Existing boxes are kept.
+5. Alternatively, choose **Recover deleted boxes** to bring back the original box positions from saved edit history. This also works after reopening when that history is available. If history is missing, the app tells you which frames it cannot recover; use the first option for those frames.
+6. Check the preview count, then click **Remove gap & fill boxes** or **Recover deleted boxes**.
+7. Play/check the restored section. **Ctrl+Z** undoes the whole restoration if needed.
+
+If you see **Interpolation paused**, those frames have a recorded deletion. Simply drawing at frames 1000 and 1100 does not remove the deletion between them; use this restore action. You do not need to redraw each frame.
 
 # Returning to an earlier frame
 
@@ -167,7 +183,7 @@ fixed while you draw, change frames, or hide/resize panels. Press **0** or click
 both box types under the same identity, coordinates, frame times, gaps,
 corrections and relevant edit history. JSON v2 has a paired `frame_annotations`
 list and a per-box `annotation_index`. See the README for a Python example.
-**Project backup ZIP** preserves the complete project data (including all related
+**Help → Back up project** downloads a **Project backup ZIP** that preserves the complete project data (including all related
 videos in older multi-video projects), without copying the video files. JSON
 is for annotation delivery; it is not a project-restore format. Back up the app's
 data directory with the app closed to preserve everything, including video caches.

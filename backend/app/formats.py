@@ -72,13 +72,16 @@ def export_project(pid, settings, jid):
     try:
         job_update(jid, status='running')
         if settings['format'] == 'annotations_json':
-            from .annotation_export import annotation_document
-            document = annotation_document(pid, settings.get('video_id'))
+            from .review_delivery import validated_document, validation_proof
+            from .video import sha256
+            document = validated_document(pid, settings)
             eid = str(uuid.uuid4()); path = DATA / 'exports' / f'{eid}.json'
             path.write_text(json.dumps(document, indent=2, ensure_ascii=False, allow_nan=False), encoding='utf-8')
             data = {'id': eid, 'project_id': pid, 'path': str(path), 'revision': document['project']['revision'],
-                    'settings': {**settings, 'include_videos': False}, 'included_images': 0, 'excluded_frames': 0, 'created_at': now()}
-            with transaction() as c: c.execute('INSERT INTO exports VALUES(?,?,?)', (eid, pid, json.dumps(data)))
+                    'settings': {**settings, 'include_videos': False}, 'included_images': 0, 'excluded_frames': 0, 'created_at': now(), 'file_hash':sha256(path)}
+            with transaction() as c:
+                validation_proof(pid,settings,c)
+                c.execute('INSERT INTO exports VALUES(?,?,?)', (eid, pid, json.dumps(data)))
             job_update(jid, status='completed', export_id=eid, progress=1, total=1)
             return
         project = snapshot(pid); native = native_manifest(project)

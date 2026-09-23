@@ -19,6 +19,7 @@ from .video import import_video, new_job, POOL, sha256
 from .worker import Worker
 from .formats import export_project, parse_cvat
 from .delete_video import delete_video
+from .review_delivery import create_review, get_review, review_metadata, validate_review, validation_proof
 worker=Worker(); exports_pool=ThreadPoolExecutor(max_workers=1,thread_name_prefix='export')
 @asynccontextmanager
 async def lifespan(app):
@@ -36,7 +37,7 @@ async def lifespan(app):
                 c.execute('UPDATE videos SET data=? WHERE id=?',(json.dumps(v),row['id']))
     yield
     worker.stop()
-app=FastAPI(title='Frameinsight',version='1.0.0',lifespan=lifespan)
+app=FastAPI(title='Frameinsight',version='2.0.0',lifespan=lifespan)
 
 @app.middleware('http')
 async def local_only(request:Request,call_next):
@@ -68,6 +69,17 @@ class NewClass(BaseModel):
 class FinishVideo(BaseModel):
     revision:int=Field(ge=0)
     confirmed:bool
+    validation_id:str|None=None
+    review_job_id:str|None=None
+
+class ReviewVideo(BaseModel):
+    revision:int=Field(ge=0)
+
+class ValidateVideo(BaseModel):
+    revision:int=Field(ge=0)
+    review_job_id:str
+    visual_confirmed:bool
+    coverage:str
 
 class LocalVideo(BaseModel): path:str
 class ExportSettings(BaseModel):
@@ -77,6 +89,9 @@ class ExportSettings(BaseModel):
     split:str='train'
     geometry:str='person_ext'
     mot_profile:str|None=None
+    revision:int|None=Field(default=None,ge=0)
+    validation_id:str|None=None
+    review_job_id:str|None=None
 class ProposalSettings(BaseModel):
     model:str
     class_mapping:dict[str,str]
@@ -102,8 +117,9 @@ def create_project(body:NewProject):
 def video_library():
     with db.connect() as c:
         rows=c.execute('SELECT v.id,v.project_id,v.data,p.name,p.revision FROM videos v JOIN projects p ON p.id=v.project_id ORDER BY v.rowid DESC').fetchall()
+        validated={(r['id'],r['video_id'],r['revision']) for r in c.execute('SELECT id,video_id,revision,data FROM validations') if json.loads(r['data']).get('passed')}
     return [{**json.loads(r['data']), 'project_id':r['project_id'], 'project_name':r['name'],
-             'finished':json.loads(r['data']).get('finished_revision')==r['revision']} for r in rows]
+             'finished':json.loads(r['data']).get('status')=='ready' and json.loads(r['data']).get('finished_revision')==r['revision'] and (json.loads(r['data']).get('validation_id'),r['id'],r['revision']) in validated} for r in rows]
 
 @app.post('/api/projects/{pid}/classes')
 def add_class(pid:str,body:NewClass):
@@ -115,6 +131,10 @@ def add_class(pid:str,body:NewClass):
             if len(classes)>=100:raise ValueError('Maximum 100 classes')
             classes.append(name)
             c.execute('UPDATE projects SET classes=? WHERE id=?',(json.dumps(classes),pid))
+            for row in c.execute('SELECT id,data FROM videos WHERE project_id=?',(pid,)).fetchall():
+                video=json.loads(row['data'])
+                for key in ('finished_revision','finished_at','validation_id','review_job_id','coverage','finish_confirmation'):video.pop(key,None)
+                c.execute('UPDATE videos SET data=? WHERE id=?',(json.dumps(video),row['id']))
         palette=db.class_palette(classes,p['class_colors'])
         c.execute('UPDATE projects SET class_colors=? WHERE id=?',(json.dumps(palette),pid))
     return {'classes':classes,'class_colors':palette}
@@ -126,16 +146,31 @@ def remove_video(vid:str,confirmed:bool=False):
 
 @app.post('/api/videos/{vid}/finish')
 def finish_video(vid:str,body:FinishVideo):
-    if not body.confirmed:raise ValueError('Confirm that every person has been annotated and tracked')
+    if not body.confirmed:raise ValueError('Confirm the completed visual review and annotation coverage')
     with db.transaction() as c:
         row=c.execute('SELECT project_id,data FROM videos WHERE id=?',(vid,)).fetchone()
         if not row:raise KeyError('Video not found')
         p=db.get_state(c,row['project_id']);v=json.loads(row['data'])
         if body.revision!=p['revision']:raise db.Conflict(p['revision'])
         if v['status']!='ready':raise ValueError('Wait for the video to finish loading')
-        v.update(finished_revision=p['revision'],finished_at=db.now(),finish_confirmation='Every person annotated and tracked')
-        c.execute('UPDATE videos SET data=? WHERE id=?',(json.dumps(v),vid))
+        validation_proof(p['id'], {**body.model_dump(), 'video_id':vid}, c)
     return v
+
+@app.post('/api/videos/{vid}/review-jobs')
+def review_start(vid:str,body:ReviewVideo): return create_review(vid,body.revision)
+
+@app.get('/api/reviews/{jid}')
+def review_info(jid:str): return review_metadata(jid)
+
+@app.get('/api/reviews/{jid}/video')
+def review_video(jid:str):
+    j=get_review(jid)
+    if j['status']!='completed':raise ValueError('The annotated video review is not ready')
+    return FileResponse(safe_path(j['video_path'],DATA),media_type='video/mp4',headers={'Cache-Control':'private, max-age=86400, immutable'})
+
+@app.post('/api/videos/{vid}/validate')
+def validate_video(vid:str,body:ValidateVideo):
+    return validate_review(vid,body.revision,body.review_job_id,body.visual_confirmed,body.coverage)
 
 @app.get('/api/projects/{pid}')
 def project(pid:str): return db.snapshot(pid)
@@ -227,6 +262,7 @@ def worker_stop():worker.stop();return worker.status()
 def export(pid:str,body:ExportSettings):
     db.snapshot(pid)
     if body.split not in ('train','val','test') or body.geometry not in ('person_ext','person_visible'):raise ValueError('Invalid export options')
+    if body.format=='annotations_json':validation_proof(pid,body.model_dump())
     j=new_job(pid,'export',settings=body.model_dump());exports_pool.submit(export_project,pid,body.model_dump(),j['id']);return j
 @app.get('/api/exports/{eid}')
 def download_export(eid:str):
@@ -235,6 +271,9 @@ def download_export(eid:str):
         if not row:raise KeyError('Export not found')
         e=json.loads(row['data'])
     is_json = e['settings']['format'] == 'annotations_json'
+    if is_json:
+        validation_proof(e['project_id'],e['settings'])
+        if not e.get('file_hash') or sha256(e['path'])!=e['file_hash']:raise ValueError('The export file changed. Prepare a new validated download.')
     extension, media_type = ('json', 'application/json') if is_json else ('zip', 'application/zip')
     return FileResponse(e['path'],filename=f'frameinsight-{e["settings"]["format"]}-{eid[:8]}.{extension}',media_type=media_type)
 @app.post('/api/projects/{pid}/imports/cvat')

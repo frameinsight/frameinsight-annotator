@@ -56,7 +56,10 @@ def delete_video(vid):
                 c.execute('DELETE FROM exports WHERE id=?', (row['id'],))
         for job in jobs:
             if not remaining or job.get('video_id') == vid or job.get('settings', {}).get('video_id') == vid or job.get('export_id') in removed_exports:
+                if job.get('kind')=='review' and job.get('snapshot_path'):
+                    files.append((Path(job['snapshot_path']).parent,DATA/'reviews'))
                 c.execute('DELETE FROM jobs WHERE id=?', (job['id'],))
+        c.execute('DELETE FROM validations WHERE video_id=?',(vid,))
         if remaining:
             c.execute('UPDATE projects SET revision=revision+1 WHERE id=?', (pid,))
         else:

@@ -10,6 +10,11 @@ https://bitbucket.org/multicoreware/x265_git
 FFmpeg license: https://ffmpeg.org/legal.html
 Python: https://www.python.org/downloads/release/python-31312/
 React, React DOM, Konva, React Konva, Zustand, idb-keyval and Lucide
-license notices are included here. The application backend is supplied
+license notices are included here, together with shadcn/ui, Radix UI,
+Tailwind utilities, class-variance-authority, clsx, tailwind-merge,
+tw-animate-css and their bundled runtime dependencies. The shadcn/ui
+components were generated from the official registry and are supplied
+as source under app/frontend-source/src/components/ui.
+The application backend is supplied
 as Python source under app/backend. Application frontend source and
 build files are supplied in app/frontend-source.

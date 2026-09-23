@@ -1,5 +1,5 @@
 """Exercise installed Windows binaries; run with bundled python.exe (Wine or Windows)."""
-import ctypes,json,os,subprocess,sys,time,urllib.request,uuid
+import ctypes,io,json,os,subprocess,sys,time,urllib.error,urllib.request,uuid
 from pathlib import Path
 root=Path(sys.argv[1]).resolve();fixture=Path(sys.argv[2]).resolve()
 k=ctypes.WinDLL('kernel32',use_last_error=True)
@@ -18,6 +18,16 @@ def wait(fn,seconds=90):
   except (OSError,ValueError):pass
   time.sleep(.3)
  raise AssertionError('Timed out')
+def wait_job(job):
+ def completed():
+  value=request('/api/jobs/'+job['id'])
+  assert value['status'] not in ('failed','cancelled'),value
+  return value if value['status']=='completed' else False
+ return wait(completed)
+def rejected(path,data,status):
+ try:request(path,data)
+ except urllib.error.HTTPError as error:assert error.code==status,(error.code,error.read())
+ else:raise AssertionError('Expected request rejection: '+path)
 def stop(proc):
  user=ctypes.WinDLL('user32');user.FindWindowW.argtypes=[ctypes.c_wchar_p,ctypes.c_wchar_p];user.FindWindowW.restype=ctypes.c_void_p
  user.PostMessageW.argtypes=[ctypes.c_void_p,ctypes.c_uint,ctypes.c_size_t,ctypes.c_ssize_t]
@@ -48,11 +58,23 @@ try:
  changes=[{'collection':col,'id':val['id'],'before':None,'after':val} for col,val in [('identities',identity),('segments',segment),('observations',observation)]]
  request('/api/projects/'+pid+'/operations',{'id':uid(),'base_revision':0,'label':'Windows smoke annotation','changes':changes})
  assert request('/api/projects/'+pid)['classes']==['Worker','Customer','person_extended']
- request('/api/videos/'+vid+'/finish',{'confirmed':True,'revision':1})
+ rejected('/api/videos/'+vid+'/finish',{'confirmed':True,'revision':1},422)
+ rejected('/api/projects/'+pid+'/exports',{'format':'annotations_json','video_id':vid},422)
+ review=wait_job(request('/api/videos/'+vid+'/review-jobs',{'revision':1}))
+ metadata=request('/api/reviews/'+review['id'])
+ assert metadata['frame_count']==24 and metadata['rendered_frames']==24 and not metadata['stale']
+ import av
+ with av.open(io.BytesIO(request('/api/reviews/'+review['id']+'/video',raw=True))) as video:
+  frames=list(video.decode(video.streams.video[0]));assert len(frames)==24
+  assert all(abs(float(frame.time)-metadata['frame_timestamps'][n])<1e-6 for n,frame in enumerate(frames))
+ validation=request('/api/videos/'+vid+'/validate',{'revision':1,'review_job_id':review['id'],'visual_confirmed':True,'coverage':'selected_people'})
+ assert validation['passed'] and validation['coverage']=='selected_people' and validation['limitation']
+ proof={'revision':1,'review_job_id':review['id'],'validation_id':validation['validation_id']}
+ request('/api/videos/'+vid+'/finish',{'confirmed':True,**proof})
  assert next(v for v in request('/api/video-library') if v['id']==vid)['finished']
- job=request('/api/projects/'+pid+'/exports',{'format':'annotations_json','video_id':vid})
- job=wait(lambda:(j if (j:=request('/api/jobs/'+job['id']))['status']=='completed' else False))
+ job=wait_job(request('/api/projects/'+pid+'/exports',{'format':'annotations_json','video_id':vid,**proof}))
  export=request('/api/exports/'+job['export_id']);assert export['media_included'] is False and export['annotation_index'][0]['color']=='#ff7700'
+ assert export['app_version']=='2.0.0' and export['validation']['validation_id']==validation['validation_id']
  assert export['class_colors']==palette
  assert export['schema_version']==2 and len(export['annotation_index'])==2
  assert export['annotation_index'][1]['person_id']==7 and export['annotation_index'][1]['box_type']=='person_extended'
@@ -65,7 +87,7 @@ try:
  assert request('/api/videos/'+vid+'?confirmed=true',method='DELETE')['deleted']
  assert request('/api/video-library')==[] and fixture.exists()
  stop(p)
- report={'runtime':'Windows embedded Python 3.13.12','environment':'Wine on Linux' if 'WINEPREFIX' in os.environ else 'Windows','checks':['native launcher','single instance','HTTP frontend','multipart video import','24 exact frames','PNG decoding','annotation save with class/color','class catalog and persistent random palette','video library','finish confirmation','annotations-only export','paired-box JSON v2 with shared identity','bulk-copy provenance and correction export','automatic visibility export','delete video preserves original file','graceful shutdown','relaunch persistence'],'project_id':pid}
+ report={'app_version':'2.0.0','runtime':'Windows embedded Python 3.13.12','environment':'Wine on Linux' if 'WINEPREFIX' in os.environ else 'Windows','checks':['native launcher','single instance','HTTP frontend','multipart video import','24 exact frames','PNG decoding','annotation save with class/color','class catalog and persistent random palette','video library','unreviewed finish and JSON export rejected','full 24-frame annotated review with exact timestamps','revision-bound structural validation and selected-person coverage','validated finish confirmation','annotations-only export with matching validation proof','paired-box JSON v2 with shared identity','bulk-copy provenance and correction export','automatic visibility export','delete video preserves original file','graceful shutdown','relaunch persistence'],'project_id':pid}
  Path('windows-smoke-report.json').write_text(json.dumps(report,indent=2));print(json.dumps(report),flush=True)
 finally:
  if p.poll() is None:

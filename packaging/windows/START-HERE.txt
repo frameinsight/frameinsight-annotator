@@ -1,55 +1,79 @@
-FRAMEINSIGHT — WINDOWS 11 (64-bit)
+FRAMEINSIGHT 2.0.0 — WINDOWS 11 (64-bit)
 
-Install Window_setup.exe, then double-click Frameinsight on your desktop. Your normal browser will open.
+INSTALL AND OPEN
+1. Open Window_setup.exe and follow the installer.
+2. Double-click Frameinsight on your desktop. Your normal browser opens.
+3. Check that the top-left corner says LOCAL · 2.0.0.
+
 No terminal, Python, Node, internet connection or GPU setup is needed.
+Installing an update keeps your saved work. Close Frameinsight from its
+Windows tray icon before installing an update.
 
-1. The opening screen shows your videos. Click one to continue your work.
-2. For a new recording, click New video. Choose the number of classes and
-   type their names. Click Continue to upload, then select your video.
-3. When the video is ready, press N and drag a box around a person.
-4. Press I to assign a number, choose or create a class, and choose a color.
-   For an existing person, choose their ID from the list.
-5. Skip some frames and draw/adjust the box for the SAME person. The app
-   fills the frames between your boxes. Check these and correct any mistakes.
-6. Changes save automatically. You can also click Save or press Ctrl+S.
-7. When everyone is annotated and tracked, click Finish. Confirm that you
-   checked every person, then choose an export and prepare your download.
-   Annotations JSON contains no video or images.
+YOUR FIRST ANNOTATION
+1. Click Start guide for a short walkthrough, or New video to begin.
+2. Choose how many classes (box labels) you need and type their names.
+   Continue to upload, then choose your video.
+3. Once the video is ready, press N and drag a box around one person.
+4. Press I to assign a person number, class and color. Select an existing
+   ID when continuing a person who was already annotated.
+5. Keep that person selected. Move a few frames forward, then move or
+   resize their box. The app fills the frames between your corrections.
+6. Go back and check those in-between frames. Correct any inaccurate box.
+7. Changes save automatically. Save or Ctrl+S saves immediately.
 
-F = next frame. D = previous frame. Shift+F / Shift+D = jump 10 frames.
-N = new person. I = choose ID, class and color. Ctrl+Z = undo.
-Drag inside a selected box to move it; drag its edge/corner to resize.
-Visible box present = Visible. No visible box = Not visible, automatically.
-Press Delete to remove the selected person's chosen box type on this frame.
-For several frames, press Shift+Delete, enter the first and last frame,
-then click Delete boxes. That type stays empty on deleted frames; the other type stays.
-Draw a box again to make the person visible; no G/H steps are needed.
-Ctrl+Z restores a deletion. The cause of missing boxes remains unspecified.
+ONE PERSON, TWO BOX TYPES
+Use Visible for the part you can see. Use Extended only if you also need
+to estimate the full body. Press 1 for Visible and 2 for Extended.
+Both types belong to the SAME person ID. Do not press N for their second
+box type. You can copy Visible boxes to Extended, then resize Extended.
+Press I to set each type's class and color. Check the Editing label above
+the video before making changes.
+
+WHEN A PERSON IS HIDDEN
+Delete removes the selected person's chosen box type on this frame.
+Shift+Delete opens Delete boxes in range. Enter the first and last frames,
+then delete. Both endpoints are included; the other box type stays.
+Deleted ranges stop interpolation, even if you later draw at their ends.
+To fill a range again, choose Restore deleted range, then Fill between my
+boxes. Review the preview and click Remove gap & fill boxes.
+Recover deleted boxes brings back original coordinates from edit history
+when available. Existing boxes are kept. Ctrl+Z undoes the restoration.
+No Visible box means Not visible; the reason is not automatically guessed.
+
+REVIEW, VALIDATE AND SHARE
+1. Click Finish. Generate the full annotated review video.
+2. Watch and scrub through it. Slow playback and frame controls help you
+   check box placement and IDs. Jump back to edit anything that is wrong.
+3. Choose whether you annotated every person or selected people only.
+4. Confirm your visual review, then Run annotation validation.
+5. Fix any errors. Review any notes, then Prepare validated JSON.
+6. Download annotations (.json). This file contains no video or images.
+
+Automatic checks validate the saved data. They cannot decide whether a
+person was missed or whether two IDs are really the same person.
+Editing after a review requires a fresh review and validation.
+Finished videos can be reopened. Edits return them to In progress.
+Use Back up project from Help for a ZIP you can restore later. Keep your
+original videos as well. Restore a backup is on the All videos screen.
+
+HELPFUL CONTROLS
+F / D = next / previous frame. Shift+F / Shift+D = jump 10 frames.
+N = new person. I = person ID, class and color. Ctrl+Z = undo.
+Drag inside a selected box to move it; drag an edge/corner to resize.
+Scroll to zoom. Hold Space and drag to pan. Tap Space to play/pause.
 Each person has Eye (hide/show), Focus (show only them), and Trash (delete).
-Hidden boxes stay saved and exported. Ctrl+Z restores a deleted person.
-Useful shortcuts are shown on the right side of the editor.
+Hiding boxes is only a viewing preference; they stay saved and exported.
+Help contains the guide and shortcuts. The right panel also shows commands.
 
-You can reopen finished videos. Editing changes their status to In progress.
+CLOSE, UPDATE AND BACK UP
 Closing the browser leaves Frameinsight running. Right-click its icon
 near the Windows clock and choose Exit Frameinsight after saving.
-
 Data: %LOCALAPPDATA%\Frameinsight\Data
 Logs: %LOCALAPPDATA%\Frameinsight\Logs\server.log
-Updating or uninstalling keeps your saved work. Keep the original videos
-and back up your data directory while the app is closed.
-The installer is unsigned; Windows may show an unknown-publisher warning.
+Uninstalling keeps saved work. You can also back up the entire data folder
+while Frameinsight is closed. The installer is unsigned, so Windows may
+show an unknown-publisher warning.
 
 To remove old work, open All videos and click Delete video under its card.
-Confirm the filename, then Delete video and annotations. This cannot be undone.
-Your original file and downloaded exports are not deleted.
-
-VISIBLE AND EXTENDED BOXES (version 1.4.0)
-Press 1 for Visible and 2 for Extended. Draw both for the same person; do not
-press N again for their second box type. Press I to set each type's class/color.
-C, K, Delete and Shift+Delete affect only the selected type. Uncheck Show both
-to focus on it. Both rectangles share one person ID in JSON v2.
-
-For an older separate person_extended track: select it, press I, keep Extended,
-choose the matching visible person's ID, and Save ID. Coordinates are preserved.
-Ctrl+Z restores the separate tracks. Same-type collisions are not overwritten.
-No visible box means Not visible; an extended box can still remain.
+Confirm the filename, then Delete video and annotations. This cannot be
+undone. Original files and downloaded exports are not deleted.

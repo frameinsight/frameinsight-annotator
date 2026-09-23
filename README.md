@@ -6,11 +6,11 @@ Local video annotation for person detection and tracking. Draw boxes, keep consi
 
 1. Open the video library and choose **New video**. Use **Delete video** on a card to remove an old video and its annotations from the app.
 2. Enter your class names, upload a video, and wait for preparation.
-3. Press **N** for a person. Use **1 / Visible** or **2 / Extended** to choose the box type, then draw. Both boxes share that person's ID. Press **I** to assign/reuse an ID and set the selected type's class and color.
+3. Press **N** for a person; a free person number is assigned automatically. Use **1 / Visible** or **2 / Extended** to choose the box type, then draw. Both boxes share that person's ID. Press **I** to assign/reuse an ID and set the selected type's class and color.
 4. Move forward and adjust the same person's box. Auto-interpolation fills eligible frames between keyframes; inspect and correct the results.
-5. Use hide/focus controls for overlapping people, or uncheck **Show both** to focus on one box type. **Delete** and **Shift+Delete** remove only the selected type. Missing visible boxes mean Not visible; an extended box can remain. Drawing restores that type without G/H steps.
+5. Use hide/focus controls for overlapping people, or uncheck **Show both** to focus on one box type. **Delete** and **Shift+Delete** remove only the selected type. Missing visible boxes mean Not visible; an extended box can remain. Drawing restores that frame. Use **Restore deleted range** to refill an accidentally deleted interval.
 6. Changes save automatically; **Save** and **Ctrl+S** are also available.
-7. Click **Finish**, confirm your annotation coverage, and download annotation-only JSON or a native project backup.
+7. Click **Finish → Prepare review video**. Watch the complete annotated video at normal or slow speed, confirm visual review and coverage, then run validation. Export annotation-only JSON after it passes. **Help → Back up project** remains available at any time.
 
 The left panel shows one person per track, with small colored class labels underneath. Use the class buttons above the canvas, or **Add class** to type a new label. New classes receive distinct random colors that are saved with the project; existing per-track color overrides are preserved. Classes apply across the selected box type’s track. Zoom and pan stay fixed while drawing, changing frames, or resizing panels; **0 / Fit image** fits the image again.
 
@@ -41,9 +41,12 @@ Source control excludes footage, annotation databases, local backups, model weig
 ### Download your annotations
 
 1. Wait until the editor says **Saved**.
-2. Click **Finish** and confirm your annotation coverage, then **Finish & choose export**. Only confirm that every person is annotated if you have actually checked them all.
-3. Choose **Annotations JSON (recommended)** and click **Prepare download**.
-4. When it says **Ready to download**, click **Download annotations (.json)**.
+2. Click **Finish → Prepare review video**. The app renders every source frame with all saved boxes, classes and person IDs, including boxes hidden in the editor.
+3. Watch the review. Use the seek bar, frame-back/frame-forward buttons and **0.5×, 0.25× or 0.125×** speed. **Fix this frame** returns to that exact source frame in the editor.
+4. Choose whether you annotated **all people** or **selected people**, confirm your visual review, and click **Run annotation validation**.
+5. Correct any errors and review the notes. After **Validation passed — you can export**, click **Prepare validated JSON → Download annotations (.json)**.
+
+Validation checks valid JSON, positive unique person IDs, paired-box identity consistency, valid boxes/classes/references, the complete source-frame ledger and timestamps, and agreement between saved boxes and export indexes. It cannot recognize real people, judge box placement, or prove that nobody was missed: the human review covers those points. Editing after review requires a new preview and validation. The temporary silent review MP4 stays on your computer and is not embedded in the JSON.
 
 The download contains the selected video's saved annotations and metadata, including interpolated boxes and edit history. It contains **no video or images**. Keep the original video separately; its name and SHA-256 hash in `videos` help match the annotations to the correct file. You can open the JSON in a text editor or load it in your own program. Renaming the JSON file does not change its contents.
 
@@ -59,13 +62,14 @@ Start with these fields; most applications do not need to process the full edit 
 | `frame_annotations` | One row per person/frame, with `boxes.person_visible` and `boxes.person_extended`. Either can be `null`. |
 | `box_type` | `person_visible` or `person_extended`. Include this in your box/track key. Internal `geometry_name: person_ext` means extended. |
 | `identity_uuid` | Stable internal person identity. Group by `(video_id, identity_uuid, box_type)` for each rectangle's track, or use `frame_annotations` for paired tracks. |
-| `person_id` | The human-readable number assigned with **I**; it may be `null`. Do not use this number alone to join unrelated exports. |
+| `person_id` | The human-readable number, assigned automatically for new people and editable with **I**. Current validated exports require positive unique numbers; older files may contain `null`. Do not use this number alone to join unrelated exports. |
 | `class_name`, `color` | The assigned class and display color. Read `class_name` for the training label; `geometry_name` is a storage field, not your chosen class. |
-| `frame_index`, `timestamp_seconds` | Exact source frame number and recorded source timestamp. Frame numbers start at **0**; timestamps can be `null`. |
+| `frame_index`, `timestamp_seconds` | Exact source frame number and recorded source timestamp. Frame numbers start at **0**. Validated exports require complete timestamps; older files may contain `null`. |
 | `box_xyxy` | `[left, top, right, bottom]` in **original video pixels**, with `(0, 0)` at the top left. |
 | `box_xywh` | The same box as `[left, top, width, height]`. These values are not normalized. |
 | `annotation_type` | `keyframe` or `interpolated`, independently for each box type. A correction anchors only that type. Missing geometry is `null` in `frame_annotations`. |
 | `visibility_intervals` | Inclusive frame ranges for each person: `visible` or `not_visible`. Use this to find frames that have no observation row. |
+| `app_version`, `validation` | App version and structural-check results, reviewed revision, coverage, and the annotator’s visual confirmation. Older files lack these fields. |
 | `state`, `operations` | Detailed saved entities and the audit history. Old/deleted boxes in `operations` are **not current labels**. |
 
 For example, `box_xyxy: [100, 80, 200, 300]` means a rectangle 100 pixels wide and 220 pixels tall. `frame_index: 6` means the seventh decoded source frame.
@@ -142,6 +146,12 @@ for interval in data.get("visibility_intervals", []):
 
 For field-level details, see the [annotation JSON reference](docs/ANNOTATION_JSON.md). To reopen editable work in this app, keep a **Project backup ZIP** and the original video: direct import of this custom JSON is not implemented yet.
 
+## Restore an accidentally deleted range
+
+Select the person and box type, then **Restore deleted range**. Enter the inclusive first and last frames. Choose **Fill between my boxes** to remove the deletion barrier and interpolate between existing drawn/corrected boxes, or **Recover deleted boxes** to recover original coordinates from saved edit history. The dialog previews how many boxes will return; newer boxes are preserved. One **Ctrl+Z** undoes the restoration.
+
+For example, if frames 1000–1100 were deleted, draw/correct the boxes at 1000 and 1100, then restore 1000–1100 with **Fill between my boxes**. Redrawing those endpoints alone intentionally leaves the deleted interior blocked. Recovery from history also works after reopening the app when that history is available.
+
 ## Copy Visible to Extended
 
 Select a person and click **Copy Visible → Extended (all frames)** once. It fills every missing Extended box wherever that person has a Visible box in the current video, including interpolated Visible boxes. You can click from any frame. Existing Extended boxes are preserved, and both classes keep the same person ID. New pairs use cyan Visible and orange Extended; later copies retain your class/color choices.
@@ -161,15 +171,15 @@ npm --prefix frontend test
 npm --prefix frontend run build
 ```
 
-Browser tests require the backend at `127.0.0.1:8765` and Google Chrome:
+Browser tests require an isolated backend at `127.0.0.1:5173` and Google Chrome:
 
 ```bash
-npm --prefix frontend run test:e2e -- editor.spec.ts
+FRAMEINSIGHT_TEST_URL=http://127.0.0.1:5173 npm --prefix frontend run test:e2e -- editor.spec.ts review-finish.spec.ts
 ```
 
 Use a separate `FRAMEINSIGHT_DATA` directory for the test server: browser tests create synthetic projects in whichever server they target. The optional real-video performance test needs locally supplied footage and is not a clean-checkout acceptance test.
 
-The v1.7.1 verification passed 40 frontend unit tests and 19 editor browser tests; the unchanged backend passed 45 tests in v1.7.0. These cover display-only dimming with pixel checks and unchanged annotation data, whole-video Visible-to-Extended copying for one person, independent resizing, copied colors and identity in JSON, saved class palettes, grouped class labels, zoom/pan stability, database migration, paired editing, independent interpolation, legacy-track linking, scoped deletion, JSON v2, and undo/reload, plus manual Chrome checks. Windows packaging was tested under Wine; native Windows 10/11 validation remains outstanding.
+Release 2.0.0 passed **57 backend tests, 61 frontend tests and 24 Chrome browser tests**. A separate copy of an existing 2,305-frame, 100-second video rendered all 10,180 saved boxes with verified frame timing; its structural checks passed and retained visual-review warnings. Manual browser checks covered the library, editor and review player at 1366×768. Regression coverage includes deleted-range recovery and undo/redo, recovery after reopening, automatic IDs, exact-timestamp full-video review, structural validation, stale-proof rejection, guarded JSON downloads, and modal keyboard accessibility. Existing paired-box, interpolation, dimming, zoom, save/reload and export tests remain part of acceptance. Windows packaging is tested under Wine; native Windows 10/11 validation remains outstanding.
 
 ## Windows packaging
 

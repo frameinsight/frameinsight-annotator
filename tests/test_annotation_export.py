@@ -30,12 +30,9 @@ def test_annotation_json_preserves_every_saved_collection_and_history_without_me
     old=copy.deepcopy(p['state']['observations'][o]);updated={**old,'person_visible':[21,20,90,100]}
     db.apply(p['id'],Operation(id=str(uuid.uuid4()),base_revision=0,label='Correct visible box',changes=[{'collection':'observations','id':o,'before':old,'after':updated}]))
     current=db.snapshot(p['id'])
-    # Fixture has no source media or frame PNGs; export must not try to read either.
-    job=new_job(p['id'],'export');export_project(p['id'],{'format':'annotations_json','include_videos':True},job['id'])
-    result=db.job_get(job['id']);assert result['status']=='completed',result
-    with db.connect() as c:export=json.loads(c.execute('SELECT data FROM exports WHERE id=?',(result['export_id'],)).fetchone()['data'])
-    path=Path(export['path']);assert path.suffix=='.json' and export['included_images']==0 and not export['settings']['include_videos']
-    document=json.loads(path.read_text())
+    # Document construction remains media-free; final delivery separately requires
+    # the full-video review proof exercised in test_review_delivery.py.
+    document=json.loads(json.dumps(annotation_document(p['id']),allow_nan=False))
     assert document['format']=='frameinsight.annotations' and document['media_included'] is False
     assert document['state']==current['state'] and document['videos']==current['videos']
     assert document['project']['revision']==1 and document['summary']['whole_frames_checked']==0
@@ -47,10 +44,7 @@ def test_annotation_json_preserves_every_saved_collection_and_history_without_me
     assert document['operations'][0]['changes'][0]['before']==old
     assert document['operations'][0]['recorded_at'] and document['operations'][0]['revision']==1
     assert document['detector']['proposals']==[proposal] and document['detector']['processed_frames'][0]['frame_index']==99
-    with TestClient(app) as client:
-        response=client.get('/api/exports/'+result['export_id'])
-        assert response.status_code==200 and response.headers['content-type']=='application/json'
-        assert '.json' in response.headers['content-disposition'] and response.json()==document
+
 
 
 def test_empty_annotations_and_unannotated_frames_are_not_invented(project):

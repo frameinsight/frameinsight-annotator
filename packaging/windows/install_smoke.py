@@ -12,6 +12,8 @@ import winreg
 with winreg.OpenKey(winreg.HKEY_CURRENT_USER,r'Software\Microsoft\Windows\CurrentVersion\Uninstall\Frameinsight') as key:
  uninstall=winreg.QueryValueEx(key,'UninstallString')[0]
  assert uninstall=='"'+str(root/'Uninstall.exe')+'"',uninstall
+ assert winreg.QueryValueEx(key,'DisplayVersion')[0]=='2.0.0'
+assert json.loads((root/'build-manifest.json').read_text())['version']=='2.0.0'
 assert (Path(os.environ['USERPROFILE'])/'Desktop/Frameinsight.lnk').exists()
 result=subprocess.run([str(root/'runtime/python.exe'),'-B',str(build/'smoke.py'),str(root),str(build/'numbered.mp4')],timeout=180)
 assert result.returncode==0
@@ -24,5 +26,5 @@ for _ in range(40):
  time.sleep(.25)
 assert not (root/'Frameinsight.exe').exists()
 assert user_data.exists() and hashlib.sha256(user_data.read_bytes()).hexdigest()==digest
-report={'environment':'Wine on Linux','checks':['silent per-user installation','desktop shortcut','quoted registered uninstaller','installed app end-to-end runtime smoke','upgrade preserves database','uninstall removes app','uninstall preserves database'],'native_windows_10_11_tested':False}
+report={'app_version':'2.0.0','environment':'Wine on Linux','checks':['silent per-user installation','desktop shortcut','quoted registered uninstaller','registry and manifest version 2.0.0','installed app end-to-end runtime smoke','upgrade preserves database','uninstall removes app','uninstall preserves database'],'native_windows_10_11_tested':False}
 (build/'installer-smoke-report.json').write_text(json.dumps(report,indent=2));print(json.dumps(report),flush=True)
