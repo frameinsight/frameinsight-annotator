@@ -16,8 +16,10 @@ with winreg.OpenKey(winreg.HKEY_CURRENT_USER,r'Software\Microsoft\Windows\Curren
  assert winreg.QueryValueEx(key,'DisplayVersion')[0]==app_version
 assert json.loads((root/'build-manifest.json').read_text())['version']==app_version
 assert (Path(os.environ['USERPROFILE'])/'Desktop/Frameinsight.lnk').exists()
+(build/'windows-smoke-report.json').unlink(missing_ok=True)
 result=subprocess.run([str(root/'runtime/python.exe'),'-B',str(build/'smoke.py'),str(root),str(build/'numbered.mp4')],timeout=180)
 assert result.returncode==0
+assert json.loads((build/'windows-smoke-report.json').read_text())['app_version']==app_version
 user_data=Path(os.environ['LOCALAPPDATA'])/'Frameinsight/Data/projects.sqlite3'
 digest=hashlib.sha256(user_data.read_bytes()).hexdigest()
 install();assert hashlib.sha256(user_data.read_bytes()).hexdigest()==digest

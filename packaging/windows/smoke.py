@@ -41,7 +41,7 @@ try:
  assert b'Frameinsight' in request('/',raw=True)
  assert request('/api/updates/status')['can_install'] is True
  second=subprocess.run([str(root/'Frameinsight.exe')],timeout=10);assert second.returncode==0
- project=request('/api/projects',{'name':'Windows runtime acceptance','classes':['Worker','Customer']});pid=project['id']
+ project=request('/api/projects',{'name':'Windows runtime acceptance','classes':['Worker','Customer','Legacy visible','Legacy extended']});pid=project['id']
  palette=project['class_colors'];assert len(set(palette.values()))==len(palette)
  added=request('/api/projects/'+pid+'/classes',{'name':'person_extended'})
  assert added['class_colors']==palette
@@ -55,13 +55,13 @@ try:
  from backend.app.schema import Identity,Segment,Observation
  who,seg,obs=uid(),uid(),uid()
  styles={'class:'+name:{'class_name':name,'color':color} for name,color in zip(['Worker','Customer','person_extended'],['#ff7700','#33ddff','#dd55ff'])}
- identity=Identity(id=who,person_id=7,class_name='Worker',color='#ff7700',box_styles={'person_ext':{'class_name':'person_extended','color':'#67e2b1'},**styles}).model_dump(mode='json')
+ identity=Identity(id=who,person_id=7,class_name='Legacy visible',color='#ff7700',box_styles={'person_ext':{'class_name':'Legacy extended','color':'#67e2b1'},**styles}).model_dump(mode='json')
  segment=Segment(id=seg,identity_uuid=who,video_id=vid,start=0).model_dump(mode='json')
  named_boxes={'class:Worker':[10,20,100,200],'class:Customer':[120,20,180,200],'class:person_extended':[5,10,110,220]}
  observation=Observation(id=obs,identity_uuid=who,segment_id=seg,video_id=vid,frame_index=10,person_visible=[10,20,100,200],person_ext=[5,10,110,220],boxes=named_boxes,full_quality='estimated',provenance={'person_visible':{'origin':'manual'},'person_ext':{'origin':'copied_track','human_corrected':True},**{key:{'origin':'manual'} for key in named_boxes}}).model_dump(mode='json')
  changes=[{'collection':col,'id':val['id'],'before':None,'after':val} for col,val in [('identities',identity),('segments',segment),('observations',observation)]]
  request('/api/projects/'+pid+'/operations',{'id':uid(),'base_revision':0,'label':'Windows smoke annotation','changes':changes})
- assert request('/api/projects/'+pid)['classes']==['Worker','Customer','person_extended']
+ assert request('/api/projects/'+pid)['classes']==['Worker','Customer','Legacy visible','Legacy extended','person_extended']
  rejected('/api/videos/'+vid+'/finish',{'confirmed':True,'revision':1},422)
  rejected('/api/projects/'+pid+'/exports',{'format':'annotations_json','video_id':vid},422)
  review=wait_job(request('/api/videos/'+vid+'/review-jobs',{'revision':1}))
@@ -72,7 +72,7 @@ try:
   frames=list(video.decode(video.streams.video[0]));assert len(frames)==24
   assert all(abs(float(frame.time)-metadata['frame_timestamps'][n])<1e-6 for n,frame in enumerate(frames))
  validation=request('/api/videos/'+vid+'/validate',{'revision':1,'review_job_id':review['id'],'visual_confirmed':True,'coverage':'selected_people'})
- assert validation['passed'] and validation['coverage']=='selected_people' and validation['limitation']
+ assert validation['passed'] and validation['coverage']=='selected_people' and validation['limitation'],validation
  proof={'revision':1,'review_job_id':review['id'],'validation_id':validation['validation_id']}
  request('/api/videos/'+vid+'/finish',{'confirmed':True,**proof})
  assert next(v for v in request('/api/video-library') if v['id']==vid)['finished']
