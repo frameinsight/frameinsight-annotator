@@ -1,6 +1,6 @@
 # Windows installation
 
-Give the annotator the **3.2.0** `Window_setup.exe` and `START-HERE-WINDOWS.txt` from the
+Give the annotator the **3.2.1** `Window_setup.exe` and `START-HERE-WINDOWS.txt` from the
 [official release](https://github.com/frameinsight/frameinsight-annotator/releases/latest).
 Double-click the installer, follow its pages, then use the desktop shortcut.
 Windows 11, **64-bit**, is the release target. Edge or Chrome is sufficient.

@@ -26,6 +26,7 @@ import {isGeometryInterpolated} from './interpolation';
 import {VISIBLE_ONLY,boxStyle,geometryLabel,legacyExtended,classColor,geometries,getBox,boxKeys,orderedGeometryKeys,geometryForClass} from './types';
 import {timelineBins as buildTimelineBins} from './timeline';
 import {currentObservation,frameObservations,observationIssues,type Project,type Job,type Proposal,type FrameInfo,type Geometry,type Domain,uuid} from './types';
+import {hasOpenOverlay} from './shortcut-guards';
 const defaultKeys:Record<string,string>={hiddenRange:'shift+delete',save:'ctrl+s',next:'f',previous:'d',ahead:'shift+f',back:'shift+d',a:'1',b:'2',swap:'tab',new:'n',id:'i',equal:'e',occluded:'o',estimated:'r',unknown:'u',copy:'c',approve:'enter',approveStay:'shift+enter',complete:'ctrl+enter',gap:'g',resume:'h',finish:'t',remove:'delete',undo:'ctrl+z',redo:'ctrl+shift+z',fit:'0',help:'?',issues:']',interpolate:'k'};
 if(VISIBLE_ONLY)for(const key of ['equal','estimated','unknown','approve','approveStay'])delete defaultKeys[key];
 if(VISIBLE_ONLY){defaultKeys.advance='enter';for(const key of ['complete','occluded','issues','gap','resume','finish'])delete defaultKeys[key];}
@@ -96,7 +97,7 @@ export default function App(){
   else if(action==='issues')nextIssue();
  }
  useEffect(()=>{const down=(e:KeyboardEvent)=>{
-  if(document.querySelector('[role=dialog], [role=menu], [role=listbox]'))return;
+  if(hasOpenOverlay())return;
   if(keyName(e)==='ctrl+s'){e.preventDefault();act('save');return;}
   if(screen!=='editor'&&e.key!=='Escape')return;
   const el=e.target as HTMLElement;if(e.isComposing||el.closest('input,textarea,select,[role=combobox],[role=slider],[contenteditable="true"]'))return;
@@ -106,7 +107,7 @@ export default function App(){
   if(e.code==='Space'){e.preventDefault();if(!e.repeat){spaceTime.current=Date.now();canvas.current?.space(true)}return;}
   const action=Object.keys(keys).find(a=>keys[a]===keyName(e));if(!action)return;if(action==='swap'&&e.key==='Tab'&&!el.closest('[data-testid=canvas]'))return;
   e.preventDefault();if(e.repeat&&!['next','previous'].includes(action))return;if(e.repeat&&Date.now()-lastStep.current<80)return;if(['next','previous'].includes(action))lastStep.current=Date.now();act(action);
- };const up=(e:KeyboardEvent)=>{if(e.code!=='Space'||screen!=='editor')return;const panned=canvas.current?.space(false);if(modal||document.querySelector('[role=dialog], [role=menu], [role=listbox]')||(e.target as HTMLElement).closest('input,textarea,select,[role=combobox],[role=slider],button,a[href],[role=button]'))return;if(!panned&&Date.now()-spaceTime.current<350)setPlaying(p=>!p)};
+ };const up=(e:KeyboardEvent)=>{if(e.code!=='Space'||screen!=='editor')return;const panned=canvas.current?.space(false);if(modal||hasOpenOverlay()||(e.target as HTMLElement).closest('input,textarea,select,[role=combobox],[role=slider],button,a[href],[role=button]'))return;if(!panned&&Date.now()-spaceTime.current<350)setPlaying(p=>!p)};
  window.addEventListener('keydown',down);window.addEventListener('keyup',up);return()=>{window.removeEventListener('keydown',down);window.removeEventListener('keyup',up)}},[keys,modal,frame,video,activeId,active,project,identity,geometry,screen,uploadBusy,loading]);
  async function task(fn:()=>Promise<void>){setLoading(true);setError('');try{await fn()}catch(e){setError(String(e))}finally{setLoading(false)}}
  async function showImport(){open('import');setLibrary(await api('/library'))}

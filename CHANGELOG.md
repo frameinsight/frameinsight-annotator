@@ -1,8 +1,10 @@
 # Changelog
 
-## 3.2.0 — 2026-09-23
+## 3.2.1 — 2026-09-23
 
-Compact shadcn workspace, editable project and class names, clearer canvas controls and box labels, and review in the editor followed by full-page structural validation and export. See the [release notes](docs/releases/v3.2.0.md).
+Compact shadcn workspace, editable project and class names, clearer canvas controls and box labels, and review in the editor followed by full-page structural validation and export. See the [release notes](docs/releases/v3.2.1.md).
+
+The 3.2.0 candidate was withheld after CI found that a closing context menu could briefly block annotation shortcuts. Version 3.2.1 includes the correction.
 
 ## 3.1.0 — 2026-09-23
 

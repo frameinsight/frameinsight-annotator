@@ -1,11 +1,11 @@
-FRAMEINSIGHT 3.2.0 — WINDOWS 11 (64-bit)
+FRAMEINSIGHT 3.2.1 — WINDOWS 11 (64-bit)
 
 INSTALL AND OPEN
 1. Download Window_setup.exe from the official Frameinsight release:
    https://github.com/frameinsight/frameinsight-annotator/releases/latest
 2. Open Window_setup.exe and follow the installer.
 3. Double-click Frameinsight on your desktop. Your normal browser opens.
-4. Check that the app says LOCAL · 3.2.0.
+4. Check that the app says LOCAL · 3.2.1.
 
 No terminal, Python, Node or GPU setup is needed. Annotation works offline;
 internet is needed for checking and downloading updates.

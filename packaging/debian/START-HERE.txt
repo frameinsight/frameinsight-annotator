@@ -1,20 +1,20 @@
-FRAMEINSIGHT 3.2.0 — UBUNTU / DEBIAN (64-bit Intel/AMD)
+FRAMEINSIGHT 3.2.1 — UBUNTU / DEBIAN (64-bit Intel/AMD)
 
 Ubuntu 24.04 or newer, or Debian 12 or newer, with a graphical desktop.
 Python and video decoding libraries are included. Node and a GPU are not needed.
 
-1. Download frameinsight_3.2.0_amd64.deb from the official release.
+1. Download frameinsight_3.2.1_amd64.deb from the official release.
 2. Open it with your system's software installer and click Install.
    Your operating system may ask for your administrator password.
 3. Open Applications and search for Frameinsight. Launch it.
 4. Your normal browser opens the local annotation app.
-   Check that the app says LOCAL · 3.2.0.
+   Check that the app says LOCAL · 3.2.1.
 5. Choose New project, enter its name and classes, then add videos inside it.
    Use Import annotations in the editor to load YOLO or MOT labels.
 
 If opening the .deb shows an archive viewer instead of an installer, choose
 Open With > Software Install or GDebi. The terminal alternative is:
-  sudo apt install ./frameinsight_3.2.0_amd64.deb
+  sudo apt install ./frameinsight_3.2.1_amd64.deb
 
 The app works offline after installation. Internet is needed to check for
 updates and to download an update. Installing may download normal system

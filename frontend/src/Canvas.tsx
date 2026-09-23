@@ -6,6 +6,7 @@ import {Stage,Layer,Image as KImage,Rect,Text,Group} from 'react-konva';
 import {ContextMenu} from 'radix-ui';
 import {MousePointer2,SquareDashed,Hand,Plus,Maximize,Undo2,Redo2,EyeOff,Focus,Trash2,Tags} from 'lucide-react';
 import {hitCanvasBox} from './canvas-hit';
+import {hasOpenOverlay} from './shortcut-guards';
 import './canvas-controls.css';
 import {useStore} from './store';
 import {VISIBLE_ONLY,boxStyle,geometryLabel,getBox,boxKeys} from './types';
@@ -85,7 +86,7 @@ export const EditorCanvas=forwardRef<CanvasHandle,{proposals:Proposal[];showProp
   if(candidates.length){if(!activeId){s.toast('Press N or select a track before accepting a suggestion');return;}const p=candidates[cycle.current%candidates.length];s.setBox(p.geometry,p.box,p);cycle.current=0;return;}
  }
  function chooseTool(value:CanvasTool){finish();spaceDown.current=false;setTool(value);setCursor(value==='hand'?'grab':value==='draw'?'crosshair':'default');host.current?.focus();}
- useEffect(()=>{const key=(e:KeyboardEvent)=>{if(e.defaultPrevented||e.ctrlKey||e.metaKey||e.altKey||e.shiftKey||e.repeat||!ready||menuOpen.current||document.querySelector('[role=dialog],[role=menu],[role=listbox]'))return;const target=e.target as HTMLElement;if(target.closest('input,textarea,select,[role=combobox],[role=slider],[contenteditable=true]'))return;const next=({v:'select',b:'draw',h:'hand'} as Record<string,CanvasTool>)[e.key.toLowerCase()];if(next){e.preventDefault();chooseTool(next);}};window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key)},[tool,ready,view,activeId,geometry]);
+ useEffect(()=>{const key=(e:KeyboardEvent)=>{if(e.defaultPrevented||e.ctrlKey||e.metaKey||e.altKey||e.shiftKey||e.repeat||!ready||menuOpen.current||hasOpenOverlay())return;const target=e.target as HTMLElement;if(target.closest('input,textarea,select,[role=combobox],[role=slider],[contenteditable=true]'))return;const next=({v:'select',b:'draw',h:'hand'} as Record<string,CanvasTool>)[e.key.toLowerCase()];if(next){e.preventDefault();chooseTool(next);}};window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key)},[tool,ready,view,activeId,geometry]);
  useImperativeHandle(ref,()=>({tool:chooseTool,finish,cancel:()=>{gesture.current=null;setPreview(null)},fit,zoom,space:(down)=>{spaceDown.current=down;if(down){panned.current=false;setCursor('grab');return false;}setCursor(tool==='hand'?'grab':tool==='draw'?'crosshair':'default');return panned.current;},isReady:()=>ready}));
  function down(e:React.PointerEvent){
   if((e.target as HTMLElement).closest('[data-canvas-ui]')||e.button!==0||!ready||!video)return;
@@ -150,7 +151,7 @@ export const EditorCanvas=forwardRef<CanvasHandle,{proposals:Proposal[];showProp
   </Group></Layer></Stage>:<div className="canvas-loading">{error|| (video?'Loading exact source frame…':'Import a video to begin')}</div>}
   {ready&&<div className="canvas-corner">{video.width} × {video.height}<span>{Math.round(view.scale*100)}%</span><span>Source pixels</span></div>}
   {ready&&!activeId&&<div className="canvas-hint">Press <kbd>N</kbd> to start a track · Drag to draw</div>}
- </div></ContextMenu.Trigger><ContextMenu.Portal><ContextMenu.Content className="canvas-context-menu" collisionPadding={10} onKeyDown={e=>e.stopPropagation()} onKeyUp={e=>e.stopPropagation()} onContextMenu={e=>e.preventDefault()} onCloseAutoFocus={e=>{e.preventDefault();if(!menuDialog.current)host.current?.focus();}}>
+ </div></ContextMenu.Trigger><ContextMenu.Portal><ContextMenu.Content className="canvas-context-menu" collisionPadding={10} onKeyDown={e=>{if(e.currentTarget.dataset.state!=='closed')e.stopPropagation()}} onKeyUp={e=>{if(e.currentTarget.dataset.state!=='closed')e.stopPropagation()}} onContextMenu={e=>e.preventDefault()} onCloseAutoFocus={e=>{e.preventDefault();if(!menuDialog.current)host.current?.focus();}}>
   <ContextMenu.Label className="canvas-menu-label">{menuTarget?'Selected box':'Canvas'}{menuTarget&&<strong>Track {menuPerson?.person_id??'—'} · {boxStyle(menuPerson,menuTarget.geometry).class_name}</strong>}</ContextMenu.Label>
   {menuTarget&&<>
    {item('Change ID or class…',<Tags/>,()=>menuAction('id'),!onAction,'I')}
