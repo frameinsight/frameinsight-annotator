@@ -1,3 +1,4 @@
+import {annotationKeyframes} from './interpolation';
 import {describe,it,expect} from 'vitest';
 import type {Domain} from './types';
 import {timelineBins} from './timeline';
@@ -39,4 +40,15 @@ it('counts present frames within a mixed range without counting another class or
  expect(bins[0].end-bins[0].start).toBe(2);expect(bins[0].present).toBe(1);expect(bins[0].gap).toBe(false);
  expect(bins[1].present).toBe(0);
  expect(timelineBins(d,'v',480,'p')[0].present).toBe(1);
+});
+
+it('keyframe navigation excludes generated boxes and deleted frames and follows the selected class',()=>{
+ const d=state();
+ for(let frame=0;frame<5;frame++){
+  const o=emptyObservation('v',frame,'p','s');o.boxes={'class:A':[0,0,10,10]};
+  o.provenance['class:A']={origin:frame===0?'manual':frame===1?'copied_track':'interpolated',proposal_id:null,human_corrected:frame===3};d.observations[o.id]=o;
+ }
+ expect(annotationKeyframes(d,'v','p','class:A')).toEqual([0,3]);
+ expect(annotationKeyframes(d,'v','p','class:B')).toEqual([]);
+ expect(annotationKeyframes(d,'v','other','class:A')).toEqual([]);
 });

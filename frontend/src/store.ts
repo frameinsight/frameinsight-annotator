@@ -176,7 +176,7 @@ export const useStore=create<Store>((set,get)=>({
  copyPrevious:()=>{
   const s=get(),o=currentObservation(s.project,s.videoId,s.frame-1,s.activeId),g=s.geometry;
   if(!getBox(o,g))return s.toast('No box of this type on the previous frame');
-  if(getBox(currentObservation(s.project,s.videoId,s.frame,s.activeId),g))return s.toast('This box type already exists on the current frame');
+  if(getBox(currentObservation(s.project,s.videoId,s.frame,s.activeId),g))return s.toast('This class already has a box here. Move/resize it, or press B and draw to replace it. Copy previous never overwrites a box.');
   s.editObservation('Copy previous '+g,n=>{putBox(n,g,[...getBox(o,g)!]);n.geometry_link='independent';if(g==='person_ext')n.full_quality='estimated';n.provenance[g]={origin:'copied',proposal_id:null,human_corrected:false};});
  },
  approve:()=>{

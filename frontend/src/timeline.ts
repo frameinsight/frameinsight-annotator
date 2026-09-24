@@ -15,7 +15,7 @@ export function timelineBins(state:Domain|null,videoId:string,count:number,activ
    presentFrames.get(bin)!.add(o.frame_index);
    bin.draft=true;
    const provenance=o.provenance[g];
-   if(provenance&&!provenance.human_corrected&&['interpolated','copied_track','model_track'].includes(provenance.origin))bin.generated=true;
+   if(o.review_state!=='approved'&&provenance&&!provenance.human_corrected&&['interpolated','copied_track','model_track'].includes(provenance.origin))bin.generated=true;
    else bin.manual=true;
   }
  }

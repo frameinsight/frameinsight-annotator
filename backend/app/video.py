@@ -2,8 +2,8 @@
 import hashlib
 import json
 import os
-import shutil
 import uuid
+import time
 from concurrent.futures import ThreadPoolExecutor
 import av
 from .config import DATA
@@ -35,16 +35,40 @@ def index_video(vid, source, target, jid):
     cache = DATA / 'frames' / vid
     cache.mkdir(exist_ok=True)
     try:
-        job_update(jid, status='running')
-        shutil.copyfile(source, target)
-        digest = sha256(target)
+        job_update(jid, status='running', phase='Copying video')
+        if target.exists() and os.path.samefile(source, target):
+            raise ValueError('Source video and app-owned copy must be different files')
+        digest = hashlib.sha256()
+        # Copy and hash in one pass rather than reading the entire recording twice.
+        with open(source, 'rb') as incoming, open(target, 'wb') as outgoing:
+            while block := incoming.read(4 * 1024 * 1024):
+                outgoing.write(block)
+                digest.update(block)
+        digest = digest.hexdigest()
+        job_update(jid, phase='Preparing exact frames')
         with av.open(str(target)) as container:
             stream = container.streams.video[0]
             width, height = stream.codec_context.width, stream.codec_context.height
             update_video(vid, width=width, height=height, nominal_fps=float(stream.average_rate or 0), stream_index=stream.index, source_hash=digest)
             count = 0
+            pending = []
+            last_flush = time.monotonic()
+            def flush():
+                nonlocal last_flush
+                if not pending: return
+                # A frame is advertised only after its PNG and ledger row exist.
+                with transaction() as c:
+                    c.executemany('INSERT OR REPLACE INTO frames VALUES(?,?,?)', pending)
+                    row = c.execute('SELECT data FROM videos WHERE id=?', (vid,)).fetchone()
+                    data = json.loads(row['data'])
+                    data['frame_count'] = count
+                    c.execute('UPDATE videos SET data=? WHERE id=?', (json.dumps(data), vid))
+                pending.clear()
+                job_update(jid, progress=count, total=stream.frames or None)
+                last_flush = time.monotonic()
             for i, frame in enumerate(container.decode(stream)):
                 if i % 20 == 0 and job_get(jid)['status'] == 'cancelled':
+                    flush()
                     update_video(vid, status='cancelled'); return
                 if frame.width != width or frame.height != height: raise ValueError('Video changes dimensions mid-stream; split it into constant-size clips first')
                 path = cache / f'{i:08d}.png'
@@ -53,11 +77,10 @@ def index_video(vid, source, target, jid):
                 os.replace(tmp, path)
                 tb = frame.time_base or stream.time_base
                 data = {'frame_index': i, 'pts': frame.pts, 'time_base_num': tb.numerator, 'time_base_den': tb.denominator, 'seconds': float(frame.pts * tb) if frame.pts is not None else None, 'key_frame': frame.key_frame, 'decode_state': 'ready'}
-                with transaction() as c:
-                    c.execute('INSERT OR REPLACE INTO frames VALUES(?,?,?)', (vid, i, json.dumps(data)))
+                pending.append((vid, i, json.dumps(data)))
                 count = i + 1
-                update_video(vid, frame_count=count)
-                if i % 10 == 0: job_update(jid, progress=count, total=stream.frames or None)
+                if len(pending) >= 32 or time.monotonic() - last_flush >= .5: flush()
+            flush()
             if not count: raise ValueError('The selected stream contains no decodable frames')
             update_video(vid, status='ready', frame_count=count)
             job_update(jid, status='completed', progress=count, total=count)

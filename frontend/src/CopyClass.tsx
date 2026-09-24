@@ -39,7 +39,7 @@ export function CopyClass({project, videoId, trackId, initialSource, classes, on
     </div>
     <p aria-live="polite">{target ? <>Copy all boxes from <strong>{source}</strong> to <strong>{target}</strong> for <strong>Track {track}</strong> on all <strong>{counts.frames} {counts.frames === 1 ? 'frame' : 'frames'}</strong> with {source} boxes.</> : 'Add another class using the class bar, then choose it here.'}</p>
     <p className="form-help">{counts.existing > 0 ? `${counts.existing} existing target ${counts.existing === 1 ? 'box is' : 'boxes are'} kept; ${counts.frames - counts.existing} new ${counts.frames - counts.existing === 1 ? 'box' : 'boxes'} will be added. ` : ''}The track ID stays the same. Move or resize the copies afterward. Undo reverses the copy in one step.</p>
-    <div className="flex justify-end gap-2">
+    <p className="form-help">Example: annotate Extended first, copy to Visible, then adjust the height, width or position at keyframes. Review the frames between your corrections.</p><div className="flex justify-end gap-2">
       <Button type="button" variant="ghost" onClick={onClose}>Cancel</Button>
       <Button type="submit" disabled={!canCopy}><Copy/>Copy boxes</Button>
     </div>

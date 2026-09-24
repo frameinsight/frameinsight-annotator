@@ -7,6 +7,7 @@
 | I | Change/reuse track ID, reassign the selected class, or choose its color |
 | 1 / 2 | Select the first / second named class |
 | Tab | Cycle all classes while the canvas has focus |
+| [ / ] | Previous / next keyframe for the selected track and class |
 | F / D | Next / previous exact source frame |
 | Shift+F / Shift+D | Forward / back ten frames |
 | Enter | Next frame; edits save automatically |

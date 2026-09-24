@@ -2,6 +2,7 @@
 
 /* Drawing and view tools share the compact row above the image. */
 @layer components {
+  .processing-status { display:flex; align-items:center; gap:8px; padding:8px 16px; color:var(--muted-foreground); background:var(--muted); font-size:12px; }
   .canvas-tool-group { display: inline-flex; flex-shrink: 0; align-items: center; gap: 3px; }
   .canvas-tool-divider { width: 1px; height: 16px; flex-shrink: 0; margin: 0 3px; background: var(--border); }
   .canvas-tool-zoom { min-width: 36px; padding-inline: 3px; color: var(--muted-foreground); font: 10px var(--font-mono, ui-monospace, monospace); text-align: center; }

@@ -29,6 +29,17 @@ def rejected(path,data,status):
  try:request(path,data)
  except urllib.error.HTTPError as error:assert error.code==status,(error.code,error.read())
  else:raise AssertionError('Expected request rejection: '+path)
+
+def preview_export(pid, vid, document):
+    boundary = 'frameinsight-json-import-smoke'
+    body = (f'--{boundary}\r\nContent-Disposition: form-data; name="format"\r\n\r\nframeinsight\r\n--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="annotations.json"\r\nContent-Type: application/json\r\n\r\n'.encode() + json.dumps(document).encode() + f'\r\n--{boundary}--\r\n'.encode())
+    query = urllib.request.Request(f'http://127.0.0.1:8765/api/projects/{pid}/imports/annotations/preview?video_id={vid}', body, headers={'Content-Type': 'multipart/form-data; boundary=' + boundary})
+    with urllib.request.urlopen(query, timeout=20) as response:
+        result = json.load(response)
+    assert result['summary']['boxes'] == len(document['annotation_index'])
+    assert result['mapping'][0]['source'] == 7 and result['mapping'][0]['track_id'] != 7
+    assert request('/api/projects/' + pid)['state'] == document['state']
+
 def structural_delivery(pid,vid,revision,boxes,class_names):
  before=request('/api/projects/'+pid)
  def deliver(current_revision):
@@ -41,6 +52,7 @@ def structural_delivery(pid,vid,revision,boxes,class_names):
   request('/api/videos/'+vid+'/finish',{'confirmed':True,**proof})
   job=wait_job(request('/api/projects/'+pid+'/exports',{'format':'annotations_json','video_id':vid,'include_videos':False,**proof}))
   document=request('/api/exports/'+job['export_id'])
+  preview_export(pid, vid, document)
   assert document['schema_version']==3 and document['app_version']==app_version and document['media_included'] is False
   assert document['validation']['mode']=='structural' and document['validation']['validation_id']==validation['validation_id']
   assert 'review_job_id' not in document['validation'] and 'review_video_hash' not in document['validation']
@@ -126,7 +138,7 @@ try:
  assert request('/api/videos/'+vid+'?confirmed=true',method='DELETE')['deleted']
  assert request('/api/video-library')==[] and fixture.exists()
  stop(p)
- report={'app_version':app_version,'runtime':'Windows embedded Python 3.13.12','environment':'Wine on Linux' if 'WINEPREFIX' in os.environ else 'Windows','checks':['native launcher','single instance','HTTP frontend','updater package kind','multipart video import','24 exact frames','PNG decoding','annotation save with class/color','class catalog and persistent random palette','video library','unvalidated finish and JSON export rejected','structural validation and media-free JSON without a review job or review hash','project settings preserve annotations and invalidate previous validation/export download','fresh structural validation after metadata edit','backwards-compatible full 24-frame annotated review with exact timestamps','revision-bound review validation and selected-person coverage','validated finish confirmation','annotations-only export with matching validation proof','JSON v3 with three named classes and legacy paired geometry sharing one identity','bulk-copy provenance and correction export','automatic visibility export','delete video preserves original file','graceful shutdown','relaunch persistence'],'project_id':pid}
+ report={'app_version':app_version,'runtime':'Windows embedded Python 3.13.12','environment':'Wine on Linux' if 'WINEPREFIX' in os.environ else 'Windows','checks':['native launcher','single instance','HTTP frontend','updater package kind','multipart video import','24 exact frames','PNG decoding','annotation save with class/color','class catalog and persistent random palette','video library','unvalidated finish and JSON export rejected','structural validation and media-free JSON without a review job or review hash', 'native annotation JSON import preview and collision mapping','project settings preserve annotations and invalidate previous validation/export download','fresh structural validation after metadata edit','backwards-compatible full 24-frame annotated review with exact timestamps','revision-bound review validation and selected-person coverage','validated finish confirmation','annotations-only export with matching validation proof','JSON v3 with three named classes and legacy paired geometry sharing one identity','bulk-copy provenance and correction export','automatic visibility export','delete video preserves original file','graceful shutdown','relaunch persistence'],'project_id':pid}
  Path('windows-smoke-report.json').write_text(json.dumps(report,indent=2));print(json.dumps(report),flush=True)
 finally:
  if p.poll() is None:

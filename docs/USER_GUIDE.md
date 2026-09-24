@@ -23,7 +23,7 @@ You can also choose **Edit project & classes** on the **Validate & export** page
 
 **I → Save ID** can change the ID, class name or color of the selected class track. Changing its class here **reassigns its existing boxes**. To add a second class while keeping the first, close the dialog and choose the second class in the bar instead.
 
-To join two tracks that belong to the same object, select one, press **I**, choose the other track’s existing ID and **Save ID**. Complementary classes and non-overlapping frames can join. If both tracks have a box of the same class on the same frame, the app reports a conflict and keeps both intact. Check the result. **Ctrl+Z** undoes the join.
+Use the **Join / change track ID** icon in the Tracks heading, or press **I**. To join two tracks that belong to the same object, select one, press **I**, choose the other track’s existing ID and **Save ID**. Complementary classes and non-overlapping frames can join. If both tracks have a box of the same class on the same frame, the app reports a conflict and keeps both intact. Check the result. **Ctrl+Z** undoes the join.
 
 ## Copy a class across the video
 
@@ -76,7 +76,11 @@ Click a section, scrub with the seek control, or enter a precise frame number. T
 
 New box colors exclude red, white and black so these timeline states stay distinct. Previously saved colors remain until you choose a new swatch using **I**.
 
+Diamonds in the frame bar mark interpolation anchors for the selected track and class. Use **Previous/Next keyframe** or **[ / ]** to jump between them. An anchor may be manually drawn, corrected, copied from one frame or imported. Always check the frames between anchors too.
+
 ## Make overlapping boxes easier to see
+
+Choose **Class colors / Track colors** above the canvas. Class colors are the default. Track colors give each ID a stable display color across frames and classes; saved class colors and exports stay unchanged.
 
 - Track **eye**: hide/show that track’s boxes. **Focus**: show only that track. **Show all tracks** brings the others back.
 - Class **eye**: hide/show a class for all tracks. Click its name to show it and begin editing it again.
@@ -119,3 +123,13 @@ See [all useful shortcuts](SHORTCUTS.md). **Help → About** shows the app versi
 7. Inspect the result using editor playback before finishing. Missing source labels stay Hidden after import. Use **K** to fill between boxes when appropriate; correcting a box also fills its neighboring frames automatically.
 
 Ordinary YOLO detection labels cannot tell the app which detections belong to one object across frames. They become separate tracks. Use tracked YOLO or MOT if you need to preserve a complete tracking annotation.
+
+## Reopen exported annotation JSON
+
+1. Create a new project and add the original video. Wait for preparation to finish.
+2. Choose **Import annotations → Frameinsight annotations — JSON** and select the export.
+3. Choose **Preview import**. Check the counts and ID mapping. The video dimensions, frame count and available SHA-256 fingerprints must match.
+4. Choose **Add annotations**. Boxes, classes, numeric IDs (when unused), keyframes and deleted intervals remain editable. Undo reverses the whole import.
+5. Review playback and validate again before a new export. Previous validation and historical deleted boxes/undo records are not imported; use a project backup for full history.
+
+Only single-video Frameinsight v2/v3 exports are accepted. Existing tracks are kept; colliding numeric IDs are remapped rather than silently joined. Import into an empty project to preserve all original numeric IDs.

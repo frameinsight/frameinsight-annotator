@@ -55,7 +55,15 @@ A settings change resets the current Undo/Redo stacks, while saved edit history 
 - Structural validation of IDs, references, coordinate data, timestamps, JSON and export counts. It needs no video rendering or source-file hashing. Saved changes require revalidation.
 - Windows and Debian installers with release notes and opt-in updates.
 
-The app does not recognize objects or guarantee identity correctness. Human review checks placement, identity swaps, missed objects and interpolation. Direction labels, movement prediction, cross-camera identity association and direct custom-JSON import are not implemented. This is a localhost app, without network deployment or multi-user authentication.
+The app does not recognize objects or guarantee identity correctness. Human review checks placement, identity swaps, missed objects and interpolation. Direction labels, movement prediction and cross-camera identity association are not implemented. This is a localhost app, without network deployment or multi-user authentication.
+
+## Team annotation tools
+
+- Switch **Class colors / Track colors** above the canvas. Class colors remain the default; track colors are a display preference, not changes to labels or export colors.
+- Diamonds mark anchor frames for the selected track/class. Use **Previous/Next keyframe** or **[ / ]** to jump between them. Generated boxes have no diamond until corrected. Single-frame copies and imported boxes may also be anchors.
+- Use the **Join / change track ID** icon in Tracks (or **I**) to reuse an existing ID. **B + drag** replaces the current box; **C** only copies into an empty frame.
+- **Import annotations → Frameinsight annotations — JSON** previews a single-video v2/v3 export before adding it. Numeric IDs are retained when free; collisions are explicitly remapped. Original frame dimensions/count and available video hashes must match. Boxes, class styles, anchor provenance and deleted intervals are retained; review/validation and old edit history are not restored. Existing tracks remain intact; Undo reverses the import.
+- Empty projects remain reusable after video deletion and are clearly labeled.
 
 ## How to use annotation JSON
 
@@ -107,7 +115,7 @@ for (video_id, identity_uuid, channel), rows in tracks.items():
 
 For detection training, extract the matching original source frames and convert class labels and coordinates to your trainer’s format. This JSON is not directly a YOLO dataset. Maintain one consistent class mapping across all training videos. For tracking, group by identity and choose the appropriate class; two classes of the same object are not two objects. Use exact source timestamps for motion analysis. Partial annotation is not exhaustive ground truth.
 
-See the [complete JSON reference](docs/ANNOTATION_JSON.md), including legacy compatibility. To reopen editable work on another computer, use **Help → Back up project** and keep the ZIP with the original video; the custom JSON is a delivery format, not a project backup.
+See the [complete JSON reference](docs/ANNOTATION_JSON.md), including legacy compatibility. To reopen editable work on another computer, use **Help → Back up project** and keep the ZIP with the original video; annotation JSON can also be imported onto the matching original video, but does not restore old undo history or validation. Use a project backup for full recovery.
 
 ## Run from source
 
@@ -134,7 +142,7 @@ Browser tests need an **isolated** server at `127.0.0.1:5173` and Chrome. Set a 
 FRAMEINSIGHT_TEST_URL=http://127.0.0.1:5173 npm --prefix frontend run test:e2e
 ```
 
-Build and release instructions are in [Windows packaging](docs/WINDOWS.md), [Debian packaging](docs/LINUX.md) and the [release workflow](.github/workflows/desktop-release.yml). See the [3.2.1 verification record](docs/releases/v3.2.1-acceptance.md) for test coverage and limits.
+Build and release instructions are in [Windows packaging](docs/WINDOWS.md), [Debian packaging](docs/LINUX.md) and the [release workflow](.github/workflows/desktop-release.yml). See the [3.3.0 verification record](docs/releases/v3.3.0-acceptance.md) for test coverage and limits.
 
 ## Contributing
 

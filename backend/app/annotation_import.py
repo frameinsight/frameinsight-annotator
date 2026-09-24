@@ -53,6 +53,9 @@ def files_from(raw, filename):
 
 
 def preview(raw, filename, project, video_id, format='yolo', frame_base=0, coordinate_base=0, class_names=None, clip_boxes=False):
+    if format == 'frameinsight':
+        from .native_annotations import preview_native
+        return preview_native(raw, project, video_id)
     if format not in ('yolo', 'yolo_tracks', 'mot') or frame_base not in (0, 1) or coordinate_base not in (0, 1):
         raise ValueError('Choose a supported format and frame/coordinate base')
     video = project['videos'].get(video_id)

@@ -320,3 +320,33 @@ test('collision-shifted class badges select their exact box and share safe conte
  const after=await state(request),firstRow=obs(after).find(row=>row.identity_uuid===first.id);expect(firstRow.boxes['class:person_extended']).toBeUndefined();expect(firstRow.boxes['class:person_visible']).toEqual(obs(before).find(row=>row.identity_uuid===first.id).boxes['class:person_visible']);expect(obs(after).find(row=>row.identity_uuid===second.id)).toEqual(obs(before).find(row=>row.identity_uuid===second.id));
  await canvas.press('Control+z');await saved(page);expect((await state(request)).state).toEqual(before.state);
 });
+
+test('track colors and keyframe controls are display-only and survive reload',async({page,request})=>{
+ const canvas=page.getByTestId('canvas');await canvas.press('n');await drag(page,[100,80],[200,280]);await saved(page);
+ await page.getByLabel('Go to frame').fill('10');await ready(page,10);await drag(page,[150,80],[250,280]);await saved(page);
+ const original=await state(request);
+ await page.getByRole('button',{name:'Previous keyframe',exact:true}).click();await ready(page,0);
+ await page.getByRole('button',{name:'Next keyframe',exact:true}).click();await ready(page,10);
+ await page.getByLabel('Go to frame').fill('5');await ready(page,5);await expect(page.getByLabel('Keyframe navigation')).toContainText('2');
+ const mode=page.getByRole('button',{name:'Color by track',exact:true});await expect(mode).toHaveAttribute('aria-pressed','false');await mode.click();await expect(mode).toHaveAttribute('aria-pressed','true');
+ expect((await state(request)).state).toEqual(original.state);
+ await reopen(page);await expect(page.getByRole('button',{name:'Color by track',exact:true})).toHaveAttribute('aria-pressed','true');
+ await page.getByRole('button',{name:'Join / change track ID',exact:true}).click();await expect(page.getByRole('combobox',{name:'Existing track ID',exact:true})).toBeVisible();
+});
+
+test('exported JSON can be previewed, imported into a fresh project and undone',async({page,request})=>{
+ const canvas=page.getByTestId('canvas');await canvas.press('n');await drag(page,[100,80],[200,280]);await saved(page);
+ await page.getByLabel('Go to frame').fill('10');await ready(page,10);await drag(page,[150,80],[250,280]);await saved(page);
+ const exported=await validatedExport(request);const download=await request.get('/api/exports/'+exported);expect(download.ok()).toBeTruthy();const file=await download.body();
+ const original=JSON.parse(file.toString());
+ const dest=await(await request.post('/api/projects',{data:{name:'JSON round trip '+Date.now(),classes:['person_visible','person_extended']}})).json();
+ const target=await(await request.post(`/api/projects/${dest.id}/videos/local`,{data:{path:'tests/fixtures/numbered.mp4'}})).json();
+ projectId=dest.id;videoId=target.video_id;await expect.poll(async()=>(await state(request)).videos[videoId].status).toBe('ready');
+ await page.goto('/');await page.getByTestId('open-project-'+projectId).click();await page.getByTestId('open-video-'+videoId).click();await ready(page,0);
+ await page.getByRole('button',{name:'Import annotations',exact:true}).click();await selectOption(page,'Annotation format','Frameinsight annotations — JSON');await page.getByLabel('Annotation file',{exact:true}).setInputFiles({name:'export.json',mimeType:'application/json',buffer:file});
+ await page.getByRole('button',{name:'Preview import',exact:true}).click();await expect(page.getByRole('region',{name:'Import preview'})).toContainText('11 boxes');expect(obs(await state(request))).toHaveLength(0);
+ await page.getByRole('button',{name:'Add annotations',exact:true}).click();await expect(page.getByRole('dialog')).toHaveCount(0);await saved(page);
+ const imported=await state(request);expect(obs(imported)).toHaveLength(11);expect(Object.values(imported.state.identities).map((p:any)=>p.person_id)).toEqual([1]);
+ for(const row of original.annotation_index)expect(at(imported,row.frame_index).boxes[row.class_key]).toEqual(row.box_xyxy);
+ await canvas.press('Control+z');await saved(page);expect(obs(await state(request))).toHaveLength(0);
+});

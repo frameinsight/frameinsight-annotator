@@ -1,3 +1,4 @@
+import {trackColor} from './colors';
 import {CopyToClassIcon,CopyPreviousBoxIcon,DeleteRangeIcon,RestoreRangeIcon} from './components/AnnotationIcons';
 import {CanvasLabels,measureLabelText} from './CanvasLabels';
 import {LABEL_HEIGHT,layoutLabels,hitLabel,type CanvasBadge} from './canvas-labels';
@@ -25,8 +26,9 @@ const resizeCursor=(edge:string)=>edge.length===2?(edge==='nw'||edge==='se'?'nws
 
 const imageCache=new Map<string,HTMLImageElement>();
 function fetchImage(key:string,url:string):Promise<HTMLImageElement>{const cached=imageCache.get(key);if(cached)return Promise.resolve(cached);return new Promise((resolve,reject)=>{const img=new Image();img.onload=()=>{imageCache.set(key,img);while(imageCache.size>15)imageCache.delete(imageCache.keys().next().value!);resolve(img)};img.onerror=()=>reject(new Error('Exact frame unavailable'));img.src=url;});}
-export const EditorCanvas=forwardRef<CanvasHandle,{proposals:Proposal[];showProposals:boolean;hiddenClasses:Record<string,boolean>;dimOutside:boolean;onAction?:(action:string)=>void;onControlsChange?:(state:CanvasControlsState)=>void}>(({proposals,showProposals,hiddenClasses,dimOutside,onAction,onControlsChange},ref)=>{
+export const EditorCanvas=forwardRef<CanvasHandle,{proposals:Proposal[];showProposals:boolean;hiddenClasses:Record<string,boolean>;dimOutside:boolean;colorMode?:'class'|'track';onAction?:(action:string)=>void;onControlsChange?:(state:CanvasControlsState)=>void}>(({proposals,showProposals,hiddenClasses,dimOutside,colorMode='class',onAction,onControlsChange},ref)=>{
  const {project,videoId,frame,activeId,geometry,hiddenIds}=useStore();const video=project?.videos[videoId];
+ const displayColor=(person:import('./types').Identity|undefined,g:Geometry)=>colorMode==='track'&&person?trackColor(person.person_id,person.id):boxStyle(person,g).color;
  const menuDialog=useRef(false),menuOpen=useRef(false);
  const [tool,setTool]=useState<CanvasTool>('select'),[menuTarget,setMenuTarget]=useState<{identity:string;geometry:Geometry}|null>(null);
  const host=useRef<HTMLDivElement>(null),gesture=useRef<Gesture|null>(null),spaceDown=useRef(false),panned=useRef(false),cycle=useRef(0);
@@ -131,7 +133,7 @@ export const EditorCanvas=forwardRef<CanvasHandle,{proposals:Proposal[];showProp
   return {key:o.id+g,g,box:editing&&preview?preview:linkedPreview?preview:box,person:project!.state.identities[o.identity_uuid],selected};
  });
  if(preview&&gesture.current?.kind==='draw'&&!getBox(active,gesture.current.geometry))renderBoxes.unshift({key:'drawing',g:gesture.current.geometry,box:preview,person:project!.state.identities[activeId],selected:true});
- const labels=renderBoxes.filter(({box})=>box[2]*view.scale+view.x>=0&&box[0]*view.scale+view.x<size.w&&box[3]*view.scale+view.y>=0&&box[1]*view.scale+view.y<size.h).map(({key,g,box,person,selected})=>({key,x:box[0]*view.scale+view.x,y:box[1]*view.scale+view.y,className:boxStyle(person,g).class_name,id:person?.person_id!=null?'#'+person.person_id:person?.name||'Draft',color:boxStyle(person,g).color,selected,identity:person?.id||'',geometry:g,interactive:key!=='drawing'&&!!person}));
+ const labels=renderBoxes.filter(({box})=>box[2]*view.scale+view.x>=0&&box[0]*view.scale+view.x<size.w&&box[3]*view.scale+view.y>=0&&box[1]*view.scale+view.y<size.h).map(({key,g,box,person,selected})=>({key,x:box[0]*view.scale+view.x,y:box[1]*view.scale+view.y,className:boxStyle(person,g).class_name,id:person?.person_id!=null?'#'+person.person_id:person?.name||'Draft',color:displayColor(person,g),selected,identity:person?.id||'',geometry:g,interactive:key!=='drawing'&&!!person}));
  const badges=layoutLabels(labels,{width:size.w,height:size.h},measureLabelText);
  const drawBox=(box:Box,g:Geometry,key:string,selected=false,color=boxStyle(undefined,g).color)=>{
   const [x1,y1,x2,y2]=box;
@@ -145,9 +147,9 @@ export const EditorCanvas=forwardRef<CanvasHandle,{proposals:Proposal[];showProp
    {focusBoxes.map(([x1,y1,x2,y2],i)=><Rect key={i} x={x1} y={y1} width={x2-x1} height={y2-y1} fill="black" globalCompositeOperation="destination-out"/>)}
   </Group></Layer>}<Layer listening={false}><Group x={view.x} y={view.y} scaleX={view.scale} scaleY={view.scale}>
    {showProposals&&proposals.map((p,i)=><Group key={p.id} opacity={.55}><Rect x={p.box[0]} y={p.box[1]} width={p.box[2]-p.box[0]} height={p.box[3]-p.box[1]} stroke="#f2bd6b" strokeWidth={1/view.scale} dash={[2/view.scale,5/view.scale]}/><Text text={`? ${Math.round(p.confidence*100)}`} x={p.box[0]} y={p.box[1]+3/view.scale} fontSize={10/view.scale} fill="#ffcf87"/></Group>)}
-   {renderBoxes.slice().reverse().map(({key,g,box,person,selected})=>drawBox(box,g,key,selected,boxStyle(person,g).color))}
+   {renderBoxes.slice().reverse().map(({key,g,box,person,selected})=>drawBox(box,g,key,selected,displayColor(person,g)))}
   </Group><CanvasLabels badges={badges}/><Group x={view.x} y={view.y} scaleX={view.scale} scaleY={view.scale}>
-   {renderBoxes.filter(({selected})=>selected).flatMap(({key,box,person,g})=>resizeHandles(box).map(({x,y,edge})=><Rect key={key+edge} x={x-3/view.scale} y={y-3/view.scale} width={6/view.scale} height={6/view.scale} fill="#10161b" stroke={boxStyle(person,g).color} strokeWidth={1/view.scale}/>))}
+   {renderBoxes.filter(({selected})=>selected).flatMap(({key,box,person,g})=>resizeHandles(box).map(({x,y,edge})=><Rect key={key+edge} x={x-3/view.scale} y={y-3/view.scale} width={6/view.scale} height={6/view.scale} fill="#10161b" stroke={displayColor(person,g)} strokeWidth={1/view.scale}/>))}
   </Group></Layer></Stage>:<div className="canvas-loading">{error|| (video?'Loading exact source frame…':'Import a video to begin')}</div>}
   {ready&&<div className="canvas-corner">{video.width} × {video.height}<span>{Math.round(view.scale*100)}%</span><span>Source pixels</span></div>}
   {ready&&!activeId&&<div className="canvas-hint">Press <kbd>N</kbd> to start a track · Drag to draw</div>}

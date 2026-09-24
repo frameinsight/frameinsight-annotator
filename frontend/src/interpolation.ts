@@ -2,7 +2,11 @@ import {type Box,type Domain,type Observation,type Geometry,geometries,emptyObse
 
 export function isGeometryInterpolated(o:Observation,g:Geometry){return !!getBox(o,g)&&o.provenance[g]?.origin==='interpolated'&&!o.provenance[g]?.human_corrected;}
 // Unadjusted copies and legacy AI boxes remain editable starting boxes.
-function isGeometryGenerated(o:Observation,g:Geometry){return !!getBox(o,g)&&['model_track','copied_track','interpolated'].includes(o.provenance[g]?.origin||'')&&!o.provenance[g]?.human_corrected;}
+export function isGeometryGenerated(o:Observation,g:Geometry){return !!getBox(o,g)&&['model_track','copied_track','interpolated'].includes(o.provenance[g]?.origin||'')&&!o.provenance[g]?.human_corrected;}
+
+export function annotationKeyframes(d:Domain|null,videoId:string,identity:string,g:Geometry){
+ return Object.values(d?.observations||{}).filter(o=>o.video_id===videoId&&o.identity_uuid===identity&&getBox(o,g)&&(o.review_state==='approved'||!isGeometryGenerated(o,g))).map(o=>o.frame_index).sort((a,b)=>a-b);
+}
 export function isInterpolated(o:Observation){
  const present=boxKeys(o);
  return present.length>0&&present.every(g=>isGeometryInterpolated(o,g));
