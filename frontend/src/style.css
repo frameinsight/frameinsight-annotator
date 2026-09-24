@@ -287,3 +287,7 @@
     .guide-icon { width: 44px; height: 44px; margin-bottom: 12px; }
   }
 }
+
+.toolbar-shortcuts { margin-left:auto; display:flex; flex-wrap:wrap; align-items:center; justify-content:flex-end; gap:10px; color:var(--muted-foreground); font-size:10px; }
+.toolbar-shortcuts > span { display:inline-flex; align-items:center; gap:4px; white-space:nowrap; }
+.toolbar-shortcuts kbd { font-size:9px; padding:1px 4px; }

@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.4.0
+
+Long frame numbers, automatic first-box registration and distinct new-track colors, compact toolbar shortcuts, and removal of track merging. View mode and edit actions remain in the right-click menu. See the [release notes](docs/releases/v3.4.0.md).
+
 ## 3.3.0
 
 - Optional stable track display colors; class colors remain the default.

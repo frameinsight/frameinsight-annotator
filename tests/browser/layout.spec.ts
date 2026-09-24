@@ -16,7 +16,7 @@ async function fixture(request:APIRequestContext,width:number){
 }
 async function draw(page:Page,from:number[],to:number[]){
  const view=await page.getByTestId('canvas').evaluate(host=>{const box=host.getBoundingClientRect();return {x:box.x+Number(host.getAttribute('data-offset-x')),y:box.y+Number(host.getAttribute('data-offset-y')),scale:Number(host.getAttribute('data-scale'))}});
- await page.mouse.move(view.x+from[0]*view.scale,view.y+from[1]*view.scale);await page.mouse.down();await page.mouse.move(view.x+to[0]*view.scale,view.y+to[1]*view.scale,{steps:6});await page.mouse.up();
+ await page.mouse.move(view.x+from[0]*view.scale,view.y+from[1]*view.scale);await page.mouse.down();await page.mouse.move(view.x+to[0]*view.scale,view.y+to[1]*view.scale,{steps:6});await page.mouse.up();await page.waitForTimeout(100);if(await page.getByRole('dialog',{name:'Track ID, class & color'}).isVisible())await page.keyboard.press('Escape');
 }
 const rgb=(hex:string)=>'rgb('+[1,3,5].map(offset=>parseInt(hex.slice(offset,offset+2),16)).join(', ')+')';
 

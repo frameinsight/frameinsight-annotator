@@ -8,3 +8,17 @@ export function trackColor(id:number|null|undefined,uuid:string){
  const index=id!=null?Math.max(0,id-1):hash;
  return index<NEW_BOX_COLORS.length?NEW_BOX_COLORS[index]:`hsl(${40+(index*137.508)%250} 75% 62%)`;
 }
+
+/** Prefer unused palette colors, then scan bright non-red RGB colors. */
+export function unusedBoxColor(colors:string[],random= Math.random):string{
+ const used=new Set(colors.map(c=>c.toLowerCase()));
+ const available=NEW_BOX_COLORS.filter(c=>!used.has(c));
+ if(available.length)return available[Math.min(available.length-1,Math.floor(random()*available.length))];
+ const offset=Math.floor(random()*65536);
+ for(let n=0;n<65536;n++){
+  const value=(offset+n)%65536;
+  const color='#'+(64+(value>>8)%128).toString(16).padStart(2,'0')+'c0'+(64+(value&255)%192).toString(16).padStart(2,'0');
+  if(!used.has(color))return color;
+ }
+ return NEW_BOX_COLORS[0];
+}

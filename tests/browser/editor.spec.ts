@@ -3,7 +3,7 @@ import path from 'node:path';
 import {selectOption} from './select';
 let projectId:string,videoId:string;
 async function state(request:any){return (await request.get(`/api/projects/${projectId}`)).json()}
-async function drag(page:Page,a:number[],b:number[]){const v=await page.getByTestId('canvas').evaluate(e=>{const r=e.getBoundingClientRect();return {x:r.x+Number(e.getAttribute('data-offset-x')),y:r.y+Number(e.getAttribute('data-offset-y')),s:Number(e.getAttribute('data-scale'))}});await page.mouse.move(v.x+a[0]*v.s,v.y+a[1]*v.s);await page.mouse.down();await page.mouse.move(v.x+b[0]*v.s,v.y+b[1]*v.s,{steps:8});await page.mouse.up()}
+async function drag(page:Page,a:number[],b:number[],register=true){const v=await page.getByTestId('canvas').evaluate(e=>{const r=e.getBoundingClientRect();return {x:r.x+Number(e.getAttribute('data-offset-x')),y:r.y+Number(e.getAttribute('data-offset-y')),s:Number(e.getAttribute('data-scale'))}});await page.mouse.move(v.x+a[0]*v.s,v.y+a[1]*v.s);await page.mouse.down();await page.mouse.move(v.x+b[0]*v.s,v.y+b[1]*v.s,{steps:8});await page.mouse.up();if(register){await page.waitForTimeout(100);if(await page.getByRole('dialog',{name:'Track ID, class & color'}).isVisible())await page.keyboard.press('Escape')}}
 async function copyTo(page:Page,target:string){await page.getByRole('button',{name:'Copy to class…',exact:true}).click();await selectOption(page,'Target class',target);await page.getByRole('button',{name:'Copy boxes',exact:true}).click();await expect(page.getByRole('dialog')).toHaveCount(0)}
 async function saved(page:Page){await expect(page.locator('.save-status')).toHaveText('Saved')}
 async function ready(page:Page,f:number){await expect(page.getByTestId('canvas')).toHaveAttribute('data-frame',String(f))}
@@ -41,13 +41,21 @@ test('new video inherits project classes and opens editor',async({page,request})
  expect((await state(request)).classes).toEqual(['person_visible','person_extended']);
  await page.getByTestId('canvas').press('n');await expect(page.getByRole('button',{name:'Select Track 1',exact:true})).toHaveAttribute('aria-pressed','true');await page.getByTestId('canvas').press('i');await expect(page.getByLabel('Class name',{exact:true})).toHaveValue('person_visible');await page.getByLabel('Class name',{exact:true}).fill('Visitor');await page.getByRole('button',{name:'Save ID',exact:true}).click();await expect(page.getByRole('dialog')).toHaveCount(0);await saved(page);expect((await state(request)).classes).toContain('Visitor');
 });
-test('reuse later ID before earlier frame; class, color, interpolation and undo persist',async({page,request})=>{
- await page.getByLabel('Go to frame').fill('20');await ready(page,20);await page.getByTestId('canvas').press('n');await drag(page,[200,80],[300,300]);await page.keyboard.press('i');await page.getByLabel('Track ID',{exact:true}).fill('7');await page.getByLabel('Class name',{exact:true}).fill('Worker');await page.getByRole('button',{name:'Box color #fb923c',exact:true}).click();await page.getByRole('button',{name:'Save ID',exact:true}).click();await expect(page.getByRole('dialog')).toHaveCount(0);await saved(page);
- const original=Object.keys((await state(request)).state.identities)[0];await page.getByLabel('Go to frame').fill('5');await ready(page,5);await page.getByTestId('canvas').press('n');await page.getByRole('button',{name:'Select class Worker',exact:true}).click();await drag(page,[110,80],[210,300]);await saved(page);const before=(await state(request)).state;
- await page.keyboard.press('i');await selectOption(page,'Existing track ID','Track 7');await expect(page.getByLabel('Track ID',{exact:true})).toHaveValue('7');await selectOption(page,'Existing track ID','New number / current person');await expect(page.getByLabel('Track ID',{exact:true})).toHaveValue('1');await selectOption(page,'Existing track ID','Track 7');await page.getByRole('button',{name:'Save ID',exact:true}).click();await expect(page.getByRole('dialog')).toHaveCount(0);await saved(page);
- let p=await state(request);expect(Object.keys(p.state.identities)).toEqual([original]);expect(p.state.identities[original]).toMatchObject({person_id:7,box_styles:{'class:Worker':{class_name:'Worker',color:'#fb923c'}}});expect(obs(p)).toHaveLength(16);expect(at(p,10).boxes?.['class:Worker'][0]).toBeCloseTo(140,0);
- await page.getByTestId('canvas').press('Control+z');await saved(page);expect((await state(request)).state).toEqual(before);await page.keyboard.press('Control+Shift+z');await saved(page);await reopen(page);await ready(page,5);await page.getByTestId('canvas').press('i');await expect(page.getByRole('button',{name:'Box color #fb923c',exact:true})).toHaveAttribute('aria-pressed','true');
+test('new tracks get distinct colors and duplicate IDs cannot join tracks',async({page,request})=>{
+ await page.getByTestId('canvas').press('n');await drag(page,[100,80],[200,300]);await saved(page);
+ await page.getByTestId('canvas').press('n');await drag(page,[250,80],[350,300]);await saved(page);
+ const before=await state(request),tracks=Object.values(before.state.identities) as any[];
+ expect(tracks[0].color).not.toBe(tracks[1].color);
+ await page.keyboard.press('i');await expect(page.getByLabel('Existing track ID')).toHaveCount(0);
+ await page.getByLabel('Track ID',{exact:true}).fill('1');await page.getByRole('button',{name:'Save ID',exact:true}).click();
+ await expect(page.getByText('Error: That ID belongs to another track. Choose a different ID.',{exact:true})).toBeVisible();
+ expect((await state(request)).state).toEqual(before.state);
+ await page.keyboard.press('Escape');
+ await expect(page.getByRole('button',{name:'Toggle tracks panel',exact:true})).toHaveCount(0);
+ await expect(page.getByRole('button',{name:'Join / change track ID',exact:true})).toHaveCount(0);
+ await expect(page.getByLabel('Quick shortcuts')).toContainText('CTRL+Z');
 });
+
 test('keyframes always interpolate despite an old off preference, corrections change neighbors and gaps remain empty',async({page,request})=>{
  await page.evaluate(()=>localStorage.setItem('frameinsight:interpolate','off'));await reopen(page);await ready(page,0);await expect(page.getByRole('checkbox',{name:'Auto-interpolate',exact:true})).toHaveCount(0);
  await page.getByTestId('canvas').press('n');await drag(page,[100,80],[200,300]);await page.getByLabel('Go to frame').fill('10');await ready(page,10);await drag(page,[200,80],[300,300]);await saved(page);expect(obs(await state(request))).toHaveLength(11);
@@ -144,17 +152,6 @@ test('visible and extended boxes share an ID with independent interpolation, del
  expect(doc.schema_version).toBe(3);const rows=doc.annotation_index.filter((r:any)=>r.frame_index===5);expect(rows).toHaveLength(2);expect(rows.map((r:any)=>r.person_id)).toEqual([1,1]);expect(rows[0].identity_uuid).toBe(rows[1].identity_uuid);expect(rows.map((r:any)=>r.class_name).sort()).toEqual(['person_extended','person_visible']);expect(rows.find((r:any)=>r.class_name==='person_extended').color).toBe('#fbbf24');expect(doc.frame_annotations.find((r:any)=>r.frame_index===5).boxes['class:person_extended']).toEqual(extended);
 });
 
-test('I links an older extended-class track to visible ID on the same frame and undo restores both tracks',async({page,request})=>{
- await page.getByTestId('canvas').press('n');await drag(page,[130,120],[190,240]);await page.keyboard.press('i');await page.getByLabel('Track ID',{exact:true}).fill('7');await page.getByLabel('Class name',{exact:true}).fill('person_visible');await page.getByRole('button',{name:'Save ID',exact:true}).click();await expect(page.getByRole('dialog')).toHaveCount(0);await saved(page);
- const first=Object.keys((await state(request)).state.identities)[0];
- await page.getByTestId('canvas').press('n');await drag(page,[100,80],[220,300]);await saved(page);let p=await state(request);const second=Object.keys(p.state.identities).find(id=>id!==first)!;const identity=p.state.identities[second];
- const sourceObservation=obs(p).find(o=>o.identity_uuid===second);const legacyObservation={...sourceObservation,person_visible:sourceObservation.boxes['class:person_visible'],provenance:{person_visible:sourceObservation.provenance['class:person_visible']}};delete legacyObservation.boxes;
- const response=await request.post(`/api/projects/${projectId}/operations`,{data:{id:crypto.randomUUID(),base_revision:p.revision,label:'Legacy fixture',changes:[{collection:'identities',id:second,before:identity,after:Object.fromEntries(Object.entries({...identity,class_name:'person_extended',color:'#ffaa00'}).filter(([key])=>key!=='box_styles'))},{collection:'observations',id:sourceObservation.id,before:sourceObservation,after:legacyObservation}]}});expect(response.ok()).toBeTruthy();await reopen(page);await ready(page,0);await page.locator('.person').filter({hasText:'Track 1'}).click();await drag(page,[110,190],[115,190]);await saved(page);const before=(await state(request)).state;expect(before.identities[second].box_styles).toBeUndefined();
- await page.getByTestId('canvas').press('i');await expect(page.getByLabel('Class name',{exact:true})).toHaveValue('person_extended');await selectOption(page,'Existing track ID','Track 7');await expect(page.getByLabel('Class name',{exact:true})).toHaveValue('person_extended');await page.getByRole('button',{name:'Save ID',exact:true}).click();await expect(page.getByRole('dialog')).toHaveCount(0);await saved(page);
- p=await state(request);expect(Object.keys(p.state.identities)).toEqual([first]);expect(obs(p)).toHaveLength(1);expect(at(p,0).boxes?.['class:person_visible'][0]).toBeCloseTo(130,0);expect(at(p,0).person_ext).toEqual((Object.values(before.observations) as any[]).find(o=>o.identity_uuid===second).person_visible);expect(p.state.identities[first].person_id).toBe(7);
- await page.getByTestId('canvas').press('Control+z');await saved(page);expect((await state(request)).state).toEqual(before);await page.keyboard.press('Control+Shift+z');await saved(page);await reopen(page);await ready(page,0);expect((await state(request)).state).toEqual(p.state);
-});
-
 test('a new extended-first person can set its ID and later receive a visible box',async({page,request})=>{
  await page.getByTestId('canvas').press('n');await page.keyboard.press('2');await drag(page,[100,60],[220,310]);await saved(page);let p=await state(request);expect(at(p,0).boxes?.['class:person_extended']).toBeDefined();expect(at(p,0).boxes?.['class:person_visible']).toBeUndefined();
  await page.getByTestId('canvas').press('i');await expect(page.getByLabel('Class name',{exact:true})).toHaveValue('person_extended');await page.getByLabel('Track ID',{exact:true}).fill('9');await page.getByRole('button',{name:'Save ID',exact:true}).click();await expect(page.getByRole('dialog')).toHaveCount(0);await saved(page);
@@ -172,7 +169,7 @@ test('class buttons group both classes under one person and persist random color
  await classes.getByRole('button',{name:'Select class Silhouette',exact:true}).click();await expect(page.getByRole('button',{name:'Select class Silhouette',exact:true})).toHaveAttribute('aria-pressed','true');
  await reopen(page);await ready(page,0);await expect(page.locator('.person-row')).toHaveCount(1);expect((await state(request)).state.identities[person.id].box_styles).toEqual(styles);
  await page.getByTestId('canvas').press('i');await page.getByRole('dialog').getByRole('button',{name:'Add class',exact:true}).click();await page.getByLabel('Class name',{exact:true}).fill('Estimated body');await page.getByRole('button',{name:'Save ID',exact:true}).click();await expect(page.getByRole('dialog')).toHaveCount(0);await saved(page);
- p=await state(request);expect(p.state.identities[person.id].box_styles['class:Estimated body'].color).toBe(p.class_colors['Estimated body']);expect(p.class_colors['Estimated body']).not.toBe(styles['class:Silhouette'].color);await expect(classes.getByRole('button',{name:'Select class Estimated body',exact:true})).toBeVisible();
+ p=await state(request);expect(p.state.identities[person.id].box_styles['class:Estimated body'].color).toBe(styles['class:Silhouette'].color);expect(p.class_colors['Estimated body']).not.toBe(styles['class:Silhouette'].color);await expect(classes.getByRole('button',{name:'Select class Estimated body',exact:true})).toBeVisible();
 });
 
 test('manual zoom and pan survive drawing, resizing panels and switching frames',async({page,request})=>{
@@ -185,7 +182,7 @@ test('manual zoom and pan survive drawing, resizing panels and switching frames'
  await page.keyboard.down('Space');await page.mouse.move(rect.x+rect.width/2,rect.y+rect.height/2);await page.mouse.down();await page.mouse.move(rect.x+rect.width/2+20,rect.y+rect.height/2+10);await page.mouse.up();await page.keyboard.up('Space');
  const before=await view();await drag(page,[290,140],[350,220]);await saved(page);expect(await view()).toEqual(before);
  await page.getByRole('button',{name:'Toggle shortcuts',exact:true}).click();await expect(page.locator('.shortcut-panel')).toBeVisible();await page.getByRole('button',{name:'Toggle shortcuts',exact:true}).click();await expect(page.locator('.shortcut-panel')).toHaveCount(0);expect(await canvas.getAttribute('data-scale')).toBe(zoom);
- await page.getByRole('button',{name:'Toggle tracks panel',exact:true}).click();await expect(page.locator('.people-panel')).toHaveCount(0);expect(await view()).toEqual(before);
+ await expect(page.getByRole('button',{name:'Toggle tracks panel',exact:true})).toHaveCount(0);await expect(page.locator('.people-panel')).toBeVisible();expect(await view()).toEqual(before);
  await page.getByLabel('Go to frame').fill('10');await ready(page,10);await drag(page,[300,140],[360,220]);await saved(page);expect(await view()).toEqual(before);
  expect(at(await state(request),0).boxes?.['class:person_visible'][0]).toBeCloseTo(290,0);expect(at(await state(request),5).boxes?.['class:person_visible'][0]).toBeCloseTo(295,0);
  await page.getByRole('button',{name:'Fit video',exact:true}).click();await expect.poll(async()=>canvas.getAttribute('data-scale')).not.toBe(zoom);
@@ -200,7 +197,7 @@ test('copy Visible to Extended selects a separate colored box; resize, undo, rel
  await canvas.press('Control+z');await saved(page);expect((await state(request)).state).toEqual(before);await expect(copy).toBeEnabled();await canvas.press('Control+Shift+z');await saved(page);
  await drag(page,[160,240],[160,310]);await saved(page);p=await state(request);expect(at(p,0).boxes?.['class:person_extended'][3]).toBeCloseTo(310,0);expect(at(p,0).boxes?.['class:person_visible']).toEqual(Object.values(before.observations).map((o:any)=>o.boxes?.['class:person_visible'])[0]);expect(at(p,0).provenance['class:person_visible']).toEqual(Object.values(before.observations).map((o:any)=>o.provenance['class:person_visible'])[0]);
  const persisted=p.state;await reopen(page);await ready(page,0);expect((await state(request)).state).toEqual(persisted);await expect(page.getByRole('button',{name:'Select class person_extended',exact:true})).toHaveAttribute('aria-pressed','true');
- const exportId=await validatedExport(request);const doc=await (await request.get('/api/exports/'+exportId)).json();const rows=doc.annotation_index.filter((r:any)=>r.frame_index===0);expect(rows).toHaveLength(2);expect(rows.map((r:any)=>r.person_id)).toEqual([7,7]);expect(Object.fromEntries(rows.map((r:any)=>[r.class_name,r.color]))).toEqual({person_visible:p.class_colors.person_visible,person_extended:p.class_colors.person_extended});expect(rows.map((r:any)=>r.class_name).sort()).toEqual(['person_extended','person_visible']);
+ const exportId=await validatedExport(request);const doc=await (await request.get('/api/exports/'+exportId)).json();const rows=doc.annotation_index.filter((r:any)=>r.frame_index===0);expect(rows).toHaveLength(2);expect(rows.map((r:any)=>r.person_id)).toEqual([7,7]);expect(Object.fromEntries(rows.map((r:any)=>[r.class_name,r.color]))).toEqual({person_visible:p.state.identities[id].box_styles['class:person_visible'].color,person_extended:p.state.identities[id].box_styles['class:person_extended'].color});expect(rows.map((r:any)=>r.class_name).sort()).toEqual(['person_extended','person_visible']);
  await page.getByLabel('Go to frame').fill('1');await ready(page,1);await expect(copy).toBeEnabled();
 });
 
@@ -328,10 +325,10 @@ test('track colors and keyframe controls are display-only and survive reload',as
  await page.getByRole('button',{name:'Previous keyframe',exact:true}).click();await ready(page,0);
  await page.getByRole('button',{name:'Next keyframe',exact:true}).click();await ready(page,10);
  await page.getByLabel('Go to frame').fill('5');await ready(page,5);await expect(page.getByLabel('Keyframe navigation')).toContainText('2');
- const mode=page.getByRole('button',{name:'Color by track',exact:true});await expect(mode).toHaveAttribute('aria-pressed','false');await mode.click();await expect(mode).toHaveAttribute('aria-pressed','true');
+ await canvas.click({button:'right'});await page.getByRole('menuitemradio',{name:'View by track',exact:true}).click();
  expect((await state(request)).state).toEqual(original.state);
- await reopen(page);await expect(page.getByRole('button',{name:'Color by track',exact:true})).toHaveAttribute('aria-pressed','true');
- await page.getByRole('button',{name:'Join / change track ID',exact:true}).click();await expect(page.getByRole('combobox',{name:'Existing track ID',exact:true})).toBeVisible();
+ await reopen(page);await ready(page,5);await canvas.click({button:'right'});await expect(page.getByRole('menuitemradio',{name:'View by track',exact:true})).toHaveAttribute('data-state','checked');await page.keyboard.press('Escape');
+
 });
 
 test('exported JSON can be previewed, imported into a fresh project and undone',async({page,request})=>{
@@ -349,4 +346,22 @@ test('exported JSON can be previewed, imported into a fresh project and undone',
  const imported=await state(request);expect(obs(imported)).toHaveLength(11);expect(Object.values(imported.state.identities).map((p:any)=>p.person_id)).toEqual([1]);
  for(const row of original.annotation_index)expect(at(imported,row.frame_index).boxes[row.class_key]).toEqual(row.box_xyxy);
  await canvas.press('Control+z');await saved(page);expect(obs(await state(request))).toHaveLength(0);
+});
+
+test('first box opens registration once with an unused color and a readable frame field',async({page,request})=>{
+ await page.getByTestId('canvas').press('n');
+ const before=await state(request);
+ await drag(page,[100,80],[200,300],false);
+ const dialog=page.getByRole('dialog',{name:'Track ID, class & color'});
+ await expect(dialog).toBeVisible();
+ const picked=await dialog.locator('[aria-label^="Box color #"][aria-pressed="true"]').getAttribute('aria-label');
+ expect(Object.values(before.class_colors||{})).not.toContain(picked!.replace('Box color ',''));
+ await page.getByRole('button',{name:'Save ID',exact:true}).click();
+ await expect(dialog).toHaveCount(0);
+ await page.getByLabel('Go to frame').fill('10');await ready(page,10);
+ await drag(page,[110,80],[210,300],false);
+ await expect(dialog).toHaveCount(0);
+ const field=page.getByLabel('Go to frame');
+ expect((await field.boundingBox())!.width).toBeGreaterThan(85);
+ await page.getByTestId('canvas').click({button:'right'});await page.getByRole('menuitemradio',{name:'View by track',exact:true}).click();
 });

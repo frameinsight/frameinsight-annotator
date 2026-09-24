@@ -54,6 +54,9 @@ describe('recovery as one saved undoable action',()=>{
   const project=clone(useStore.getState().project!);project.state.identities.three={id:'three',person_id:3,name:'Existing'};project.state.identities.draft={id:'draft',person_id:null,name:'Legacy draft'};useStore.setState({project});
   useStore.getState().newPerson();const first=useStore.getState().activeId;expect(useStore.getState().project!.state.identities[first]).toMatchObject({person_id:1,name:'Track 1'});await useStore.getState().saveNow();
   useStore.getState().newPerson();const second=useStore.getState().activeId;expect(useStore.getState().project!.state.identities[second]).toMatchObject({person_id:2,name:'Track 2'});await useStore.getState().saveNow();
+  const current=useStore.getState();expect(current.project!.state.identities[first].color).not.toBe(current.project!.state.identities[second].color);
+  const before=clone(current.project!);expect(current.assignPerson(first,1,'Person','#38bdf8')).toBe(false);expect(useStore.getState().project).toEqual(before);
+  expect(current.assignPerson(second,1,'Person','#38bdf8')).toBe(false);expect(useStore.getState().project).toEqual(before);
   for(const id of ['p','three','draft'])expect(useStore.getState().project!.state.identities[id]).toEqual(project.state.identities[id]);
  });
  it('rejects an oversized recovery without stranding the save queue, then saves a small edit',async()=>{

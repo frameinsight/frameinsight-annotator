@@ -7,7 +7,7 @@ async function saved(page:Page){await expect(page.locator('.save-status')).toHav
 async function ready(page:Page,frame:number){await expect(page.getByTestId('canvas')).toHaveAttribute('data-frame',String(frame));}
 async function draw(page:Page,a=[100,80],b=[200,300]){
  const box=await page.getByTestId('canvas').evaluate(e=>{const r=e.getBoundingClientRect();return{x:r.x+Number(e.getAttribute('data-offset-x')),y:r.y+Number(e.getAttribute('data-offset-y')),s:Number(e.getAttribute('data-scale'))};});
- await page.mouse.move(box.x+a[0]*box.s,box.y+a[1]*box.s);await page.mouse.down();await page.mouse.move(box.x+b[0]*box.s,box.y+b[1]*box.s,{steps:5});await page.mouse.up();await saved(page);
+ await page.mouse.move(box.x+a[0]*box.s,box.y+a[1]*box.s);await page.mouse.down();await page.mouse.move(box.x+b[0]*box.s,box.y+b[1]*box.s,{steps:5});await page.mouse.up();await page.waitForTimeout(100);if(await page.getByRole('dialog',{name:'Track ID, class & color'}).isVisible())await page.keyboard.press('Escape');await saved(page);
 }
 async function track(page:Page){await page.getByTestId('canvas').press('n');await draw(page);await page.getByLabel('Go to frame').fill('20');await ready(page,20);await draw(page,[200,80],[300,300]);}
 

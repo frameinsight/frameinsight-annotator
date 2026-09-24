@@ -16,14 +16,14 @@
     backdrop-filter: blur(16px); font-size: 12px; line-height: 1.4;
     animation: canvas-menu-in .12s ease-out;
   }
-  .canvas-context-menu [role="menuitem"] {
+  .canvas-context-menu :is([role="menuitem"], [role="menuitemradio"]) {
     display: flex; position: relative; align-items: center; gap: 10px;
     min-height: 33px; padding: 7px 10px; border-radius: var(--radius-md);
     outline: none; cursor: default; user-select: none;
   }
-  .canvas-context-menu [role="menuitem"][data-highlighted] { background: var(--accent); color: var(--accent-foreground); }
-  .canvas-context-menu [role="menuitem"][data-disabled] { opacity: .4; pointer-events: none; }
-  .canvas-context-menu [role="menuitem"].canvas-menu-danger { color: var(--destructive); }
+  .canvas-context-menu :is([role="menuitem"], [role="menuitemradio"])[data-highlighted] { background: var(--accent); color: var(--accent-foreground); }
+  .canvas-context-menu :is([role="menuitem"], [role="menuitemradio"])[data-disabled] { opacity: .4; pointer-events: none; }
+  .canvas-context-menu :is([role="menuitem"], [role="menuitemradio"]).canvas-menu-danger { color: var(--destructive); }
   .canvas-context-menu svg { width: 18px; height: 18px; flex-shrink: 0; color: var(--muted-foreground); }
   .canvas-context-menu .canvas-menu-danger svg { color: inherit; }
   .canvas-context-menu kbd { margin-left: auto; color: var(--muted-foreground); font: 10px var(--font-mono, ui-monospace, monospace); white-space: nowrap; }
@@ -33,3 +33,5 @@
   @keyframes canvas-menu-in { from { opacity: 0; transform: scale(.98); } to { opacity: 1; transform: scale(1); } }
   @media (prefers-reduced-motion: reduce) { .canvas-context-menu { animation: none; } }
 }
+
+.canvas-context-menu [role="menuitemradio"][data-state="checked"]::after { content: "✓"; margin-left: auto; }

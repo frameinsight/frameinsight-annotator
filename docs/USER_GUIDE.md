@@ -3,7 +3,7 @@
 1. Open Frameinsight. **Your projects** groups saved work. Open a project to see its videos, or choose **New project** and enter its name and class names (one per line).
 2. Inside the project, click **New video**. Upload a recording or enter its path on this computer, then wait for it to load. A class is a box label: use the names supplied by your supervisor. All videos in a project share these classes.
 3. Find the first frame where your object appears. Click **New track** or press **N**. The app gives it a free ID.
-4. Choose a class button above the picture, then drag a box around the object. If you need to change or reuse an ID, press **I**, choose **Existing track ID** or type a number, and **Save ID**.
+4. Choose a class button above the picture, then drag a box around the object. The ID, class and color dialog opens automatically for this new track. Confirm the details and click **Save ID**. A different color is assigned automatically when the track is created. Press **I** to change these details later.
 5. Keep that track selected. Move forward a few frames with **F** or **Shift+F**, then move or resize the box. Interpolation is always on: the app fills frames between your corrections.
 6. Go back and check the filled frames. Drag inside a box to move it; drag an edge or corner to resize. Add corrections where movement changes. Interpolation estimates motion, so it still needs your check.
 7. To annotate another class for the **same object**, keep the same track and choose another class button. Draw its box, or follow the copying steps below. Do not create a new track for another class of the same object.
@@ -23,7 +23,7 @@ You can also choose **Edit project & classes** on the **Validate & export** page
 
 **I → Save ID** can change the ID, class name or color of the selected class track. Changing its class here **reassigns its existing boxes**. To add a second class while keeping the first, close the dialog and choose the second class in the bar instead.
 
-Use the **Join / change track ID** icon in the Tracks heading, or press **I**. To join two tracks that belong to the same object, select one, press **I**, choose the other track’s existing ID and **Save ID**. Complementary classes and non-overlapping frames can join. If both tracks have a box of the same class on the same frame, the app reports a conflict and keeps both intact. Check the result. **Ctrl+Z** undoes the join.
+Tracks cannot be joined or merged. To add a class to an existing object, select its track and choose the class in the class bar. Changing an ID to one already used by another track is rejected.
 
 ## Copy a class across the video
 
@@ -80,7 +80,7 @@ Diamonds in the frame bar mark interpolation anchors for the selected track and 
 
 ## Make overlapping boxes easier to see
 
-Choose **Class colors / Track colors** above the canvas. Class colors are the default. Track colors give each ID a stable display color across frames and classes; saved class colors and exports stay unchanged.
+Choose **View by class / View by track** in the canvas right-click menu. Class colors are the default. Track colors give each ID a stable display color across frames and classes; saved class colors and exports stay unchanged.
 
 - Track **eye**: hide/show that track’s boxes. **Focus**: show only that track. **Show all tracks** brings the others back.
 - Class **eye**: hide/show a class for all tracks. Click its name to show it and begin editing it again.

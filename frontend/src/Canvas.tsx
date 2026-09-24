@@ -26,9 +26,9 @@ const resizeCursor=(edge:string)=>edge.length===2?(edge==='nw'||edge==='se'?'nws
 
 const imageCache=new Map<string,HTMLImageElement>();
 function fetchImage(key:string,url:string):Promise<HTMLImageElement>{const cached=imageCache.get(key);if(cached)return Promise.resolve(cached);return new Promise((resolve,reject)=>{const img=new Image();img.onload=()=>{imageCache.set(key,img);while(imageCache.size>15)imageCache.delete(imageCache.keys().next().value!);resolve(img)};img.onerror=()=>reject(new Error('Exact frame unavailable'));img.src=url;});}
-export const EditorCanvas=forwardRef<CanvasHandle,{proposals:Proposal[];showProposals:boolean;hiddenClasses:Record<string,boolean>;dimOutside:boolean;colorMode?:'class'|'track';onAction?:(action:string)=>void;onControlsChange?:(state:CanvasControlsState)=>void}>(({proposals,showProposals,hiddenClasses,dimOutside,colorMode='class',onAction,onControlsChange},ref)=>{
+export const EditorCanvas=forwardRef<CanvasHandle,{proposals:Proposal[];showProposals:boolean;hiddenClasses:Record<string,boolean>;dimOutside:boolean;colorMode?:'class'|'track';onColorModeChange?:(mode:'class'|'track')=>void;onAction?:(action:string)=>void;onControlsChange?:(state:CanvasControlsState)=>void}>(({proposals,showProposals,hiddenClasses,dimOutside,colorMode='class',onColorModeChange,onAction,onControlsChange},ref)=>{
  const {project,videoId,frame,activeId,geometry,hiddenIds}=useStore();const video=project?.videos[videoId];
- const displayColor=(person:import('./types').Identity|undefined,g:Geometry)=>colorMode==='track'&&person?trackColor(person.person_id,person.id):boxStyle(person,g).color;
+ const displayColor=(person:import('./types').Identity|undefined,g:Geometry)=>colorMode==='track'&&person?(person.color||trackColor(person.person_id,person.id)):boxStyle(person,g).color;
  const menuDialog=useRef(false),menuOpen=useRef(false);
  const [tool,setTool]=useState<CanvasTool>('select'),[menuTarget,setMenuTarget]=useState<{identity:string;geometry:Geometry}|null>(null);
  const host=useRef<HTMLDivElement>(null),gesture=useRef<Gesture|null>(null),spaceDown=useRef(false),panned=useRef(false),cycle=useRef(0);
@@ -175,6 +175,7 @@ export const EditorCanvas=forwardRef<CanvasHandle,{proposals:Proposal[];showProp
   {item('Hand tool',<Hand/>,()=>chooseTool('hand'),!ready,'H')}
   {item('Fit video',<Maximize/>,()=>{finish();fit()},!ready,'0')}
   <ContextMenu.Separator className="canvas-menu-separator"/>
+  {onColorModeChange&&<><ContextMenu.RadioGroup value={colorMode} onValueChange={value=>onColorModeChange(value as 'class'|'track')}><ContextMenu.RadioItem aria-label="View by class" value="class">View by class</ContextMenu.RadioItem><ContextMenu.RadioItem aria-label="View by track" value="track">View by track</ContextMenu.RadioItem></ContextMenu.RadioGroup><ContextMenu.Separator className="canvas-menu-separator"/></>}
   {item('Undo',<Undo2/>,()=>menuAction('undo'),!useStore.getState().history.length,'Ctrl Z')}
   {item('Redo',<Redo2/>,()=>menuAction('redo'),!useStore.getState().redoStack.length,'Ctrl ⇧ Z')}
  </ContextMenu.Content></ContextMenu.Portal></ContextMenu.Root>;
