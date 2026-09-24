@@ -1,8 +1,10 @@
 # Changelog
 
-## 3.4.0
+## 3.4.1
 
-Long frame numbers, automatic first-box registration and distinct new-track colors, compact toolbar shortcuts, and removal of track merging. View mode and edit actions remain in the right-click menu. See the [release notes](docs/releases/v3.4.0.md).
+Long frame numbers, automatic first-box registration and distinct new-track colors, compact toolbar shortcuts, and removal of track merging. View mode and edit actions remain in the right-click menu. See the [release notes](docs/releases/v3.4.1.md).
+
+Version 3.4.0 was withheld after clean-install CI detected a dependency constraint changed during the version bump. Version 3.4.1 restores the unchanged dependency lock.
 
 ## 3.3.0
 

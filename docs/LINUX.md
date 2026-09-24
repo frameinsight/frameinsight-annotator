@@ -1,13 +1,13 @@
 # Ubuntu and Debian desktop installation
 
-Download `frameinsight_3.4.0_amd64.deb` and `START-HERE-LINUX.txt` from the [official releases](https://github.com/frameinsight/frameinsight-annotator/releases). Open the package with Software Install, GDebi, or your distribution's package installer, then choose **Install**. Launch **Frameinsight** from Applications. Its local browser interface opens automatically.
+Download `frameinsight_3.4.1_amd64.deb` and `START-HERE-LINUX.txt` from the [official releases](https://github.com/frameinsight/frameinsight-annotator/releases). Open the package with Software Install, GDebi, or your distribution's package installer, then choose **Install**. Launch **Frameinsight** from Applications. Its local browser interface opens automatically.
 
 The package targets **Ubuntu 24.04+ and Debian 12+, Intel/AMD 64-bit**, with glibc 2.36 or newer and a graphical desktop. Python and the CPU video libraries are bundled. Node, Python setup, CUDA and AI models are not required. Standard desktop libraries and a graphical package installer may be installed by your package manager. GDebi is recommended for update handoff.
 
 If your desktop opens `.deb` files as archives, use **Open With → Software Install/GDebi**, or run:
 
 ```bash
-sudo apt install ./frameinsight_3.4.0_amd64.deb
+sudo apt install ./frameinsight_3.4.1_amd64.deb
 ```
 
 The app works offline. Update checks only contact the public release service; they do not upload videos or annotations. Updates are optional, verified against release checksums, and installed through the normal system installer after explicit confirmation. If no supported graphical installer is available, download the package and install it manually.

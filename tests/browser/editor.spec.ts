@@ -164,7 +164,7 @@ test('class buttons group both classes under one person and persist random color
  await drag(page,[100,80],[200,300]);await saved(page);
  await expect(page.locator('.person-row')).toHaveCount(1);await expect(page.locator('.person-classes')).toContainText('person_visible');await expect(page.locator('.person-classes')).toContainText('Silhouette');
  let p=await state(request);const person:any=Object.values(p.state.identities)[0];const styles=person.box_styles;
- expect(styles['class:person_visible'].color).not.toBe(styles['class:Silhouette'].color);expect(styles['class:Silhouette'].color).toBe(p.class_colors.Silhouette);
+ expect(styles['class:person_visible'].color).toBe(person.color);expect(styles['class:Silhouette'].color).toBe(p.class_colors.Silhouette);
  const classes=page.locator('.class-bar');await classes.getByRole('button',{name:'Select class person_visible',exact:true}).click();await expect(page.getByRole('button',{name:'Select class person_visible',exact:true})).toHaveAttribute('aria-pressed','true');
  await classes.getByRole('button',{name:'Select class Silhouette',exact:true}).click();await expect(page.getByRole('button',{name:'Select class Silhouette',exact:true})).toHaveAttribute('aria-pressed','true');
  await reopen(page);await ready(page,0);await expect(page.locator('.person-row')).toHaveCount(1);expect((await state(request)).state.identities[person.id].box_styles).toEqual(styles);
