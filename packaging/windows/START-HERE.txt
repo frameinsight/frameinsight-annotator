@@ -1,11 +1,11 @@
-FRAMEINSIGHT 3.4.2 — WINDOWS 11 (64-bit)
+FRAMEINSIGHT 3.5.0 — WINDOWS 11 (64-bit)
 
 INSTALL AND OPEN
 1. Download Window_setup.exe from the official Frameinsight release:
    https://github.com/frameinsight/frameinsight-annotator/releases/latest
 2. Open Window_setup.exe and follow the installer.
 3. Double-click Frameinsight on your desktop. Your normal browser opens.
-4. Check that the app says LOCAL · 3.4.2.
+4. Check that the app says LOCAL · 3.5.0.
 
 No terminal, Python, Node or GPU setup is needed. Annotation works offline;
 internet is needed for checking and downloading updates.
@@ -79,6 +79,13 @@ N = new object track. I = track ID, class and color. Ctrl+Z = undo.
 Drag inside a selected box to move it; drag an edge/corner to resize.
 Scroll to zoom. Hold Space and drag to pan. Tap Space to play/pause.
 Track and class hide controls only change the view; boxes stay saved.
+Canvas settings beside the zoom tools lets you simplify or hide labels,
+keep source-pixel box dimensions visible, and turn off Confirm new tracks.
+IDs and colors are still assigned automatically; I remains available.
+View by class uses the project palette; View by track uses each track's color.
+Right-click overlapping boxes > Select overlapping box to choose one.
+These display preferences do not change saved annotations or exports.
+
 Help contains the guide. Press ? to search actions and shortcuts.
 
 CLOSE, UPDATE AND BACK UP

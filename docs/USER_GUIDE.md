@@ -3,7 +3,7 @@
 1. Open Frameinsight. **Your projects** groups saved work. Open a project to see its videos, or choose **New project** and enter its name and class names (one per line).
 2. Inside the project, click **New video**. Upload a recording or enter its path on this computer, then wait for it to load. A class is a box label: use the names supplied by your supervisor. All videos in a project share these classes.
 3. Find the first frame where your object appears. Click **New track** or press **N**. The app gives it a free ID.
-4. Choose a class button above the picture, then drag a box around the object. The ID, class and color dialog opens automatically for this new track. Confirm the details and click **Save ID**. A different color is assigned automatically when the track is created. Press **I** to change these details later.
+4. Choose a class button above the picture, then drag a box around the object. By default, the ID, class and color dialog opens automatically for this new track. Confirm the details and click **Save ID**. A different color is assigned automatically when the track is created. Press **I** to change these details later.
 5. Keep that track selected. Move forward a few frames with **F** or **Shift+F**, then move or resize the box. Interpolation is always on: the app fills frames between your corrections.
 6. Go back and check the filled frames. Drag inside a box to move it; drag an edge or corner to resize. Add corrections where movement changes. Interpolation estimates motion, so it still needs your check.
 7. To annotate another class for the **same object**, keep the same track and choose another class button. Draw its box, or follow the copying steps below. Do not create a new track for another class of the same object.
@@ -62,7 +62,15 @@ The compact icon toolbar above the picture combines annotation and canvas tools.
 - **Hand / pan (H):** drag the picture without changing annotations. Hold Space to pan temporarily.
 - **Zoom + / −** and **Fit** help inspect details. Mouse-wheel zoom also works.
 
-Right-click a box **or its class/ID label** to select that exact track and class and open the same menu. Left-clicking a label selects its box without moving or redrawing it. The app’s menu offers ID/class settings, class copying, hide/focus, and deletion/restoration actions. Right-click empty canvas for new-track, tool, fit, undo and redo actions. Commands that do not apply are disabled. The browser’s usual right-click menu remains available outside the canvas.
+Right-click a box **or its class/ID label** to select that exact track and class and open the same menu. Left-clicking a label selects its box. If another class’s displaced label covers the box you are editing, your selected box keeps priority so you can still move or resize it. For overlapping boxes, right-click the overlap and choose **Select overlapping box → Track and class**; no hiding or deletion is needed. The app’s menu offers ID/class settings, class copying, hide/focus, and deletion/restoration actions. Right-click empty canvas for new-track, tool, fit, undo and redo actions. Commands that do not apply are disabled. The browser’s usual right-click menu remains available outside the canvas.
+
+## Canvas preferences
+
+Open **Canvas settings** using the settings icon beside the zoom tools, or from the canvas right-click menu. Preferences are saved in this browser.
+
+- **Box labels:** show all class/ID labels, only the selected box’s label, compact IDs, or hide labels. Box outlines and editing remain available in every mode.
+- **Dimensions:** width × height appears at the lower right while drawing, moving or resizing. Values use the original image pixels and do not change with zoom. Enable **Keep selected box dimensions visible** to see them between edits too.
+- **Confirm new tracks:** on by default. Turn it off to draw new tracks without opening the ID dialog each time. The app still assigns the next available ID in this video, a distinct track color, and the current class. Press **I** whenever you need to edit those details.
 
 ## Read the frame bar
 
@@ -72,7 +80,7 @@ The larger bar at the bottom follows the selected track **and** class:
 - **Hidden:** red, for every frame without a box for the selected track and class. This includes deleted boxes, frames before/after the track, and work you have not annotated yet. Drawing and interpolation fill ordinary empty frames; use Restore range to refill an explicitly deleted range.
 - **Current frame:** a white outline. Striped sections contain both present and hidden frames at the current overview scale.
 
-Click a section, scrub with the seek control, or enter a precise frame number. Thumbnails have been removed to leave more room for the video. The filename appears quietly beside playback controls. The top-bar panel buttons show or hide Tracks and Shortcuts.
+Click a section, scrub with the seek control, or enter a precise frame number. Thumbnails have been removed to leave more room for the video. The filename appears quietly beside playback controls. The top-bar Shortcuts button opens the shortcut panel.
 
 New box colors exclude red, white and black so these timeline states stay distinct. Previously saved colors remain until you choose a new swatch using **I**.
 
@@ -80,7 +88,7 @@ Diamonds in the frame bar mark interpolation anchors for the selected track and 
 
 ## Make overlapping boxes easier to see
 
-Choose **View by class / View by track** in the canvas right-click menu. Class colors are the default. Track colors give each ID a stable display color across frames and classes; saved class colors and exports stay unchanged.
+Choose **View by class / View by track** in **Canvas settings** or the canvas right-click menu. Class view uses each project class’s color consistently for all tracks, labels, sidebar dots and the frame bar. Track view gives each ID one display color across its classes; class capsules remain a legend for the project palette. These view choices do not rewrite saved annotation styles or export colors.
 
 - Track **eye**: hide/show that track’s boxes. **Focus**: show only that track. **Show all tracks** brings the others back.
 - Class **eye**: hide/show a class for all tracks. Click its name to show it and begin editing it again.

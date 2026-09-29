@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.5.0
+
+Configurable box labels, source-pixel dimensions, optional first-box confirmation, consistent project class colors, and reliable editing of overlapping boxes. See the [release notes](docs/releases/v3.5.0.md).
+
 ## 3.4.2
 
 Track numbers are scoped to each video across creation, editing, imports, and export validation. Existing IDs and annotations are preserved. See the [release notes](docs/releases/v3.4.2.md).

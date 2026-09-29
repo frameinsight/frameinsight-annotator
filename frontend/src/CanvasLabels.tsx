@@ -19,9 +19,9 @@ export function CanvasLabels({badges}:{badges:CanvasBadge[]}){
       <Group x={badge.x} y={badge.y}>
         <Rect width={badge.width} height={LABEL_HEIGHT} cornerRadius={5} fill={badge.selected?'#252525':'#181818'} stroke={badge.selected?badge.color:'#454545'} strokeWidth={1} shadowColor="#000" shadowOpacity={.2} shadowBlur={4} shadowOffsetY={1}/>
         <Circle x={10} y={12} radius={3} fill={badge.color}/>
-        <Text x={20} y={0} width={badge.nameWidth+1} height={LABEL_HEIGHT} verticalAlign="middle" text={badge.name} fontFamily={LABEL_FONT} fontStyle="600" fontSize={11} fill="#ededed"/>
-        <Line points={[split,6,split,18]} stroke="#505050" strokeWidth={1}/>
-        <Text x={split+8} y={0} width={badge.idWidth+1} height={LABEL_HEIGHT} verticalAlign="middle" text={badge.id} fontFamily={LABEL_FONT} fontStyle="600" fontSize={11} fill={badge.selected?'#ffffff':'#bcbcbc'}/>
+        {badge.name&&<><Text x={20} y={0} width={badge.nameWidth+1} height={LABEL_HEIGHT} verticalAlign="middle" text={badge.name} fontFamily={LABEL_FONT} fontStyle="600" fontSize={11} fill="#ededed"/>
+        <Line points={[split,6,split,18]} stroke="#505050" strokeWidth={1}/></>}
+        <Text x={badge.name?split+8:20} y={0} width={badge.idWidth+1} height={LABEL_HEIGHT} verticalAlign="middle" text={badge.id} fontFamily={LABEL_FONT} fontStyle="600" fontSize={11} fill={badge.selected?'#ffffff':'#bcbcbc'}/>
       </Group>
     </Group>;
   })}</Group>;

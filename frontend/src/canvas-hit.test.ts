@@ -6,4 +6,10 @@ describe('canvas context hit selection',()=>{
  it('prefers the selected visible box inside overlapping fills',()=>expect(hitCanvasBox([big,small],[45,45],2)?.id).toBe('selected'));
  it('lets the edge of a nested box select that box',()=>expect(hitCanvasBox([big,small],[30,45],2)?.id).toBe('other'));
  it('uses source-space edge tolerance and does not select empty canvas',()=>{expect(hitCanvasBox([big],[-2,50],3)?.id).toBe('selected');expect(hitCanvasBox([big],[110,110],3)).toBeUndefined()});
+ it('prefers the active class among overlapping fills and coincident edges without blocking an explicit other edge',()=>{
+  const prefer=(entry:typeof small)=>entry.id==='other';
+  expect(hitCanvasBox([big,small],[45,45],2,prefer)?.id).toBe('other');
+  expect(hitCanvasBox([big,small],[0,45],2,prefer)?.id).toBe('selected');
+  expect(hitCanvasBox([big,{...small,box:big.box}],[0,45],2,prefer)?.id).toBe('other');
+ });
 });

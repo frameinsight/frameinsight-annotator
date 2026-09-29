@@ -59,9 +59,11 @@ The app does not recognize objects or guarantee identity correctness. Human revi
 
 ## Team annotation tools
 
-- Switch **View by class / View by track** in the canvas right-click menu. Class colors remain the default; track colors are a display preference, not changes to labels or export colors.
+- Open **Canvas settings** beside the zoom tools (or from right-click). Choose full labels, selected-only labels, compact IDs or hidden labels; keep box dimensions visible; or turn off first-box confirmation. These preferences stay in this browser.
+- **View by class** uses the project palette consistently across tracks. **View by track** gives each track one color across its classes. Both are display preferences; saved annotation styles and export colors stay unchanged.
+- Width × height appears in source pixels while drawing or adjusting, independent of zoom. Right-click an overlap and use **Select overlapping box** to choose the exact track and class.
 - Diamonds mark anchor frames for the selected track/class. Use **Previous/Next keyframe** or **[ / ]** to jump between them. Generated boxes have no diamond until corrected. Single-frame copies and imported boxes may also be anchors.
-- Press **I** to edit the current track’s ID, class and color. IDs already used by another track are rejected. **B + drag** replaces the current box; **C** only copies into an empty frame.
+- Press **I** to edit the current track’s ID, class and color. IDs already used by another track in the same video are rejected. **B + drag** replaces the current box; **C** only copies into an empty frame.
 - **Import annotations → Frameinsight annotations — JSON** previews a single-video v2/v3 export before adding it. Numeric IDs are retained when free; collisions are explicitly remapped. Original frame dimensions/count and available video hashes must match. Boxes, class styles, anchor provenance and deleted intervals are retained; review/validation and old edit history are not restored. Existing tracks remain intact; Undo reverses the import.
 - Empty projects remain reusable after video deletion and are clearly labeled.
 
@@ -142,7 +144,7 @@ Browser tests need an **isolated** server at `127.0.0.1:5173` and Chrome. Set a 
 FRAMEINSIGHT_TEST_URL=http://127.0.0.1:5173 npm --prefix frontend run test:e2e
 ```
 
-Build and release instructions are in [Windows packaging](docs/WINDOWS.md), [Debian packaging](docs/LINUX.md) and the [release workflow](.github/workflows/desktop-release.yml). See the [3.4.2 verification record](docs/releases/v3.4.2-acceptance.md) for test coverage and limits.
+Build and release instructions are in [Windows packaging](docs/WINDOWS.md), [Debian packaging](docs/LINUX.md) and the [release workflow](.github/workflows/desktop-release.yml). See the [3.5.0 verification record](docs/releases/v3.5.0-acceptance.md) for test coverage and limits.
 
 ## Contributing
 

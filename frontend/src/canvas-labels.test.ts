@@ -57,4 +57,12 @@ describe('canvas badge targets',()=>{
     expect(hitLabel([badge],[badge.x+badge.width, badge.y+12])?.key).toBe('long');
     expect(hitLabel([badge],[badge.x+badge.width+1,badge.y+12])).toBeUndefined();
   });
+  it('compact badges retain identity and hit targets without invisible full-name hit areas',()=>{
+    const [full]=layoutLabels([label('one')],{width:800,height:600},measure);
+    const [compact]=layoutLabels([label('one')],{width:800,height:600},measure,true);
+    expect(compact.name).toBe('');expect(compact.id).toBe('#7');
+    expect(compact.width).toBeLessThan(full.width);
+    expect(hitLabel([compact],[compact.x+22,compact.y+12])?.identity).toBe('track-7');
+    expect(hitLabel([compact],[compact.x+compact.width+1,compact.y+12])).toBeUndefined();
+  });
 });

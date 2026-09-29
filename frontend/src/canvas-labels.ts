@@ -37,7 +37,7 @@ export function placeLabels<T extends LabelAnchor>(labels:T[], viewport:{width:n
 
 // The renderer and pointer handlers consume these same screen-space rectangles.
 // Injecting text measurement keeps layout deterministic in non-browser tests.
-export function layoutLabels(labels:BoxLabel[],viewport:{width:number;height:number},measure:(text:string)=>number):CanvasBadge[]{
+export function layoutLabels(labels:BoxLabel[],viewport:{width:number;height:number},measure:(text:string)=>number,compact=false):CanvasBadge[]{
   function shorten(text:string,maxWidth:number){
     if(measure(text)<=maxWidth)return text;
     let value=text;
@@ -45,9 +45,9 @@ export function layoutLabels(labels:BoxLabel[],viewport:{width:number;height:num
     return value+'…';
   }
   return placeLabels(labels.map(label=>{
-    const name=shorten(label.className,136),id=shorten(label.id,64);
+    const name=compact?'':shorten(label.className,136),id=shorten(label.id,64);
     const nameWidth=Math.ceil(measure(name)),idWidth=Math.ceil(measure(id));
-    return {...label,name,id,nameWidth,idWidth,width:20+nameWidth+17+idWidth+9};
+    return {...label,name,id,nameWidth,idWidth,width:20+(name?nameWidth+17:0)+idWidth+9};
   }),viewport);
 }
 
