@@ -365,3 +365,29 @@ test('first box opens registration once with an unused color and a readable fram
  expect((await field.boundingBox())!.width).toBeGreaterThan(85);
  await page.getByTestId('canvas').click({button:'right'});await page.getByRole('menuitemradio',{name:'View by track',exact:true}).click();
 });
+
+test('separate videos restart at ID 1 and retain independent annotations through save, rename, validation and reload',async({page,request})=>{
+ const firstVideo=videoId;
+ await page.getByTestId('canvas').press('n');await drag(page,[100,80],[200,300]);await saved(page);
+ const before=await state(request),first=Object.values(before.state.identities)[0] as any;
+ const added=await request.post(`/api/projects/${projectId}/videos/local`,{data:{path:'tests/fixtures/numbered.mp4'}});
+ videoId=(await added.json()).video_id;await expect.poll(async()=>(await state(request)).videos[videoId].status).toBe('ready');
+ await reopen(page);await ready(page,0);await page.getByTestId('canvas').press('n');await drag(page,[250,80],[350,300],false);
+ await expect(page.getByLabel('Track ID',{exact:true})).toHaveValue('1');
+ await page.getByLabel('Track ID',{exact:true}).fill('4');await page.getByRole('button',{name:'Save ID',exact:true}).click();await expect(page.getByRole('dialog')).toHaveCount(0);await saved(page);
+ await page.getByTestId('canvas').press('i');await page.getByLabel('Track ID',{exact:true}).fill('1');
+ await page.getByRole('button',{name:'Save ID',exact:true}).click();await expect(page.getByRole('dialog')).toHaveCount(0);await saved(page);
+ await page.getByTestId('canvas').press('Control+z');await saved(page);await expect(page.getByRole('button',{name:'Select Track 4',exact:true})).toBeVisible();
+ await page.getByTestId('canvas').press('Control+Shift+z');await saved(page);
+ await reopen(page);await ready(page,0);await expect(page.getByRole('button',{name:'Select Track 1',exact:true})).toBeVisible();await expect(page.locator('.person-row')).toHaveCount(1);
+ const after=await state(request);
+ expect(after.state.identities[first.id]).toEqual(before.state.identities[first.id]);
+ for(const [id,row] of Object.entries(before.state.observations))expect(after.state.observations[id]).toEqual(row);
+ expect(Object.values(after.state.identities).map((p:any)=>p.person_id)).toEqual([1,1]);
+ for(const current of [videoId,firstVideo]){
+  videoId=current;
+  const exported=await validatedExport(request),doc=await(await request.get('/api/exports/'+exported)).json();
+  expect(doc.annotation_index.map((r:any)=>r.person_id)).toEqual([1]);
+  expect(Object.keys(doc.videos)).toEqual([current]);
+ }
+});

@@ -59,6 +59,25 @@ describe('recovery as one saved undoable action',()=>{
   expect(current.assignPerson(second,1,'Person','#38bdf8')).toBe(false);expect(useStore.getState().project).toEqual(before);
   for(const id of ['p','three','draft'])expect(useStore.getState().project!.state.identities[id]).toEqual(project.state.identities[id]);
  });
+ it('starts each video at ID 1 and allows editing IDs without changing other videos',async()=>{
+  const store=useStore.getState();store.newPerson();await useStore.getState().saveNow();
+  const first=clone(useStore.getState().project!),firstId=useStore.getState().activeId;
+  expect(first.state.identities[firstId].person_id).toBe(1);
+  const project=clone(first);project.videos.other={...project.videos.v,id:'other'};
+  useStore.setState({project,videoId:'other',frame:0,activeId:''});
+  useStore.getState().newPerson();const second=useStore.getState().activeId;
+  expect(useStore.getState().project!.state.identities[second].person_id).toBe(1);
+  expect(useStore.getState().assignPerson(second,7,'person_visible','#38bdf8')).toBe(true);
+  await useStore.getState().saveNow();
+  expect(useStore.getState().project!.state.identities.p).toEqual(first.state.identities.p);
+  useStore.getState().newPerson();const third=useStore.getState().activeId;
+  expect(useStore.getState().assignPerson(third,7,'person_visible','#38bdf8')).toBe(false);
+  await useStore.getState().saveNow();
+  useStore.getState().undo();await useStore.getState().saveNow();
+  useStore.getState().redo();await useStore.getState().saveNow();
+  expect(useStore.getState().project!.state.identities[firstId]).toEqual(first.state.identities[firstId]);
+  expect(useStore.getState().project!.state.identities[second].person_id).toBe(7);
+ });
  it('rejects an oversized recovery without stranding the save queue, then saves a small edit',async()=>{
   const project=clone(useStore.getState().project!);project.videos.v.frame_count=50002;
   project.state.observations=Object.fromEntries(Object.entries(project.state.observations).filter(([,o])=>o.frame_index===0||o.frame_index===10));

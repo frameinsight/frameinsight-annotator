@@ -80,18 +80,18 @@ def validate_document(document):
         return {'passed': False, 'errors': errors, 'warnings': [], 'checks': checks,
                 'summary': {'people': 0, 'frames': 0, 'boxes': 0}, 'limitation': LIMITATION}
     before = len(errors)
-    annotated = {o.get('identity_uuid') for o in state.get('observations', {}).values() if any(box_items(o))}
+    annotated = {(o.get('video_id'), o.get('identity_uuid')) for o in state.get('observations', {}).values() if any(box_items(o))}
     ids = {}
-    for ident in annotated:
+    for vid, ident in annotated:
         person = state.get('identities', {}).get(ident, {})
         number = person.get('person_id')
-        first_frame = min(o['frame_index'] for o in state['observations'].values() if o.get('identity_uuid') == ident and any(box_items(o)))
+        first_frame = min(o['frame_index'] for o in state['observations'].values() if o.get('video_id') == vid and o.get('identity_uuid') == ident and any(box_items(o)))
         if type(number) is not int or number <= 0:
-            error('missing_person_id', 'Assign a positive numeric person ID before finishing.', identity_uuid=ident, frame_index=first_frame)
-        elif number in ids:
-            error('duplicate_person_id', f'Person ID {number} belongs to more than one identity.', identity_uuid=ident, person_id=number, frame_index=first_frame)
-        else: ids[number] = ident
-    check('Positive unique person IDs', before)
+            error('missing_person_id', 'Assign a positive numeric person ID before finishing.', video_id=vid, identity_uuid=ident, frame_index=first_frame)
+        elif (vid, number) in ids:
+            error('duplicate_person_id', f'Person ID {number} belongs to more than one identity in this video.', video_id=vid, identity_uuid=ident, person_id=number, frame_index=first_frame)
+        else: ids[(vid, number)] = ident
+    check('Positive person IDs unique within each video', before)
     before = len(errors)
     times = {}
     for vid, video in videos.items():

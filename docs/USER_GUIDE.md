@@ -132,4 +132,6 @@ Ordinary YOLO detection labels cannot tell the app which detections belong to on
 4. Choose **Add annotations**. Boxes, classes, numeric IDs (when unused), keyframes and deleted intervals remain editable. Undo reverses the whole import.
 5. Review playback and validate again before a new export. Previous validation and historical deleted boxes/undo records are not imported; use a project backup for full history.
 
-Only single-video Frameinsight v2/v3 exports are accepted. Existing tracks are kept; colliding numeric IDs are remapped rather than silently joined. Import into an empty project to preserve all original numeric IDs.
+Only single-video Frameinsight v2/v3 exports are accepted. Existing tracks are kept; numeric IDs colliding in the destination video are remapped rather than silently joined. Import into an unannotated video to preserve all original numeric IDs.
+
+Track numbers are local to each video: separate videos in one project can each start at ID 1. Duplicate numbers within one video are rejected. In exported data, use `video_id` together with `track_id` (or the internal `identity_uuid`); matching numbers across videos do not imply the same object. Existing IDs are not automatically renumbered. To change a saved track number, select the track and press **I**.

@@ -75,7 +75,7 @@ New exports use `format: "frameinsight.annotations"`, `schema_version: 3`.
 |---|---|
 | `annotation_index` | One row per present box, with class, track, frame, coordinates and provenance. |
 | `identity_uuid` | Stable internal identity. Use it to group one physical object. |
-| `track_id`, `person_id` | The same positive display number; `person_id` remains for compatibility. Numbers are scoped to a project, not a cross-camera match. |
+| `track_id`, `person_id` | The same positive display number; `person_id` remains for compatibility. Numbers are scoped to a video. Use `video_id` and `track_id` together; equal numbers in different videos are not a cross-camera match. |
 | `class_key`, `class_name` | The rectangle channel and its training label. Include the class key when grouping independent box tracks. |
 | `frame_index`, `timestamp_seconds` | Zero-based decoded source frame and exact source time. |
 | `box_xyxy`, `box_xywh` | Original-image pixel coordinates: `[left, top, right, bottom]` and `[left, top, width, height]`. |
@@ -142,7 +142,7 @@ Browser tests need an **isolated** server at `127.0.0.1:5173` and Chrome. Set a 
 FRAMEINSIGHT_TEST_URL=http://127.0.0.1:5173 npm --prefix frontend run test:e2e
 ```
 
-Build and release instructions are in [Windows packaging](docs/WINDOWS.md), [Debian packaging](docs/LINUX.md) and the [release workflow](.github/workflows/desktop-release.yml). See the [3.4.1 verification record](docs/releases/v3.4.1-acceptance.md) for test coverage and limits.
+Build and release instructions are in [Windows packaging](docs/WINDOWS.md), [Debian packaging](docs/LINUX.md) and the [release workflow](.github/workflows/desktop-release.yml). See the [3.4.2 verification record](docs/releases/v3.4.2-acceptance.md) for test coverage and limits.
 
 ## Contributing
 
@@ -174,8 +174,10 @@ Supported layouts and limits:
 - Class names come from `obj.names`, `classes.txt`, or YAML `names`. Without those, YOLO uses the project's class order. You can override names in the dialog, one per line in source class-ID order.
 - Ordinary five-column YOLO contains **no identity information**. Each detection becomes a separate track; the importer cannot know which detections belong to the same object. Use tracked YOLO or MOT for existing tracking work.
 - MOT accepts `gt/gt.txt` and optional `gt/labels.txt`, or a standalone ground-truth TXT: `frame,id,left,top,width,height,included,class_id,visibility`. Class IDs start at 1; without class names, standard MOT labels are used. Rows with `included=0` are excluded. Scored MOT tracking-result files are not supported as ground truth. Visibility is retained in the observation evidence note.
-- Existing tracks are never replaced or automatically merged. Positive source IDs are preserved when unused in the project; colliding IDs and YOLO ID 0 receive a new positive ID shown in the preview. Separate classes with the same source ID share one track.
+- Existing tracks are never replaced or automatically merged. Positive source IDs are preserved when unused in the destination video; IDs colliding in the same video and YOLO ID 0 receive a new positive ID shown in the preview. Separate classes with the same source ID share one track.
 - Upload limit: 50 MB; archive text limit: 64 MB; at most 45,000 boxes and 49,000 new entities per import. Oversized, ambiguous or invalid imports fail without changing annotations. Out-of-image boxes require explicit clipping; boxes fully outside the image are rejected.
 - Preview checks structure, not visual identity accuracy or whether the selected video matches the labels. Use **Finish** for visual review and final JSON validation before training. Imports remain local; no videos or annotations are sent to a cloud service.
 
 Format references: [CVAT YOLO](https://docs.cvat.ai/docs/dataset_management/formats/format-yolo/), [CVAT Ultralytics YOLO](https://docs.cvat.ai/docs/dataset_management/formats/format-yolo-ultralytics/), [CVAT MOT](https://docs.cvat.ai/docs/dataset_management/formats/format-mot/).
+
+Track numbers are local to each video: separate videos in one project can each start at ID 1. Duplicate numbers within one video are rejected. In exported data, use `video_id` together with `track_id` (or the internal `identity_uuid`); matching numbers across videos do not imply the same object. Existing IDs are not automatically renumbered. To change a saved track number, select the track and press **I**.

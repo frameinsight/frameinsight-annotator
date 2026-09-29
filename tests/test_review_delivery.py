@@ -235,3 +235,28 @@ def test_changed_source_after_review_blocks_validation(reviewed_project):
     Path(db.snapshot(pid)['videos'][vid]['source']).write_bytes(b'changed video')
     with pytest.raises(ValueError,match='source video'):
         review.validate_review(vid,0,job['id'],True,'all_people')
+
+
+def test_project_validation_allows_same_numeric_id_in_separate_videos(reviewed_project):
+    pid, vid, ident, ledger = reviewed_project
+    original = db.snapshot(pid)
+    other, who, segment = 'another-video', 'another-person', 'another-segment'
+    video = {**original['videos'][vid], 'id': other}
+    identity = {**original['state']['identities'][ident], 'id': who}
+    first_segment = next(iter(original['state']['segments'].values()))
+    rows = [('identities', identity), ('segments', {**first_segment, 'id':segment, 'video_id':other, 'identity_uuid':who})]
+    for row in original['state']['observations'].values():
+        rows.append(('observations', {**row, 'id':'another-'+row['id'], 'video_id':other, 'identity_uuid':who, 'segment_id':segment}))
+    with db.transaction() as c:
+        c.execute('INSERT INTO videos VALUES(?,?,?)', (other, pid, json.dumps(video)))
+        c.executemany('INSERT INTO frames VALUES(?,?,?)', [(other, f['frame_index'], json.dumps(f)) for f in ledger])
+    db.apply(pid, Operation(id='second-video', base_revision=original['revision'], label='Second video', changes=[
+        {'collection':col, 'id':row['id'], 'before':None, 'after':row} for col,row in rows]))
+    doc = annotation_document(pid)
+    result = validate_document(doc)
+    assert result['passed'], result
+    assert {row['video_id'] for row in doc['annotation_index'] if row['track_id']==1} == {vid, other}
+    doc['state']['segments'][segment]['video_id'] = vid
+    for row in doc['state']['observations'].values():
+        if row['identity_uuid']==who: row['video_id'] = vid
+    assert any(e['code']=='duplicate_person_id' for e in validate_document(doc)['errors'])

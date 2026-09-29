@@ -48,9 +48,34 @@ export function frameObservations(p:Project|null,vid:string,frame:number):Observ
  return index.get(vid+':'+frame)||noObservations;
 }
 export function currentObservation(p:Project|null,vid:string,frame:number,identity:string){return frameObservations(p,vid,frame).find(o=>o.identity_uuid===identity);}
+export function identityVideoScopes(d:Domain){
+ const scopes=new Map(Object.keys(d.identities).map(id=>[id,new Set<string>()]));
+ for(const collection of [d.segments,d.observations,d.intervals])for(const row of Object.values(collection)){
+  if(!scopes.has(row.identity_uuid))scopes.set(row.identity_uuid,new Set());
+  scopes.get(row.identity_uuid)!.add(row.video_id);
+ }
+ return scopes;
+}
+export function videoIdentityIds(d:Domain,videoId:string){
+ return new Set([...identityVideoScopes(d)].filter(([id,videos])=>d.identities[id]&&(!videos.size||videos.has(videoId))).map(([id])=>id));
+}
+export function trackIdConflict(d:Domain,id:string,number:number|null){
+ if(number===null)return false;
+ const scopes=identityVideoScopes(d),mine=scopes.get(id);
+ return Object.values(d.identities).some(p=>{
+  if(p.id===id||p.person_id!==number)return false;
+  const other=scopes.get(p.id)!;
+  return !other.size||!mine?.size||[...mine].some(v=>other.has(v));
+ });
+}
 export function validateDomain(d:Domain,videos:Record<string,Video>){
- const numbers=new Set<number>(),seen=new Set<string>();
- for(const p of Object.values(d.identities)){if(p.class_name!==undefined&&(!p.class_name.trim()||p.class_name.length>80))throw new Error('Class name must contain 1–80 characters');if(p.color!==undefined&&!/^#[0-9a-f]{6}$/i.test(p.color))throw new Error('Invalid box color');if(p.person_id!==null){if(!Number.isSafeInteger(p.person_id)||p.person_id<=0||numbers.has(p.person_id))throw new Error('Numeric person IDs must be positive and unique');numbers.add(p.person_id)}}
+ const seen=new Set<string>();
+ for(const p of Object.values(d.identities)){if(p.class_name!==undefined&&(!p.class_name.trim()||p.class_name.length>80))throw new Error('Class name must contain 1–80 characters');if(p.color!==undefined&&!/^#[0-9a-f]{6}$/i.test(p.color))throw new Error('Invalid box color');if(p.person_id!==null){if(!Number.isSafeInteger(p.person_id)||p.person_id<=0)throw new Error('Numeric person IDs must be positive')}}
+ const scopes=identityVideoScopes(d);
+ for(const videoId of (Object.keys(videos).length?Object.keys(videos):[''])){
+  const numbers=new Set<number>();
+  for(const [id,memberships] of scopes){if(!d.identities[id]||(memberships.size&&!memberships.has(videoId)))continue;const number=d.identities[id].person_id;if(number!==null){if(numbers.has(number))throw new Error('Numeric person IDs must be unique within each video');numbers.add(number)}}
+ }
  for(const p of Object.values(d.identities))for(const [key,style] of Object.entries(p.box_styles||{})){if(!style||!style.class_name.trim()||style.class_name.length>80||!/^#[0-9a-f]{6}$/i.test(style.color))throw new Error('Invalid class style');if(key.startsWith('class:')&&key!==classKey(style.class_name))throw new Error('Class key and name must match');}
  for(const col of ['segments','intervals','observations','reviews','proposal_reviews'] as const)for(const row of Object.values(d[col])){const e=row as any,v=videos[e.video_id];if(!v)throw new Error('Unknown video');if(e.identity_uuid&&!d.identities[e.identity_uuid])throw new Error('Identity is missing');const start=e.start??e.frame_index;if(start<0||start>=v.frame_count||(e.end!==undefined&&e.end!==null&&(e.end<start||e.end>=v.frame_count)))throw new Error('Frame or segment lies outside the decoded source ledger');}
  for(const o of Object.values(d.observations)){

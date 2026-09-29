@@ -95,6 +95,7 @@ def annotation_document(pid, video_id=None):
             'absence': 'Per-class presence_intervals record present or absent annotation boxes, including before/after appearances. Absence does not prove physical occlusion or exhaustive review; reason stays unknown unless explicitly recorded. Legacy visibility_intervals describe only the legacy person_visible channel.',
             'review': 'Individual approvals are not required in the visible-only workflow; reviews record separate whole-frame checks.',
             'box_types': 'Each class_key is an independent rectangle channel of one shared identity/track. Named classes use class:<name>. Legacy person_visible and person_ext keys retain their original meanings; box_type person_extended aliases person_ext.',
+            'track_id_scope': 'video: use (video_id, track_id) together. Equal numeric IDs in different videos do not imply the same object; identity_uuid is the internal identity reference.',
             'annotation_index_key': 'video_id, frame_index, identity_uuid, class_key; observation_id is shared by all boxes of the track on that frame; track_id aliases person_id',
             'frame_annotations': 'One row per track per annotated frame; boxes maps class_key to source-image xyxy coordinates. An omitted class has no saved box on that frame.',
             'source_references': 'Video names, hashes and paths are metadata only. No video, image, thumbnail or binary media is embedded.',

@@ -82,3 +82,17 @@ def test_existing_ids_are_remapped_and_import_endpoint_is_read_only(exported, cl
     assert response.status_code == 200, response.text
     assert response.json()['mapping'] == [{'source':7,'track_id':1}]
     assert db.snapshot(p['id']) == p
+
+
+def test_native_import_keeps_id_used_only_in_another_video(exported):
+    doc, p, v = exported
+    other = add_video(p['id'])['id']
+    rows = [('identities', MODELS['identities'](id='other', person_id=7)),
+            ('segments', MODELS['segments'](id='other', video_id=other, identity_uuid='other', start=0))]
+    db.apply(p['id'], Operation(id='other', base_revision=0, label='Other video', changes=[
+        {'collection': col, 'id': row.id, 'before': None, 'after': row.model_dump(mode='json')} for col, row in rows]))
+    p = db.snapshot(p['id'])
+    result = inspect(doc, p, v)
+    assert result['mapping'] == [{'source': 7, 'track_id': 7}]
+    db.apply(p['id'], Operation(id='import', base_revision=p['revision'], label='Import', changes=result['changes']))
+    assert next(iter(annotation_document(p['id'], v)['state']['identities'].values()))['person_id'] == 7

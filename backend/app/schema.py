@@ -135,12 +135,34 @@ def issues(o: dict, *, visible_only: bool = False) -> list[str]:
         if o['occluded'] is not False: result.append('Equal link requires occlusion Off')
     return result
 
+def identity_video_scopes(state):
+    """Membership comes from saved video records, never from the displayed number."""
+    scopes = {ident: set() for ident in state['identities']}
+    for collection in ('segments', 'observations', 'intervals'):
+        for row in state.get(collection, {}).values():
+            scopes.setdefault(row['identity_uuid'], set()).add(row['video_id'])
+    return scopes
+
+
+def video_identity_ids(state, video_id):
+    # Unattached legacy identities reserve their numbers until ownership is known.
+    return {ident for ident, videos in identity_video_scopes(state).items()
+            if ident in state['identities'] and (not videos or video_id in videos)}
+
+
 def validate_state(state: dict, videos: dict, *, visible_only: bool = False, structural_only: bool = False):
-    numbers, seen = set(), set()
-    for person in state['identities'].values():
-        pid = person['person_id']
-        if pid is not None and pid in numbers: raise ValueError(f'Person ID {pid} is already assigned; merge explicitly')
-        if pid is not None: numbers.add(pid)
+    seen = set()
+    scopes = identity_video_scopes(state)
+    for video_id in (list(videos) or [None]):
+        numbers = set()
+        for ident, person in state['identities'].items():
+            if scopes[ident] and video_id not in scopes[ident]:
+                continue
+            pid = person['person_id']
+            if pid is not None and pid in numbers:
+                raise ValueError(f'Person ID {pid} is already assigned in this video; choose a different ID')
+            if pid is not None:
+                numbers.add(pid)
     for collection in ('segments', 'intervals', 'observations', 'reviews', 'proposal_reviews'):
         for e in state.get(collection, {}).values():
             v = videos.get(e['video_id'])

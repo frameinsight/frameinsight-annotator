@@ -38,7 +38,7 @@ Class names are examples, not reserved UI modes. An omitted class has no box on 
 | `observation_id` | Shared by all classes of the identity on this source frame. |
 | `class_key` | Rectangle channel: new work uses `class:<name>` and changes its key when that class is renamed; legacy work retains `person_visible` or `person_ext`. |
 | `class_name`, `color` | Authoritative label and display color, including per-track overrides. Use the name for your training label, not a storage key. |
-| `track_id`, `person_id`, `identity_uuid` | Shared object identity. Display numbers are scoped to a project. |
+| `track_id`, `person_id`, `identity_uuid` | Shared object identity. Display numbers are scoped to a video; include `video_id` when grouping by number. |
 | `frame_index`, `timestamp_seconds` | Zero-based source frame and actual source time. Use the ledger rather than nominal FPS for variable-frame-rate footage. |
 | `box_xyxy` | `[left, top, right, bottom]`, unrounded original-image pixels. Origin is top-left, x right, y down. |
 | `box_xywh` | `[left, top, width, height]` in the same pixels. |
@@ -66,7 +66,7 @@ Class and track eyes, focus and automatic background dimming change only display
 
 New `validation` records use `mode: "structural"` and include checks, errors, notes, counts, the saved revision, video/project IDs, validation ID, app version, annotation snapshot hash, declared coverage and the annotator’s confirmation. A rendered-review job ID is not required.
 
-Checks cover JSON serialization and schema, entity references, unique positive track numbers, class-channel consistency, finite positive-area rectangle data, frame timestamps and index/count agreement. Validation makes no judgment about image bounds, one class containing another, box placement or real-world identity. Coverage values retain `all_people` / `selected_people` for compatibility; the UI labels these all objects / selected objects.
+Checks cover JSON serialization and schema, entity references, positive track numbers unique within each video, class-channel consistency, finite positive-area rectangle data, frame timestamps and index/count agreement. Validation makes no judgment about image bounds, one class containing another, box placement or real-world identity. Coverage values retain `all_people` / `selected_people` for compatibility; the UI labels these all objects / selected objects.
 
 Visual review uses the existing editor with **0.125× / 0.25× / 0.5× / 1×** playback. Validation freezes only annotation JSON; it does not render video, decode footage or rehash the source file. Changed saved annotations, relevant metadata or an incompatible app version invalidate the proof. Export and downloads reject stale validation. Restored projects require a fresh validation.
 

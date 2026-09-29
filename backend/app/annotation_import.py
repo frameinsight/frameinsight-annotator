@@ -6,7 +6,7 @@ import uuid
 import zipfile
 from pathlib import PurePosixPath
 import yaml
-from .schema import Identity, Segment, Observation
+from .schema import video_identity_ids, Identity, Segment, Observation
 
 LIMIT = 50 * 1024 * 1024
 COLORS = ['#a3e635', '#38bdf8', '#fb923c', '#c084fc', '#2dd4bf', '#facc15']
@@ -167,7 +167,7 @@ def preview(raw, filename, project, video_id, format='yolo', frame_base=0, coord
                 add(frame, track, cls, [(cx-w/2)*video['width'], (cy-h/2)*video['height'], (cx+w/2)*video['width'], (cy+h/2)*video['height']])
     if not rows: raise ValueError('No included boxes found in this annotation file')
     source_ids = list(dict.fromkeys(row[1] for row in rows))
-    used = {p['person_id'] for p in project['state']['identities'].values()}
+    used = {project['state']['identities'][ident]['person_id'] for ident in video_identity_ids(project['state'], video_id)}
     reserved = {i for i in source_ids if isinstance(i, int) and i > 0 and i not in used}
     allocated = used | reserved
     mapping, identities, segments, observations = [], {}, {}, {}
@@ -202,7 +202,7 @@ def preview(raw, filename, project, video_id, format='yolo', frame_base=0, coord
     warnings = []
     if format == 'yolo': warnings.append('This YOLO file has no track IDs. Each detection becomes a separate track. Identities across frames cannot be recovered from these labels.')
     remapped = sum(isinstance(m['source'], int) and m['source'] != m['track_id'] for m in mapping)
-    if remapped: warnings.append(f'{remapped} source IDs were reassigned to avoid merging with existing tracks or ID zero.')
+    if remapped: warnings.append(f'{remapped} source IDs were reassigned to avoid duplicates within this video or ID zero.')
     if clipped: warnings.append(f'{clipped} boxes were clipped to the image boundary.')
     if ignored: warnings.append(f'{ignored} MOT rows marked ignored were excluded.')
     return {'base_revision': project['revision'], 'changes': changes, 'classes': names, 'mapping': mapping, 'warnings': warnings, 'summary': {'boxes': len(rows), 'tracks': len(identities), 'frames': len({r[0] for r in rows}), 'first_frame': min(r[0] for r in rows), 'last_frame': max(r[0] for r in rows)}}

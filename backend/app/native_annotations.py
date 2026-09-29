@@ -2,7 +2,7 @@
 import copy
 import json
 import uuid
-from .schema import MODELS, validate_state
+from .schema import video_identity_ids, MODELS, validate_state
 from .geometry import box_items, box_style
 
 
@@ -52,7 +52,7 @@ def preview_native(raw, project, video_id):
         raise ValueError('Import would exceed the project limit of 100 classes')
     # Never trust exported identity UUIDs to join current tracks implicitly.
     ids = {collection: {key: str(uuid.uuid4()) for key in values} for collection, values in normalized.items()}
-    used = {p['person_id'] for p in project['state']['identities'].values()}
+    used = {project['state']['identities'][ident]['person_id'] for ident in video_identity_ids(project['state'], video_id)}
     reserved = {p['person_id'] for p in normalized['identities'].values()} - used
     allocated = used | reserved
     mapping, changes, next_number = [], [], 1
@@ -92,7 +92,7 @@ def preview_native(raw, project, video_id):
     if not source.get('source_hash') or not target.get('source_hash'):
         warnings.append('A video fingerprint is unavailable. Dimensions and frame count match; confirm visually that this is the correct video.')
     if any(m['source'] != m['track_id'] for m in mapping):
-        warnings.append('Some IDs already exist and were reassigned. Import into a new project to retain every numeric ID.')
+        warnings.append('Some IDs already exist in this video and were reassigned. Import into an unannotated video to retain every numeric ID.')
     frames = [o['frame_index'] for o in normalized['observations'].values()]
     return {'base_revision': project['revision'], 'changes': changes, 'classes': sorted(names), 'mapping': mapping, 'warnings': warnings,
             'summary': {'boxes': boxes, 'tracks': len(mapping), 'frames': len(set(frames)), 'first_frame': min(frames, default=0), 'last_frame': max(frames, default=0)}}

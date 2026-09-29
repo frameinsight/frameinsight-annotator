@@ -119,3 +119,20 @@ def test_visible_frame_check_does_not_require_individual_approvals(project):
     with pytest.raises(ValueError,match='identities'):validate_state(p['state'],p['videos'],visible_only=True)
     p['state']['segments'][s]['status']='verified';obs['person_visible']=None
     with pytest.raises(ValueError,match='invalid'):validate_state(p['state'],p['videos'],visible_only=True)
+
+
+def test_numeric_ids_are_video_scoped_including_empty_and_shared_tracks(project):
+    p, v, who, segment, obs = seeded(project)
+    other = 'second-video'
+    p['videos'][other] = {**p['videos'][v], 'id': other}
+    d = p['state']
+    d['identities']['second'] = MODELS['identities'](id='second', person_id=17).model_dump()
+    d['segments']['second'] = MODELS['segments'](id='second', video_id=other, identity_uuid='second', start=0).model_dump()
+    validate_state(d, p['videos'])  # Even an empty track belongs to its video's scope.
+    d['segments']['second']['video_id'] = v
+    with pytest.raises(ValueError, match='already assigned in this video'):
+        validate_state(d, p['videos'])
+    d['segments']['second']['video_id'] = other
+    d['segments']['shared'] = {**d['segments'][segment], 'id': 'shared', 'video_id': other}
+    with pytest.raises(ValueError, match='already assigned in this video'):
+        validate_state(d, p['videos'])

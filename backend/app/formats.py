@@ -8,7 +8,7 @@ from defusedxml.ElementTree import fromstring
 from .config import DATA
 from .geometry import reject_dynamic
 from .db import snapshot, connect, transaction, now, job_update
-from .schema import issues, MODELS, validate_state
+from .schema import video_identity_ids, issues, MODELS, validate_state
 
 def native_manifest(project):
     with connect() as c:
@@ -184,7 +184,7 @@ def parse_cvat(content, project, vid):
             key=f'person:{numeric}' if numeric is not None else f'unpaired-track:{track.get("id")}'
             if numeric is None: warnings.append('A track has no explicit numeric person_id; imported as an unpaired draft, never inferred from track ID')
             if key not in persons:
-                if numeric is not None and any(i['person_id']==numeric for i in state['identities'].values()): raise ValueError(f'Person ID {numeric} already exists; import into a new project or resolve identity explicitly')
+                if numeric is not None and any(state['identities'][ident]['person_id']==numeric for ident in video_identity_ids(state, vid)): raise ValueError(f'Person ID {numeric} already exists in this video; choose a different ID')
                 identity=MODELS['identities'](id=str(uuid.uuid4()),person_id=numeric,name='Imported draft').model_dump()
                 segment=MODELS['segments'](id=str(uuid.uuid4()),video_id=vid,identity_uuid=identity['id'],start=frame,status='unresolved' if numeric is None else 'verified').model_dump()
                 persons[key]=(identity,segment)

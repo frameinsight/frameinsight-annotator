@@ -89,3 +89,17 @@ def test_preview_endpoint_is_read_only(client, project):
     assert response.status_code == 200, response.text
     assert response.json()['summary']['boxes'] == 1
     assert db.snapshot(p['id']) == p
+
+
+@pytest.mark.parametrize('format,raw', [('yolo_tracks', b'0 .5 .5 .2 .4 7'), ('mot', b'1,7,10,10,20,30,1,1,1')])
+def test_import_reuses_numbers_from_other_videos_but_remaps_in_same_video(project, format, raw):
+    p, first = project
+    second = add_video(p['id'])['id']
+    original = preview(raw, '000000.txt', db.snapshot(p['id']), first, format)
+    db.apply(p['id'], Operation(id='first', base_revision=0, label='Import first video', changes=original['changes']))
+    p = db.snapshot(p['id'])
+    result = preview(raw, '000000.txt', p, second, format)
+    assert result['mapping'] == [{'source': 7, 'track_id': 7}]
+    db.apply(p['id'], Operation(id='second', base_revision=p['revision'], label='Import second video', changes=result['changes']))
+    p = db.snapshot(p['id'])
+    assert preview(raw, '000000.txt', p, second, format)['mapping'] == [{'source': 7, 'track_id': 1}]
