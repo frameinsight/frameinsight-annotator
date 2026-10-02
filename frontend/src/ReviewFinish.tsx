@@ -1,3 +1,4 @@
+import {Input} from './components/ui/input';
 import {useEffect, useMemo, useRef, useState} from "react";
 import {AlertTriangle, ArrowLeft, Check, CheckCircle2, Download, FileJson2, FolderArchive, LoaderCircle, Settings2, ShieldCheck} from "lucide-react";
 import {Badge} from "./components/ui/badge";
@@ -42,6 +43,9 @@ const checkLabels: Record<string, string> = {
 /** Finish checks the saved annotation document; visual review happens in the editor. */
 export function ReviewFinish({project, videoId, visualConfirmed, onEdit, onBackup, onSettings, onBack}: FinishProps) {
   const source = project.videos[videoId];
+  const [filename,setFilename]=useState(()=>source?.name.replace(/\.[^.]+$/, '')+'.json');
+  const [downloadBusy,setDownloadBusy]=useState(false);
+  const downloadName=filename.trim()||source?.name.replace(/\.[^.]+$/, '')+'.json';
   const [report, setReport] = useState<Report | null>(null);
   const [exportJob, setExportJob] = useState<Job | null>(null);
   const [busy, setBusy] = useState<"validation" | "export" | null>(null);
@@ -50,6 +54,12 @@ export function ReviewFinish({project, videoId, visualConfirmed, onEdit, onBacku
   const [changed, setChanged] = useState(false);
   const [pollError, setPollError] = useState(false);
   const [pollAttempt, setPollAttempt] = useState(0);
+  const downloadHref=exportJob?.export_id?'/api/exports/'+exportJob.export_id+'?filename='+encodeURIComponent(downloadName):'';
+  async function download(event:React.MouseEvent<HTMLAnchorElement>){
+    event.preventDefault();if(downloadBusy)return;setDownloadBusy(true);setError('');
+    try{await api('/exports/'+exportJob!.export_id+'/check');const link=document.createElement('a');link.href=downloadHref;link.download=downloadName;document.body.appendChild(link);link.click();link.remove();}
+    catch(e){setError(message(e));}finally{setDownloadBusy(false);}
+  }
   const snapshot = `${project.id}:${videoId}:${project.revision}`;
   const previousSnapshot = useRef(snapshot);
   const passed = !!report?.passed && report.revision === project.revision;
@@ -199,7 +209,7 @@ export function ReviewFinish({project, videoId, visualConfirmed, onEdit, onBacku
               </Button>
               {exportJob?.status === "failed" && <p className="finish-inline-error" role="alert">{exportJob.error || "The export could not be prepared. Try again."}</p>}
               {pollError && <div className="finish-export-retry"><p role="alert">The connection was interrupted while checking the export.</p><Button variant="outline" size="sm" onClick={() => {setPollError(false); setPollAttempt(value => value + 1);}}>Check export status</Button></div>}
-              {passed && exportJob?.status === "completed" && exportJob.export_id && <div className="finish-download" role="status"><p><CheckCircle2/>Your annotation file is ready.</p><Button variant="outline" asChild><a href={"/api/exports/" + exportJob.export_id} download><Download/>Download annotations (.json)</a></Button></div>}
+              {passed && exportJob?.status === "completed" && exportJob.export_id && <div className="finish-download" role="status"><p><CheckCircle2/>Your annotation file is ready.</p><label className="text-sm">JSON filename<Input aria-label="JSON filename" value={filename} maxLength={180} onChange={e=>setFilename(e.target.value)} placeholder={source.name.replace(/\.[^.]+$/, "")+".json"}/></label><small className="text-muted-foreground">Choose a name before downloading. The .json extension is added automatically.</small><Button variant="outline" asChild><a href={downloadHref} download={downloadName} aria-disabled={downloadBusy} onClick={download}><Download/>Download annotations (.json)</a></Button></div>}
             </CardContent>
           </Card>
 

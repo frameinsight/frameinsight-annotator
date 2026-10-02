@@ -40,6 +40,20 @@ def preview_export(pid, vid, document):
     assert result['mapping'][0]['source'] == 7 and result['mapping'][0]['track_id'] != 7
     assert request('/api/projects/' + pid)['state'] == document['state']
 
+def trim_sections_smoke(body, boundary):
+    import av
+    before = request('/api/projects')
+    query = urllib.request.Request('http://127.0.0.1:8765/api/video-trims', body, headers={'Content-Type': 'multipart/form-data; boundary=' + boundary})
+    with urllib.request.urlopen(query, timeout=30) as response:
+        scan = wait_job(json.load(response))
+    info = scan['metadata']; assert info['frame_count'] == 24
+    result = wait_job(request('/api/video-trims/' + scan['id'] + '/render', {'sections': [{'start': 0, 'end': 2}, {'start': 20, 'end': 23}], 'name': 'Prepared.mp4'}))
+    with av.open(io.BytesIO(request(result['download_url'], raw=True))) as video:
+        frames = list(video.decode(video=0))
+        assert len(frames) == 7 and frames[0].pts == 0
+        assert all((frame.width, frame.height) == (info['width'], info['height']) for frame in frames)
+    assert request('/api/projects') == before
+
 def structural_delivery(pid,vid,revision,boxes,class_names):
  before=request('/api/projects/'+pid)
  def deliver(current_revision):
@@ -51,6 +65,7 @@ def structural_delivery(pid,vid,revision,boxes,class_names):
   proof={'revision':current_revision,'validation_id':validation['validation_id']}
   request('/api/videos/'+vid+'/finish',{'confirmed':True,**proof})
   job=wait_job(request('/api/projects/'+pid+'/exports',{'format':'annotations_json','video_id':vid,'include_videos':False,**proof}))
+  assert request('/api/exports/' + job['export_id'] + '/check')['ready']
   document=request('/api/exports/'+job['export_id'])
   preview_export(pid, vid, document)
   assert document['schema_version']==3 and document['app_version']==app_version and document['media_included'] is False
@@ -91,6 +106,7 @@ try:
  assert added['class_colors']==palette
  boundary='frameinsight-smoke-boundary'
  body=(f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="numbered.mp4"\r\nContent-Type: video/mp4\r\n\r\n'.encode()+fixture.read_bytes()+f'\r\n--{boundary}--\r\n'.encode())
+ trim_sections_smoke(body, boundary)
  req=urllib.request.Request(f'http://127.0.0.1:8765/api/projects/{pid}/videos',body,headers={'Content-Type':'multipart/form-data; boundary='+boundary})
  with urllib.request.urlopen(req,timeout=30) as r:vid=json.load(r)['video_id']
  wait(lambda:request('/api/projects/'+pid)['videos'][vid]['status']=='ready')
@@ -138,7 +154,7 @@ try:
  assert request('/api/videos/'+vid+'?confirmed=true',method='DELETE')['deleted']
  assert request('/api/video-library')==[] and fixture.exists()
  stop(p)
- report={'app_version':app_version,'runtime':'Windows embedded Python 3.13.12','environment':'Wine on Linux' if 'WINEPREFIX' in os.environ else 'Windows','checks':['native launcher','single instance','HTTP frontend','updater package kind','multipart video import','24 exact frames','PNG decoding','annotation save with class/color','class catalog and persistent random palette','video library','unvalidated finish and JSON export rejected','structural validation and media-free JSON without a review job or review hash', 'native annotation JSON import preview and collision mapping','project settings preserve annotations and invalidate previous validation/export download','fresh structural validation after metadata edit','backwards-compatible full 24-frame annotated review with exact timestamps','revision-bound review validation and selected-person coverage','validated finish confirmation','annotations-only export with matching validation proof','JSON v3 with three named classes and legacy paired geometry sharing one identity','bulk-copy provenance and correction export','automatic visibility export','delete video preserves original file','graceful shutdown','relaunch persistence'],'project_id':pid}
+ report={'app_version':app_version,'runtime':'Windows embedded Python 3.13.12','environment':'Wine on Linux' if 'WINEPREFIX' in os.environ else 'Windows','checks':['native launcher','single instance','HTTP frontend','updater package kind','standalone section trim keeps exact dimensions and leaves projects unchanged', 'JSON download preflight', 'multipart video import','24 exact frames','PNG decoding','annotation save with class/color','class catalog and persistent random palette','video library','unvalidated finish and JSON export rejected','structural validation and media-free JSON without a review job or review hash', 'native annotation JSON import preview and collision mapping','project settings preserve annotations and invalidate previous validation/export download','fresh structural validation after metadata edit','backwards-compatible full 24-frame annotated review with exact timestamps','revision-bound review validation and selected-person coverage','validated finish confirmation','annotations-only export with matching validation proof','JSON v3 with three named classes and legacy paired geometry sharing one identity','bulk-copy provenance and correction export','automatic visibility export','delete video preserves original file','graceful shutdown','relaunch persistence'],'project_id':pid}
  Path('windows-smoke-report.json').write_text(json.dumps(report,indent=2));print(json.dumps(report),flush=True)
 finally:
  if p.poll() is None:

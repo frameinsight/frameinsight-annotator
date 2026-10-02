@@ -67,6 +67,15 @@ The app does not recognize objects or guarantee identity correctness. Human revi
 - **Import annotations → Frameinsight annotations — JSON** previews a single-video v2/v3 export before adding it. Numeric IDs are retained when free; collisions are explicitly remapped. Original frame dimensions/count and available video hashes must match. Boxes, class styles, anchor provenance and deleted intervals are retained; review/validation and old edit history are not restored. Existing tracks remain intact; Undo reverses the import.
 - Empty projects remain reusable after video deletion and are clearly labeled.
 
+## Trim sections before annotation
+
+1. From the project/video homepage, choose **Trim sections**, then choose the source video.
+2. Drag each section’s two handles to the first and last frames you want to keep. Add another section to keep a later part. A large preview follows the handle; exact frame inputs are optional.
+3. Enter a filename and click **Create new video**. Kept sections join in source order, with overlapping selections combined.
+4. Play the new video, click **Save new video (.mp4)**, then use **New video** in your project to upload it.
+
+Trimming changes duration only: width, height and pixel aspect ratio are preserved, with no cropping, resizing or padding. Selected-frame timing is retained, including variable frame rates; new frame numbers start at 0. The first audio track is retained when present. The output is re-encoded as H.264/AAC, so file size and compression can change. Odd pixel dimensions require H.264 4:4:4, which some browser players cannot preview; the output still retains its dimensions and can be imported into Frameinsight. This tool creates a separate file and never changes saved annotations or the original video. It is not part of the annotation canvas.
+
 ## How to use annotation JSON
 
 After **Finish → I reviewed — continue → Run annotation validation**, use **Prepare validated JSON → Download annotations (.json)**. The file includes current annotations, source metadata, validation, and edit history. It embeds **no video, image, crop or thumbnail**. Keep the original video separately; its recorded name and SHA-256 hash identify the matching footage. **Review in editor** shows all saved tracks and classes; display hiding never removes boxes from export.
@@ -85,6 +94,12 @@ New exports use `format: "frameinsight.annotations"`, `schema_version: 3`.
 | `presence_intervals` | Inclusive per-class runs of `present` / `absent` boxes. Absence does not prove physical occlusion or a verified negative example. |
 | `validation` | Revision-bound structural checks, human visual confirmation, and declared annotation coverage. |
 | `state`, `operations` | Saved entities and edit history. Historical/deleted boxes are **not current training labels**. |
+
+### Name and download annotation JSON
+
+After validation, choose **Prepare validated JSON**. Edit **JSON filename** above the download button, or leave its default (your video name with `.json`). The extension is added automatically. Click **Download annotations (.json)**. If annotations changed or the export file is missing, the app shows the error and asks you to prepare/validate again.
+
+If Chrome reports **Blocked by your organization**, that is a browser-managed restriction. The application cannot override it; ask the browser/device administrator to review the download policy. No security setting is changed by Frameinsight.
 
 ### Read it with Python
 
@@ -144,7 +159,7 @@ Browser tests need an **isolated** server at `127.0.0.1:5173` and Chrome. Set a 
 FRAMEINSIGHT_TEST_URL=http://127.0.0.1:5173 npm --prefix frontend run test:e2e
 ```
 
-Build and release instructions are in [Windows packaging](docs/WINDOWS.md), [Debian packaging](docs/LINUX.md) and the [release workflow](.github/workflows/desktop-release.yml). See the [3.6.1 verification record](docs/releases/v3.6.1-acceptance.md) for test coverage and limits.
+Build and release instructions are in [Windows packaging](docs/WINDOWS.md), [Debian packaging](docs/LINUX.md) and the [release workflow](.github/workflows/desktop-release.yml). See the [3.7.0 verification record](docs/releases/v3.7.0-acceptance.md) for test coverage and limits.
 
 ## Contributing
 

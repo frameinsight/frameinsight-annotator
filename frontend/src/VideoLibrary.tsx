@@ -1,7 +1,7 @@
 import {Textarea} from './components/ui/textarea';
 import {Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter} from './components/ui/card';
 import {useEffect, useMemo, useState} from 'react';
-import {Settings2, ArrowLeft, FolderOpen, ArrowRight, BookOpen, Check, CheckCircle2, ChevronRight, FileVideo2, FolderArchive, LoaderCircle, LockKeyhole, Play, Plus, Search, Trash2, Upload} from 'lucide-react';
+import {Settings2, Scissors, ArrowLeft, FolderOpen, ArrowRight, BookOpen, Check, CheckCircle2, ChevronRight, FileVideo2, FolderArchive, LoaderCircle, LockKeyhole, Play, Plus, Search, Trash2, Upload} from 'lucide-react';
 import {api, post} from './api';
 import {type Video} from './types';
 import {useStore} from './store';
@@ -39,7 +39,7 @@ function lastPosition(videos: LibraryVideo[]) {
   } catch { return null; }
 }
 
-export function VideoLibrary({onOpen, onNew, selectedProject, onSelectProject, onNewProject, onSettings}: {onOpen: (p: string, v: string) => Promise<void>; onNew: () => void; selectedProject:string|null; onSelectProject:(id:string|null)=>void; onNewProject:()=>void;onSettings:(id:string)=>void}) {
+export function VideoLibrary({onOpen, onNew, selectedProject, onSelectProject, onNewProject, onSettings, onTrim}: {onOpen: (p: string, v: string) => Promise<void>; onNew: () => void; selectedProject:string|null; onSelectProject:(id:string|null)=>void; onNewProject:()=>void;onSettings:(id:string)=>void;onTrim:()=>void}) {
   const [projects,setProjects]=useState<{id:string;name:string;classes:string[]|string}[]>([]);
   const [deleting, setDeleting] = useState<LibraryVideo | null>(null);
   const [videos, setVideos] = useState<LibraryVideo[]>([]);
@@ -86,7 +86,7 @@ export function VideoLibrary({onOpen, onNew, selectedProject, onSelectProject, o
     <main className="video-library">
       <div className="library-heading">
         <div><span className="library-kicker">YOUR WORKSPACE</span><h1>{selected?.name||'Your projects'}</h1><p>{selectedProject?'Videos in this project share the same classes.':'Group related videos and classes in a project.'}</p></div>
-        <div className="library-actions">{selectedProject&&<Button variant="outline" onClick={()=>onSettings(selectedProject)}><Settings2 size={16}/>Project settings</Button>}<Button variant="outline" size="sm" onClick={() => setGuide(true)}><BookOpen size={16}/>Start guide</Button><Button size="sm" onClick={selectedProject?onNew:onNewProject}><Plus size={17}/>{selectedProject?'New video':'New project'}</Button></div>
+        <div className="library-actions"><Button variant="outline" size="sm" onClick={onTrim}><Scissors size={16}/>Trim sections</Button>{selectedProject&&<Button variant="outline" onClick={()=>onSettings(selectedProject)}><Settings2 size={16}/>Project settings</Button>}<Button variant="outline" size="sm" onClick={() => setGuide(true)}><BookOpen size={16}/>Start guide</Button><Button size="sm" onClick={selectedProject?onNew:onNewProject}><Plus size={17}/>{selectedProject?'New video':'New project'}</Button></div>
       </div>
       <div className="library-body">
         {error && !deleting && <p role="alert" className="error">{error}</p>}

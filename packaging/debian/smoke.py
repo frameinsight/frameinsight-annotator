@@ -56,6 +56,20 @@ def preview_export(pid, vid, document):
     assert result['mapping'][0]['source'] == 7 and result['mapping'][0]['track_id'] != 7
     assert request('/api/projects/' + pid)['state'] == document['state']
 
+def trim_sections_smoke(body, boundary):
+    import av
+    before = request('/api/projects')
+    query = urllib.request.Request('http://127.0.0.1:8765/api/video-trims', body, headers={'Content-Type': 'multipart/form-data; boundary=' + boundary})
+    with urllib.request.urlopen(query, timeout=30) as response:
+        scan = finished(json.load(response))
+    info = scan['metadata']; assert info['frame_count'] == 24
+    result = finished(request('/api/video-trims/' + scan['id'] + '/render', {'sections': [{'start': 0, 'end': 2}, {'start': 20, 'end': 23}], 'name': 'Prepared.mp4'}))
+    with av.open(io.BytesIO(request(result['download_url'], raw=True))) as video:
+        frames = list(video.decode(video=0))
+        assert len(frames) == 7 and frames[0].pts == 0
+        assert all((frame.width, frame.height) == (info['width'], info['height']) for frame in frames)
+    assert request('/api/projects') == before
+
 def structural_delivery(pid, vid, revision, boxes, class_names):
     before = request('/api/projects/' + pid)
     def deliver(current_revision):
@@ -67,6 +81,7 @@ def structural_delivery(pid, vid, revision, boxes, class_names):
         proof = {'revision': current_revision, 'validation_id': validation['validation_id']}
         request('/api/videos/' + vid + '/finish', {'confirmed': True, **proof})
         job = finished(request('/api/projects/' + pid + '/exports', {'format': 'annotations_json', 'video_id': vid, 'include_videos': False, **proof}))
+        assert request('/api/exports/' + job['export_id'] + '/check')['ready']
         document = request('/api/exports/' + job['export_id'])
         preview_export(pid, vid, document)
         assert document['schema_version'] == 3 and document['app_version'] == manifest['version'] and document['media_included'] is False
@@ -110,6 +125,7 @@ try:
     pid = project['id']
     boundary = 'frameinsight-debian-smoke'
     body = (f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="numbered.mp4"\r\nContent-Type: video/mp4\r\n\r\n'.encode() + args.fixture.read_bytes() + f'\r\n--{boundary}--\r\n'.encode())
+    trim_sections_smoke(body, boundary)
     upload = urllib.request.Request(f'http://127.0.0.1:8765/api/projects/{pid}/videos', body, headers={'Content-Type': 'multipart/form-data; boundary=' + boundary})
     with urllib.request.urlopen(upload, timeout=30) as response: vid = json.load(response)['video_id']
     for _ in range(300):
@@ -153,7 +169,7 @@ try:
     assert next(video for video in request('/api/video-library') if video['id'] == vid)['finished']
     subprocess.run([binary, '--stop', '--yes'], check=True, timeout=40)
     report = {'app_version': manifest['version'], 'environment': 'Debian 12 container, non-root desktop user, headless runtime',
-              'checks': ['installed desktop launcher', 'frozen update helper entrypoint', 'single instance', 'running-runtime upgrade/removal guard', 'HTTP frontend', 'updater package kind', 'multipart video import', '24 exact source frames', 'PNG decoding', 'three named classes share track ID', 'unvalidated finish/export rejected', 'structural validation and media-free JSON without a review job or review hash', 'native annotation JSON import preview and collision mapping', 'project settings preserve annotations and invalidate previous validation/export download', 'fresh structural validation after metadata edit', 'backwards-compatible full review MP4 and exact timestamps', 'revision-bound review validation', 'media-free JSON v3', 'graceful stop', 'restart preserves annotations and finished state'],
+              'checks': ['installed desktop launcher', 'frozen update helper entrypoint', 'single instance', 'running-runtime upgrade/removal guard', 'HTTP frontend', 'updater package kind', 'standalone section trim keeps exact dimensions and leaves projects unchanged', 'JSON download preflight', 'multipart video import', '24 exact source frames', 'PNG decoding', 'three named classes share track ID', 'unvalidated finish/export rejected', 'structural validation and media-free JSON without a review job or review hash', 'native annotation JSON import preview and collision mapping', 'project settings preserve annotations and invalidate previous validation/export download', 'fresh structural validation after metadata edit', 'backwards-compatible full review MP4 and exact timestamps', 'revision-bound review validation', 'media-free JSON v3', 'graceful stop', 'restart preserves annotations and finished state'],
               'database': str(data / 'projects.sqlite3'), 'database_sha256': hashlib.sha256((data / 'projects.sqlite3').read_bytes()).hexdigest(),
               'native_desktop_gui_tested': False}
     args.report.write_text(json.dumps(report, indent=2) + '\n')

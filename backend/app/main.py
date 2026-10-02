@@ -25,6 +25,8 @@ from .delete_video import delete_video
 from .review_delivery import create_review, get_review, review_metadata, validate_review, validate_annotations, validation_proof
 from .project_settings import ProjectSettings, update_settings
 from .library_metadata import video_dates
+from .export_names import json_filename
+from .video_trim import router as video_trim_router
 worker=Worker(); exports_pool=ThreadPoolExecutor(max_workers=1,thread_name_prefix='export')
 @asynccontextmanager
 async def lifespan(app):
@@ -44,6 +46,7 @@ async def lifespan(app):
     worker.stop()
 app=FastAPI(title='Frameinsight',version=APP_VERSION,lifespan=lifespan)
 app.include_router(updates_router)
+app.include_router(video_trim_router)
 
 @app.middleware('http')
 async def local_only(request:Request,call_next):
@@ -288,18 +291,34 @@ def export(pid:str,body:ExportSettings):
     if body.split not in ('train','val','test') or body.geometry not in ('person_ext','person_visible'):raise ValueError('Invalid export options')
     if body.format=='annotations_json':validation_proof(pid,body.model_dump())
     j=new_job(pid,'export',settings=body.model_dump());exports_pool.submit(export_project,pid,body.model_dump(),j['id']);return j
-@app.get('/api/exports/{eid}')
-def download_export(eid:str):
+def checked_export(eid:str):
     with db.connect() as c:
         row=c.execute('SELECT data FROM exports WHERE id=?',(eid,)).fetchone()
         if not row:raise KeyError('Export not found')
         e=json.loads(row['data'])
     is_json = e['settings']['format'] == 'annotations_json'
+    if not Path(e['path']).is_file():raise ValueError('Export file is missing. Prepare your JSON again.')
     if is_json:
         validation_proof(e['project_id'],e['settings'])
         if not e.get('file_hash') or sha256(e['path'])!=e['file_hash']:raise ValueError('The export file changed. Prepare a new validated download.')
-    extension, media_type = ('json', 'application/json') if is_json else ('zip', 'application/zip')
-    return FileResponse(e['path'],filename=f'frameinsight-{e["settings"]["format"]}-{eid[:8]}.{extension}',media_type=media_type)
+    return e
+
+@app.get('/api/exports/{eid}/check')
+def check_export(eid:str):
+    e=checked_export(eid)
+    return {'ready':True,'bytes':Path(e['path']).stat().st_size}
+
+@app.get('/api/exports/{eid}')
+def download_export(eid:str,filename:str|None=None):
+    e=checked_export(eid)
+    is_json=e['settings']['format']=='annotations_json'
+    if is_json:
+        vid=e['settings'].get('video_id')
+        default=Path(video_get(vid)['name']).stem if vid else 'annotations'
+        name=json_filename(filename if filename is not None else default)
+    else:
+        name=f'frameinsight-{e["settings"]["format"]}-{eid[:8]}.zip'
+    return FileResponse(e['path'],filename=name,media_type='application/json' if is_json else 'application/zip',headers={'X-Content-Type-Options':'nosniff'})
 @app.post('/api/projects/{pid}/imports/annotations/preview')
 def annotation_preview(pid:str,video_id:str,file:UploadFile=File(...),format:str=Form('yolo'),frame_base:int=Form(0),coordinate_base:int=Form(0),class_names:str=Form(''),clip_boxes:bool=Form(False)):
     from .annotation_import import preview

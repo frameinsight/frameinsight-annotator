@@ -81,7 +81,10 @@ test('reviews existing canvas at slow speeds and exports validated JSON without 
  const report=await validate(page);expect(report.mode).toBe('structural');
  await page.getByRole('button',{name:'Prepare validated JSON',exact:true}).click();
  const download=page.getByRole('link',{name:'Download annotations (.json)',exact:true});await expect(download).toBeVisible();
+ await expect(page.getByLabel('JSON filename')).toHaveValue('numbered.json');await page.getByLabel('JSON filename').fill('My annotations');
+ const downloadEvent=page.waitForEvent('download');await download.click();const file=await downloadEvent;expect(file.suggestedFilename()).toBe('My annotations.json');expect(await file.failure()).toBeNull();
  const exported=await(await request.get((await download.getAttribute('href'))!)).json();
+ await page.route('**/api/exports/*/check',r=>r.fulfill({status:409,json:{detail:'Annotations changed. Validate again.'}}));await download.click();await expect(page.getByRole('alert')).toContainText('Annotations changed. Validate again.');
  expect(exported.media_included).toBe(false);expect(exported.video_scope).toBe(videoId);expect(exported.annotation_index).toHaveLength(21);
  expect(new Set(exported.annotation_index.map((row:any)=>row.person_id))).toEqual(new Set([1]));
  expect(exported.validation.mode).toBe('structural');expect(exported.validation.coverage).toBe('selected_people');

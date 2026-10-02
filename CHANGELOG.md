@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.7.0
+
+Standalone **Trim sections** prepares a separate MP4 before annotation. Drag handles to keep multiple sections; the output preserves source dimensions, aspect ratio, selected-frame timing and audio while starting again at frame 0. The original file and annotations stay intact. JSON downloads default to the video name, accept a custom filename, and show stale or missing export errors before downloading. See the [release notes](docs/releases/v3.7.0.md).
+
 ## 3.6.1
 
 Fix automatic interpolation in older projects with overlapping deleted ranges. Replacement boxes and saved repair markers now agree across overlapping fragments; drawing or adjusting a boundary fills between replacement boxes without a separate command. Later deletions stay blocked, and Undo and original-box recovery are preserved.
