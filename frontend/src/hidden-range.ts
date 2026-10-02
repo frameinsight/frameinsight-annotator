@@ -62,10 +62,25 @@ export function prepareVisibleFrame(d:Domain,videoId:string,identityId:string,fr
  d.segments[id]=segment;return segment;
 }
 
+function scopeGeometryGaps(d:Domain,videoId:string,identityId:string,geometry:import('./types').Geometry){
+ // Split legacy all-box gaps into scopes before restoring just the drawn type.
+ for(const gap of Object.values(d.intervals))if(gap.video_id===videoId&&gap.identity_uuid===identityId&&!gap.geometry){
+  const known=identityGeometryKeys(d,identityId),keys=[...new Set([...(known.some(k=>k==='person_ext'||k==='person_visible')?['person_visible','person_ext']:[]),...known,geometry])];gap.geometry=keys[0];for(const key of keys.slice(1)){const id=uuid();d.intervals[id]={...gap,id,geometry:key};}
+ }
+}
+
 // Scoped gaps leave the other box type and shared track segments intact.
 export function deleteGeometryRange(d:Domain,videoId:string,identityId:string,start:number,end:number,frameCount:number,geometry:import('./types').Geometry){
  if(!d.identities[identityId])throw new Error('Select a person first.');
  if(!Number.isSafeInteger(start)||!Number.isSafeInteger(end)||start<0||end<start||end>=frameCount)throw new Error(`Enter a valid range from 0 to ${frameCount-1}.`);
+ scopeGeometryGaps(d,videoId,identityId,geometry);
+ // The most recent deletion replaces older barriers only in this class/range.
+ for(const gap of Object.values(d.intervals)){
+  if(gap.video_id!==videoId||gap.identity_uuid!==identityId||gap.geometry!==geometry||gap.start>end||(gap.end!==null&&gap.end<start))continue;
+  const old={...gap};delete d.intervals[gap.id];
+  if(old.start<start)d.intervals[old.id]={...old,end:start-1};
+  if(old.end===null||old.end>end){const id=old.start<start?uuid():old.id;d.intervals[id]={...old,id,start:end+1};}
+ }
  const rows=Object.values(d.observations).filter(o=>o.video_id===videoId&&o.identity_uuid===identityId).sort((a,b)=>a.frame_index-b.frame_index);
  let removed=0;
  for(const o of rows)if(o.frame_index>=start&&o.frame_index<=end){
@@ -76,16 +91,15 @@ export function deleteGeometryRange(d:Domain,videoId:string,identityId:string,st
  }
  // Retain boundary coordinates as anchors only for the affected geometry.
  for(const edge of [rows.filter(o=>o.frame_index<start&&getBox(o,geometry)).at(-1),rows.find(o=>o.frame_index>end&&getBox(o,geometry))])if(edge){markCorrected(edge,geometry);edge.review_state='draft';}
- const id=uuid();d.intervals[id]={id,video_id:videoId,identity_uuid:identityId,start,end,geometry,reason:'unknown',evidence_note:'Boxes deleted by the annotator; cause unspecified.'};
+ const id=uuid();d.intervals[id]={id,video_id:videoId,identity_uuid:identityId,start,end,geometry,repair_id:id,reason:'unknown',evidence_note:'Boxes deleted by the annotator; cause unspecified.'};
  for(const r of Object.values(d.reviews))if(r.video_id===videoId&&r.frame_index>=start&&r.frame_index<=end){r.complete=false;r.checked_all_people=false;}
  return removed;
 }
 
 export function prepareGeometryFrame(d:Domain,videoId:string,identityId:string,frame:number,geometry:import('./types').Geometry){
- // Split legacy all-box gaps into scopes before restoring just the drawn type.
- for(const gap of Object.values(d.intervals))if(gap.video_id===videoId&&gap.identity_uuid===identityId&&!gap.geometry){
-  const known=identityGeometryKeys(d,identityId),keys=[...new Set([...(known.some(k=>k==='person_ext'||k==='person_visible')?['person_visible','person_ext']:[]),...known,geometry])];gap.geometry=keys[0];for(const key of keys.slice(1)){const id=uuid();d.intervals[id]={...gap,id,geometry:key};}
- }
+ // Preserve the deletion identity when its interval is split by replacement boxes.
+ for(const gap of Object.values(d.intervals))if(gap.video_id===videoId&&gap.identity_uuid===identityId&&(!gap.geometry||gap.geometry===geometry)&&gap.start<=frame&&(gap.end===null||gap.end>=frame))gap.repair_id??=gap.id;
+ scopeGeometryGaps(d,videoId,identityId,geometry);
  for(const gap of Object.values(d.intervals)){
   if(gap.video_id!==videoId||gap.identity_uuid!==identityId||gap.geometry!==geometry||gap.start>frame||(gap.end!==null&&gap.end<frame))continue;
   const old={...gap};delete d.intervals[gap.id];

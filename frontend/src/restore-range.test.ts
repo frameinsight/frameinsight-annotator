@@ -1,3 +1,4 @@
+import {previewBetweenFrames,interpolateBetweenFrames} from './interpolate-range';
 import {describe,it,expect} from 'vitest';
 import {deleteGeometryRange,markHiddenRange,prepareGeometryFrame} from './hidden-range';
 import {interpolatePerson} from './interpolation';
@@ -76,5 +77,20 @@ describe('explicit deleted-range recovery',()=>{
   const d=structuredClone(original);markHiddenRange(d,'v','p',999,1101,2000);expect(Object.values(d.segments)).toHaveLength(0);const history=[operation(original,d)];
   expect(preview(d,999,1101,'original',history).warnings.join(' ')).toContain('unresolved');recover(d,999,1101,'original',history);
   expect(Object.values(d.segments)).toMatchObject([{start:999,end:1101,status:'unresolved'}]);expect(at(d,1050).person_visible).toEqual(at(original,1050).person_visible);expect(at(d,1050).person_ext).toBeNull();validateDomain(d,videos);
+ });
+});
+
+
+describe('interpolation between explicit boundary frames',()=>{
+ it('fills old projects without repair markers and changes only the selected class/range',()=>{
+  const {d}=setup();draw(d,1030,130);draw(d,1050,170);const before=structuredClone(d);
+  const p=previewBetweenFrames(d,'v','p','person_visible',1030,1050,2000);expect(p).toMatchObject({canRestore:true,restoredBoxes:19,keptBoxes:2});expect(d).toEqual(before);
+  interpolateBetweenFrames(d,'v','p','person_visible',1030,1050,2000);expect(at(d,1040).person_visible![0]).toBe(150);expect(at(d,1029).person_visible).toBeNull();expect(at(d,1051).person_visible).toBeNull();
+  for(const o of Object.values(d.observations))expect(o.person_ext).toEqual(before.observations[o.id].person_ext);validateDomain(d,videos);
+ });
+ it('rejects missing or reversed endpoints without changing saved boxes',()=>{
+  const {d}=setup();draw(d,1030,130);const before=structuredClone(d);
+  expect(previewBetweenFrames(d,'v','p','person_visible',1030,1050,2000).canRestore).toBe(false);expect(()=>interpolateBetweenFrames(d,'v','p','person_visible',1030,1050,2000)).toThrow('frame 1050');expect(d).toEqual(before);
+  expect(previewBetweenFrames(d,'v','p','person_visible',1050,1030,2000).canRestore).toBe(false);
  });
 });

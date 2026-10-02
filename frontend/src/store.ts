@@ -1,6 +1,7 @@
+import {repairMarker,repairBetweenNewBoxes} from './gap-repair';
 import {unusedBoxColor,trackColor} from './colors';
 import {create} from 'zustand';
-import {interpolatePerson,markCorrected} from './interpolation';
+import {interpolatePerson,markCorrected,isGeometryGenerated} from './interpolation';
 import {assignPerson as assignPersonInDomain} from './identity';
 import {VISIBLE_ONLY,videoIdentityIds,trackIdConflict,legacyExtended,boxStyle,classColor,classKey,geometryForClass,orderedGeometryKeys,geometryLabel,getBox,setBox as putBox,boxKeys,type Box} from './types';
 import {deleteGeometryRange,prepareGeometryFrame} from './hidden-range';
@@ -106,7 +107,7 @@ export const useStore=create<Store>((set,get)=>({
  selectPerson:(id)=>{const s=get(),name=boxStyle(s.project?.state.identities[s.activeId],s.geometry).class_name;set({activeId:id,geometry:s.activeId===id?s.geometry:(s.project?orderedGeometryKeys(s.project,id,s.videoId).find(g=>boxStyle(s.project!.state.identities[id],g).class_name===name)||orderedGeometryKeys(s.project,id,s.videoId)[0]:null)||geometryForClass(s.project?.state.identities[id],name),hiddenIds:{...s.hiddenIds,[id]:false}})},
  deletePerson:(id)=>{const s=get();const ok=s.commit('Delete person and all their annotations',d=>{if(!d.identities[id])throw new Error('Person not found');for(const col of ['observations','segments','intervals'] as const)for(const row of Object.values(d[col]))if(row.identity_uuid===id)delete d[col][row.id];for(const link of Object.values(d.links))if(link.source===id||link.target===id)delete d.links[link.id];delete d.identities[id];});if(ok){set({activeId:s.activeId===id?'':s.activeId});s.toast('Person deleted. Press Ctrl+Z to undo.');}return ok;},
  frameTimes:{},
- fillInterpolation:()=>{const s=get();if(!s.activeId)return s.toast('Select a person first');let count=0;const ok=s.commit('Interpolate between keyframes',d=>{count=interpolatePerson(d,s.videoId,s.activeId,s.frameTimes[s.videoId],undefined,s.geometry)});if(ok){const rows=Object.values(s.project!.state.observations).filter(o=>o.video_id===s.videoId&&o.identity_uuid===s.activeId&&getBox(o,s.geometry)),first=Math.min(...rows.map(o=>o.frame_index)),last=Math.max(...rows.map(o=>o.frame_index));const gap=Object.values(s.project!.state.intervals).filter(g=>g.video_id===s.videoId&&g.identity_uuid===s.activeId&&(!g.geometry||g.geometry===s.geometry)&&g.start<=last&&(g.end===null||g.end>=first)).sort((a,b)=>Math.abs(a.start-s.frame)-Math.abs(b.start-s.frame))[0];s.toast(gap?`${count?count+' frames filled. ':''}Frames ${gap.start}–${gap.end??'the end'} are marked deleted. Use Restore deleted range to refill that range.`:count?`${count} interpolated frames. Drag any box to correct it; changes save automatically.`:'No frames to fill. Draw or correct a box on each side in the same visible segment.');}},
+ fillInterpolation:()=>{const s=get();if(!s.activeId)return s.toast('Select a person first');let count=0;const ok=s.commit('Interpolate between keyframes',d=>{count=interpolatePerson(d,s.videoId,s.activeId,s.frameTimes[s.videoId],undefined,s.geometry)});if(ok){const rows=Object.values(s.project!.state.observations).filter(o=>o.video_id===s.videoId&&o.identity_uuid===s.activeId&&getBox(o,s.geometry)),first=Math.min(...rows.map(o=>o.frame_index)),last=Math.max(...rows.map(o=>o.frame_index));const gap=Object.values(s.project!.state.intervals).filter(g=>g.video_id===s.videoId&&g.identity_uuid===s.activeId&&(!g.geometry||g.geometry===s.geometry)&&g.start<=last&&(g.end===null||g.end>=first)).sort((a,b)=>Math.abs(a.start-s.frame)-Math.abs(b.start-s.frame))[0];s.toast(gap?`${count?count+' frames filled. ':''}Frames ${gap.start}–${gap.end??'the end'} are marked deleted. Use Shift+K to interpolate between two boxes, or Restore deleted range to recover that range.`:count?`${count} interpolated frames. Drag any box to correct it; changes save automatically.`:'No frames to fill. Draw or correct a box on each side in the same visible segment.');}},
  project:null,videoId:'',frame:0,activeId:'',geometry:classKey('Person'),saveStatus:'Saved',saveError:'',notice:'',pending:[],history:[],redoStack:[],ready:false,
  toast:(notice)=>{set({notice});window.setTimeout(()=>{if(get().notice===notice)set({notice:''})},5500)},
  load:async(id)=>{
@@ -146,7 +147,7 @@ export const useStore=create<Store>((set,get)=>({
  },
  editObservation:(label,fn,propagate=true)=>{
   const s=get();if(!s.activeId||s.hiddenIds[s.activeId]){s.toast('Select a visible person or press N first');return;}
-  s.commit(label,d=>{let o=currentObservation(s.project,s.videoId,s.frame,s.activeId);if(o)o=d.observations[o.id];
+  let repaired=0;const ok=s.commit(label,d=>{let o=currentObservation(s.project,s.videoId,s.frame,s.activeId);const marker=repairMarker(d,s.videoId,s.activeId,s.geometry,s.frame)||o?.provenance[s.geometry]?.repair_id;if(o)o=d.observations[o.id];
    else{const segment=prepareGeometryFrame(d,s.videoId,s.activeId,s.frame,s.geometry);
     o=emptyObservation(s.videoId,s.frame,s.activeId,segment.id);d.observations[o.id]=o;
    }
@@ -154,8 +155,12 @@ export const useStore=create<Store>((set,get)=>({
    // Legacy extended tracks keep their original marker until explicit ID conversion.
    if(!legacyExtended(person)){person.box_styles??={};if(!person.box_styles[s.geometry]){const style=boxStyle(person,s.geometry);person.box_styles[s.geometry]={...style,color:s.geometry==='person_visible'&&person.color?person.color:classColor(s.project,style.class_name)};}}
    prepareGeometryFrame(d,s.videoId,s.activeId,s.frame,s.geometry);markCorrected(o,s.geometry);o.review_state='draft';fn(o);
-   if(propagate)interpolatePerson(d,s.videoId,s.activeId,s.frameTimes[s.videoId],s.frame,s.geometry);
+   if(propagate){
+    if(marker&&getBox(o,s.geometry)&&!isGeometryGenerated(o,s.geometry)){o.provenance[s.geometry]={origin:'manual',proposal_id:null,human_corrected:false,...o.provenance[s.geometry],repair_id:marker};repaired=repairBetweenNewBoxes(d,s.videoId,s.activeId,s.geometry,s.frame,s.project!.videos[s.videoId].frame_count,s.frameTimes[s.videoId]);}
+    interpolatePerson(d,s.videoId,s.activeId,s.frameTimes[s.videoId],s.frame,s.geometry);
+   }
   });
+  if(ok&&repaired)s.toast(`${repaired} frames filled between your replacement boxes. Deleted frames outside them stay hidden. Ctrl+Z undoes this edit.`);
  },
  setBox:(geometry,box,proposal,context)=>{
   let s=get();if(context&&(context.videoId!==s.videoId||context.frame!==s.frame||context.activeId!==s.activeId)){s.toast('Gesture frame changed; edit cancelled for safety');return;}if(s.geometry!==geometry){set({geometry});s=get();}

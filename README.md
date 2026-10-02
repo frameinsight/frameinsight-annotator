@@ -47,7 +47,7 @@ A settings change resets the current Undo/Redo stacks, while saved edit history 
 - Compact icon toolbar for class copying, range deletion/restoration, select/draw/hand, zoom and edit history. Hover hints explain each icon; right-click a box or its class/ID label for the same context menu.
 - Large color-coded Present/Hidden frame bar; more room for video without thumbnail clutter.
 - One stable object identity with multiple user-defined classes; no fixed Visible/Extended slots in the UI.
-- Independent interpolation, copying, deletion and recovery for each class.
+- Independent interpolation, copying, deletion and recovery for each class. Two replacement boxes refill their deleted section automatically; Shift+K fills a chosen range between existing boxes.
 - Editable project and class names, including during final review, with existing annotations updated together.
 - Compact searchable track list, hide/focus controls, and automatic background dimming.
 - Automatic saving, undo/redo, recovery journals, and native project backups.
@@ -144,7 +144,7 @@ Browser tests need an **isolated** server at `127.0.0.1:5173` and Chrome. Set a 
 FRAMEINSIGHT_TEST_URL=http://127.0.0.1:5173 npm --prefix frontend run test:e2e
 ```
 
-Build and release instructions are in [Windows packaging](docs/WINDOWS.md), [Debian packaging](docs/LINUX.md) and the [release workflow](.github/workflows/desktop-release.yml). See the [3.5.0 verification record](docs/releases/v3.5.0-acceptance.md) for test coverage and limits.
+Build and release instructions are in [Windows packaging](docs/WINDOWS.md), [Debian packaging](docs/LINUX.md) and the [release workflow](.github/workflows/desktop-release.yml). See the [3.6.0 verification record](docs/releases/v3.6.0-acceptance.md) for test coverage and limits.
 
 ## Contributing
 

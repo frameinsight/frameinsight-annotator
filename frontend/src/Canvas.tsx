@@ -6,7 +6,7 @@ import {LABEL_HEIGHT,layoutLabels,hitLabel,type CanvasBadge} from './canvas-labe
 import {forwardRef,useEffect,useImperativeHandle,useLayoutEffect,useRef,useState} from 'react';
 import {Stage,Layer,Image as KImage,Rect,Text,Group} from 'react-konva';
 import {ContextMenu} from 'radix-ui';
-import {MousePointer2,SquareDashed,Hand,Plus,Maximize,Undo2,Redo2,EyeOff,Focus,Trash2,Tags,Settings2,ChevronRight,Check} from 'lucide-react';
+import {MousePointer2,SquareDashed,Hand,Plus,Maximize,Undo2,Redo2,EyeOff,Focus,Trash2,Tags,Settings2,ChevronRight,Check,WandSparkles} from 'lucide-react';
 import {hitCanvasBox} from './canvas-hit';
 import {hasOpenOverlay} from './shortcut-guards';
 import './canvas-controls.css';
@@ -137,7 +137,7 @@ export const EditorCanvas=forwardRef<CanvasHandle,{proposals:Proposal[];showProp
   if(target&&!hits.some(h=>h.identity===target.identity&&h.geometry===target.geometry))hits.unshift(target);
   setMenuHits(hits);setMenuTarget(target);if(badge)selectLabel(badge);else if(hit)selectHit(hit);menuDialog.current=false;
  }
- function menuAction(action:string){finish();if(['id','copyClass','hiddenRange','restoreRange','canvasSettings'].includes(action)){menuDialog.current=true;onAction?.(action);return;}const s=useStore.getState();if(action==='new'){s.newPerson();setTool('draw');}else if(action==='copy')s.copyPrevious();else if(action==='hide')s.togglePersonVisibility(s.activeId);else if(action==='focus')s.focusPerson(s.activeId);else if(action==='delete')s.setBox(s.geometry,null);else if(action==='undo')s.undo();else if(action==='redo')s.redo();}
+ function menuAction(action:string){finish();if(['id','copyClass','hiddenRange','restoreRange','canvasSettings','interpolateRange'].includes(action)){menuDialog.current=true;onAction?.(action);return;}const s=useStore.getState();if(action==='new'){s.newPerson();setTool('draw');}else if(action==='copy')s.copyPrevious();else if(action==='hide')s.togglePersonVisibility(s.activeId);else if(action==='focus')s.focusPerson(s.activeId);else if(action==='delete')s.setBox(s.geometry,null);else if(action==='undo')s.undo();else if(action==='redo')s.redo();}
  const menuPerson=project?.state.identities[menuTarget?.identity||''];
  const menuIdentity=menuTarget?.identity||activeId,menuGeometry=menuTarget?.geometry||geometry;
  const previous=menuIdentity&&currentObservation(project,videoId,frame-1,menuIdentity);
@@ -187,6 +187,7 @@ export const EditorCanvas=forwardRef<CanvasHandle,{proposals:Proposal[];showProp
    <ContextMenu.Separator className="canvas-menu-separator"/>
    {item('Delete box on this frame',<Trash2/>,()=>menuAction('delete'),false,'Delete',true)}
    {item('Delete boxes in range…',<DeleteRangeIcon/>,()=>menuAction('hiddenRange'),!onAction,'⇧ Delete')}
+   {item('Interpolate between frames…',<WandSparkles/>,()=>menuAction('interpolateRange'),!onAction,'⇧ K')}
    {item('Restore deleted range…',<RestoreRangeIcon/>,()=>menuAction('restoreRange'),!onAction)}
    <ContextMenu.Separator className="canvas-menu-separator"/>
   </>}

@@ -1,7 +1,7 @@
 """Authoritative domain validation; containment tolerance is 0.01 source pixels."""
 import math
 from typing import Literal
-from pydantic import BaseModel, ConfigDict, Field, model_validator, field_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator, field_validator, model_serializer
 
 from .geometry import box_items, get_box, validate_key
 
@@ -34,7 +34,18 @@ class Segment(Strict):
     start: int = Field(ge=0)
     end: int | None = Field(default=None, ge=0)
     status: Literal['verified', 'unresolved'] = 'verified'
-class Provenance(Strict):
+class Repairable(Strict):
+    # Links replacement anchors to the deletion they repair, including after reload.
+    repair_id: str | None = Field(default=None, min_length=1, max_length=200)
+
+    @model_serializer(mode='wrap')
+    def serialize_repair(self, handler):
+        value = handler(self)
+        if self.repair_id is None:
+            value.pop('repair_id', None)
+        return value
+
+class Provenance(Repairable):
     origin: Literal['manual', 'model', 'model_track', 'copied', 'copied_track', 'interpolated'] = 'manual'
     proposal_id: str | None = None
     human_corrected: bool = False
@@ -66,7 +77,7 @@ class Observation(Strict):
         for key in value:
             validate_key(key)
         return value
-class Interval(Strict):
+class Interval(Repairable):
     geometry: str | None = None
     @field_validator('geometry')
     @classmethod

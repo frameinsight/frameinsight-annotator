@@ -108,3 +108,24 @@ describe('recovery as one saved undoable action',()=>{
   expect(useStore.getState().assignPerson(id,useStore.getState().project!.state.identities[id].person_id,'Face','#aabbcc')).toBe(true);await useStore.getState().saveNow();const o=Object.values(useStore.getState().project!.state.observations).find(o=>o.identity_uuid===id)!;expect(getBox(o,classKey('Head'))).toBeNull();expect(getBox(o,classKey('Face'))).toEqual([110,70,150,120]);expect(getBox(o,classKey('person_visible'))).toEqual([100,80,180,240]);useStore.getState().undo();await useStore.getState().saveNow();expect(useStore.getState().project!.state).toEqual(before);
  });
 });
+
+ describe('automatic filling of replacement boxes in a deleted range',()=>{
+  for(const reverse of [false,true])it(`fills only between two new endpoints (${reverse?'backward':'forward'}), survives fresh state and is one undo`,async()=>{
+   const s=()=>useStore.getState(),at=(f:number)=>Object.values(s().project!.state.observations).find(o=>o.identity_uuid==='p'&&o.frame_index===f);
+   s().markHiddenRange(2,8);await s().saveNow();
+   s().navigate(reverse?7:3);s().setBox('person_visible',[130,80,180,240]);await s().saveNow();
+   for(const f of [2,4,5,6,8])expect(getBox(at(f),'person_visible')).toBeNull();
+   const first=clone(s().project!.state),saved=clone(s().project!);useStore.setState({project:saved,history:[],redoStack:[]});
+   s().navigate(reverse?3:7);s().setBox('person_visible',[230,80,280,240]);await s().saveNow();
+   expect(at(5)!.person_visible).toEqual([180,80,230,240]);expect(at(5)!.provenance.person_visible?.origin).toBe('interpolated');
+   for(const f of [2,8])expect(getBox(at(f),'person_visible')).toBeNull();
+   expect(s().history).toHaveLength(1);const complete=clone(s().project!.state);s().undo();await s().saveNow();expect(s().project!.state).toEqual(first);s().redo();await s().saveNow();expect(s().project!.state).toEqual(complete);
+  });
+  it('does not reconnect a fresh deletion using old replacement anchors',async()=>{
+   const s=()=>useStore.getState(),at=(f:number)=>Object.values(s().project!.state.observations).find(o=>o.identity_uuid==='p'&&o.frame_index===f);
+   s().markHiddenRange(2,8);s().navigate(2);s().setBox('person_visible',[120,80,180,240]);s().navigate(8);s().setBox('person_visible',[180,80,240,240]);await s().saveNow();
+   s().markHiddenRange(3,7);s().navigate(5);s().setBox('person_visible',[200,80,260,240]);await s().saveNow();
+   for(const f of [3,4,6,7])expect(getBox(at(f),'person_visible')).toBeNull();
+   s().navigate(2);s().setBox('person_visible',[110,80,180,240]);await s().saveNow();for(const f of [3,4,6,7])expect(getBox(at(f),'person_visible')).toBeNull();
+  });
+ });

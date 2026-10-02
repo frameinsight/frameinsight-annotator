@@ -40,9 +40,19 @@ Example: copy `person_visible` to `person_extended`, then adjust the extended es
 
 A frame with no box simply has no annotation of that class. The app does not guess why. It may be hidden, outside the image, or not annotated yet.
 
-**Delete** removes the selected class on the current frame. **Delete range** or **Shift+Delete** removes it from the first through the last frame you enter, including both endpoints. Other classes stay. Deleted ranges pause interpolation so unwanted boxes do not come back automatically.
+**Delete** removes the selected class on the current frame. **Delete range** or **Shift+Delete** removes it from the first through the last frame you enter, including both endpoints. Other classes stay. Deleted ranges pause ordinary interpolation. Drawing just one replacement box restores only that frame.
 
-If you delete too much:
+To redraw part of a deleted range:
+
+1. Select the same track and class.
+2. Draw a new box on the first frame you want back, for example **1000**.
+3. Draw a new box on the last frame you want back, for example **1100**. Drawing in either order works.
+4. The frames between those two new boxes fill automatically, including after saving and reopening. Deleted frames outside your two boxes stay Hidden.
+5. Inspect the result and adjust any box that needs correction. **Ctrl+Z** undoes the last draw and its automatic fill together.
+
+If the boundary boxes already exist, press **Shift+K** or right-click a box or its label and choose **Interpolate between frames**. Enter the two frame numbers, check the preview, and click **Interpolate frames**. This also works for ranges deleted in older app versions. Both frames need a box for the same track and class; existing boxes inside are kept.
+
+To recover original boxes or use the full recovery options:
 
 1. Use **Ctrl+Z** immediately, or select the correct track and class and click **Restore range**.
 2. Enter the first and last frames to restore, for example **1000** and **1100**.
@@ -51,7 +61,7 @@ If you delete too much:
 5. Check the preview count, then **Remove gap & fill boxes** or **Recover deleted boxes**.
 6. Inspect the restored section. **Ctrl+Z** reverses the restoration.
 
-Drawing at frames 1000 and 1100 alone restores those two frames; **Restore range** removes the deletion barrier between them. You do not need to redraw each frame.
+**K** still fills ordinary gaps while respecting deleted ranges. **Shift+K** explicitly fills your chosen deleted section. You do not need to redraw each frame.
 
 ## Canvas tools and right-click
 
@@ -77,7 +87,7 @@ Open **Canvas settings** using the settings icon beside the zoom tools, or from 
 The larger bar at the bottom follows the selected track **and** class:
 
 - **Present:** the selected class color, whether the box was drawn or interpolated.
-- **Hidden:** red, for every frame without a box for the selected track and class. This includes deleted boxes, frames before/after the track, and work you have not annotated yet. Drawing and interpolation fill ordinary empty frames; use Restore range to refill an explicitly deleted range.
+- **Hidden:** red, for every frame without a box for the selected track and class. This includes deleted boxes, frames before/after the track, and work you have not annotated yet. Drawing and interpolation fill ordinary empty frames; draw two new boundary boxes in the deleted range or use **Shift+K** to refill a chosen section. **Restore range** can also recover original deleted boxes.
 - **Current frame:** a white outline. Striped sections contain both present and hidden frames at the current overview scale.
 
 Click a section, scrub with the seek control, or enter a precise frame number. Thumbnails have been removed to leave more room for the video. The filename appears quietly beside playback controls. The top-bar Shortcuts button opens the shortcut panel.

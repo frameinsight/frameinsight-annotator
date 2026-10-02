@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.6.0
+
+Refill deleted sections by drawing two replacement boxes for the same track and class. Includes an explicit **Interpolate between frames** command (**Shift+K**), previews, and whole-action Undo/Redo. Existing boxes and hidden frames outside the selected section are kept. Repeated overlapping deletions now retain the latest range correctly. See the [release notes](docs/releases/v3.6.0.md).
+
 ## 3.5.0
 
 Configurable box labels, source-pixel dimensions, optional first-box confirmation, consistent project class colors, and reliable editing of overlapping boxes. See the [release notes](docs/releases/v3.5.0.md).

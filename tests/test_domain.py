@@ -136,3 +136,26 @@ def test_numeric_ids_are_video_scoped_including_empty_and_shared_tracks(project)
     d['segments']['shared'] = {**d['segments'][segment], 'id': 'shared', 'video_id': other}
     with pytest.raises(ValueError, match='already assigned in this video'):
         validate_state(d, p['videos'])
+
+def test_repair_metadata_preserves_legacy_provenance_shape():
+    from backend.app.schema import Provenance
+    old = {'origin': 'manual', 'proposal_id': None, 'human_corrected': False}
+    assert Provenance.model_validate(old).model_dump(mode='json') == old
+    tagged = {**old, 'repair_id': 'deleted-range'}
+    assert Provenance.model_validate(tagged).model_dump(mode='json') == tagged
+
+
+def test_repair_metadata_persists_with_atomic_undo(project):
+    p, v, identity, segment, observation = seeded(project)
+    row = p['state']['observations'][observation]
+    row['provenance']['person_visible'] = {'origin': 'manual', 'proposal_id': None, 'human_corrected': False, 'repair_id': 'deleted-range'}
+    gap = MODELS['intervals'](id=uid(), video_id=v, identity_uuid=identity, geometry='person_visible', start=100, end=110, reason='unknown', repair_id='deleted-range').model_dump(mode='json')
+    p['state']['intervals'][gap['id']] = gap
+    changes = [{'collection': col, 'id': key, 'before': None, 'after': value} for col, rows in p['state'].items() for key, value in rows.items()]
+    op = Operation(id=uid(), base_revision=0, label='Replacement box in deleted range', changes=changes)
+    db.apply(p['id'], op)
+    state = db.snapshot(p['id'])['state']
+    assert state['observations'][observation]['provenance'] == row['provenance']
+    assert state['intervals'][gap['id']]['repair_id'] == 'deleted-range'
+    db.apply(p['id'], Operation(id=uid(), base_revision=1, label='Undo replacement', compensates=op.id, changes=[{**change, 'before': change['after'], 'after': None} for change in changes]))
+    assert not db.snapshot(p['id'])['state']['observations']
