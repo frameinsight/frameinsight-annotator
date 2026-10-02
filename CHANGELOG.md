@@ -1,8 +1,10 @@
 # Changelog
 
-## 3.8.0
+## 3.8.1
 
-Play a source video and press **C** to cut without stopping playback. Select sections to remove/restore, undo or redo edits, then combine the remaining sections into a new MP4 at the original resolution. Includes frame stepping, slow playback, migration of saved 3.7.0 selections and optional playback previews for unsupported source formats. See the [release notes](docs/releases/v3.8.0.md).
+Play a source video and press **C** to cut without stopping playback. Select sections to remove/restore, undo or redo edits, then combine the remaining sections into a new MP4 at the original resolution. Includes frame stepping, slow playback, migration of saved 3.7.0 selections and optional playback previews for unsupported source formats. See the [release notes](docs/releases/v3.8.1.md).
+
+Version 3.8.0 was withheld when clean-install checks caught an unintended dependency version change. Version 3.8.1 restores the original dependency lock.
 
 ## 3.7.0
 
