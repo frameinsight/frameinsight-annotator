@@ -129,3 +129,25 @@ describe('recovery as one saved undoable action',()=>{
    s().navigate(2);s().setBox('person_visible',[110,80,180,240]);await s().saveNow();for(const f of [3,4,6,7])expect(getBox(at(f),'person_visible')).toBeNull();
   });
  });
+
+it('automatically fills legacy overlapping deletions whose fragments have different repair markers',async()=>{
+ const s=()=>useStore.getState(),project=clone(s().project!),d=project.state;
+ deleteGeometryRange(d,'v','p',2,8,20,'person_visible');
+ const gap=Object.values(d.intervals).find(g=>g.start===2)!;delete gap.repair_id;
+ for(const [id,start,end] of [['legacy-left',3,4],['legacy-right',6,7]] as [string,number,number][]){d.intervals[id]={...gap,id,start,end};}
+ useStore.setState({project});s().navigate(3);s().setBox('person_visible',[130,80,180,240]);await s().saveNow();
+ s().navigate(7);s().setBox('person_visible',[230,80,280,240]);await s().saveNow();
+ const at=(f:number)=>Object.values(s().project!.state.observations).find(o=>o.identity_uuid==='p'&&o.frame_index===f);
+ expect(getBox(at(5),'person_visible')).toEqual([180,80,230,240]);
+ for(const f of [2,8])expect(getBox(at(f),'person_visible')).toBeNull();
+});
+
+it('editing an already drawn boundary repairs saved legacy overlaps and remains undoable',async()=>{
+ const s=()=>useStore.getState(),project=clone(s().project!),d=project.state;
+ deleteGeometryRange(d,'v','p',2,8,20,'person_visible');d.intervals={};
+ for(const [id,start,end,repair_id] of [['left',2,2,'whole'],['middle',4,6,'whole'],['right',8,8,'whole'],['overlap-a',4,4,'old-a'],['overlap-b',6,6,'old-b']] as [string,number,number,string][])d.intervals[id]={id,start,end,repair_id,video_id:'v',identity_uuid:'p',geometry:'person_visible',reason:'unknown',evidence_note:''};
+ for(const [frame,x,repair_id] of [[3,130,'old-a'],[7,230,'old-b']] as [number,number,string][]){const row=emptyObservation('v',frame,'p','s');row.person_visible=[x,80,x+50,240];row.provenance.person_visible={origin:'manual',proposal_id:null,human_corrected:false,repair_id};d.observations[row.id]=row;}
+ useStore.setState({project});const before=clone(d);s().navigate(7);s().setBox('person_visible',[230,80,280,240]);await s().saveNow();
+ const at=(f:number)=>Object.values(s().project!.state.observations).find(o=>o.identity_uuid==='p'&&o.frame_index===f);expect(getBox(at(5),'person_visible')).toEqual([180,80,230,240]);
+ for(const f of [2,8])expect(getBox(at(f),'person_visible')).toBeNull();s().undo();await s().saveNow();expect(s().project!.state).toEqual(before);
+});

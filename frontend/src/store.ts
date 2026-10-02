@@ -147,7 +147,7 @@ export const useStore=create<Store>((set,get)=>({
  },
  editObservation:(label,fn,propagate=true)=>{
   const s=get();if(!s.activeId||s.hiddenIds[s.activeId]){s.toast('Select a visible person or press N first');return;}
-  let repaired=0;const ok=s.commit(label,d=>{let o=currentObservation(s.project,s.videoId,s.frame,s.activeId);const marker=repairMarker(d,s.videoId,s.activeId,s.geometry,s.frame)||o?.provenance[s.geometry]?.repair_id;if(o)o=d.observations[o.id];
+  let repaired=0;const ok=s.commit(label,d=>{let o=currentObservation(s.project,s.videoId,s.frame,s.activeId);const marker=repairMarker(d,s.videoId,s.activeId,s.geometry,s.frame)||(o&&d.observations[o.id]?.provenance[s.geometry]?.repair_id);if(o)o=d.observations[o.id];
    else{const segment=prepareGeometryFrame(d,s.videoId,s.activeId,s.frame,s.geometry);
     o=emptyObservation(s.videoId,s.frame,s.activeId,segment.id);d.observations[o.id]=o;
    }

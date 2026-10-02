@@ -48,7 +48,7 @@ To redraw part of a deleted range:
 2. Draw a new box on the first frame you want back, for example **1000**.
 3. Draw a new box on the last frame you want back, for example **1100**. Drawing in either order works.
 4. The frames between those two new boxes fill automatically, including after saving and reopening. Deleted frames outside your two boxes stay Hidden.
-5. Inspect the result and adjust any box that needs correction. **Ctrl+Z** undoes the last draw and its automatic fill together.
+5. Inspect the result and adjust any box that needs correction. Moving or resizing a replacement boundary also retries its automatic fill. **Ctrl+Z** undoes the last draw and its automatic fill together.
 
 If the boundary boxes already exist, press **Shift+K** or right-click a box or its label and choose **Interpolate between frames**. Enter the two frame numbers, check the preview, and click **Interpolate frames**. This also works for ranges deleted in older app versions. Both frames need a box for the same track and class; existing boxes inside are kept.
 

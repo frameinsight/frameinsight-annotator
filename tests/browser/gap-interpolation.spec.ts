@@ -44,3 +44,15 @@ test('explicit interpolation fills a chosen gap between existing boxes and undo 
  await canvas(page).press('Control+z');await saved(page);expect((await state(request)).state).toEqual(before.state);
  await canvas(page).click({button:'right'});await expect(page.getByRole('menuitem',{name:'Interpolate between frames… ⇧ K',exact:true})).toBeVisible();
 });
+
+test('drawing automatically repairs overlapping deletions saved by older versions',async({page,request})=>{
+ await remove(page,4,18);const p=await state(request),base:any=Object.values(p.state.intervals)[0];
+ const changes:any[]=[{collection:'intervals',id:base.id,before:base,after:Object.fromEntries(Object.entries(base).filter(([key])=>key!=='repair_id'))}];
+ for(const [start,end] of [[5,8],[12,16]]){const id=crypto.randomUUID();changes.push({collection:'intervals',id,before:null,after:{...changes[0].after,id,start,end}});}
+ const r=await request.post(`/api/projects/${projectId}/operations`,{data:{id:crypto.randomUUID(),base_revision:p.revision,label:'Legacy overlap fixture',changes}});expect(r.ok()).toBe(true);
+ await page.reload();await page.getByTestId('open-project-'+projectId).click();await page.getByTestId('open-video-'+videoId).click();await page.getByRole('button',{name:'Select Track 1',exact:true}).click();
+ await seek(page,6);await draw(page,120);const first=await state(request);expect(box(first,10)).toBeUndefined();
+ await seek(page,14);await draw(page,280);const filled=await state(request);expect(box(filled,10)[0]).toBeCloseTo(200,0);
+ for(const f of [4,5,15,16,17,18])expect(box(filled,f)).toBeUndefined();for(let f=0;f<=22;f++)expect(box(filled,f,'class:Extended')).toEqual(box(p,f,'class:Extended'));
+ await canvas(page).press('Control+z');await saved(page);expect((await state(request)).state).toEqual(first.state);
+});

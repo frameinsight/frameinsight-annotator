@@ -94,3 +94,11 @@ describe('interpolation between explicit boundary frames',()=>{
   expect(previewBetweenFrames(d,'v','p','person_visible',1050,1030,2000).canRestore).toBe(false);
  });
 });
+
+it('normalizing legacy repair markers does not discard recoverable original boxes',()=>{
+ const {d,original,history}=setup(),before=structuredClone(d);
+ for(const gap of Object.values(d.intervals))gap.repair_id='shared-legacy-deletion';
+ history.push(operation(before,d));
+ expect(preview(d,1000,1100,'original',history).restoredBoxes).toBe(101);
+ recover(d,1000,1100,'original',history);expect(at(d,1050).person_visible).toEqual(at(original,1050).person_visible);
+});

@@ -62,7 +62,7 @@ export function prepareVisibleFrame(d:Domain,videoId:string,identityId:string,fr
  d.segments[id]=segment;return segment;
 }
 
-function scopeGeometryGaps(d:Domain,videoId:string,identityId:string,geometry:import('./types').Geometry){
+export function scopeGeometryGaps(d:Domain,videoId:string,identityId:string,geometry:import('./types').Geometry){
  // Split legacy all-box gaps into scopes before restoring just the drawn type.
  for(const gap of Object.values(d.intervals))if(gap.video_id===videoId&&gap.identity_uuid===identityId&&!gap.geometry){
   const known=identityGeometryKeys(d,identityId),keys=[...new Set([...(known.some(k=>k==='person_ext'||k==='person_visible')?['person_visible','person_ext']:[]),...known,geometry])];gap.geometry=keys[0];for(const key of keys.slice(1)){const id=uuid();d.intervals[id]={...gap,id,geometry:key};}

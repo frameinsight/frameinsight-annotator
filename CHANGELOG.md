@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.6.1
+
+Fix automatic interpolation in older projects with overlapping deleted ranges. Replacement boxes and saved repair markers now agree across overlapping fragments; drawing or adjusting a boundary fills between replacement boxes without a separate command. Later deletions stay blocked, and Undo and original-box recovery are preserved.
+
 ## 3.6.0
 
 Refill deleted sections by drawing two replacement boxes for the same track and class. Includes an explicit **Interpolate between frames** command (**Shift+K**), previews, and whole-action Undo/Redo. Existing boxes and hidden frames outside the selected section are kept. Repeated overlapping deletions now retain the latest range correctly. See the [release notes](docs/releases/v3.6.0.md).

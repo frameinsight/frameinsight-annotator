@@ -42,7 +42,7 @@ function originals(history:Operation[],videoId:string,identityId:string,start:nu
   }
   for(const c of operation.changes)if(c.collection==='intervals'&&match(c.after)){
    const gap=c.after;
-   for(let frame=Math.max(start,gap.start);frame<=Math.min(end,gap.end??end);frame++)if(!oldGaps.some(g=>covers(g,frame))||(gap.repair_id&&!oldGaps.some(g=>(g.repair_id||g.id)===gap.repair_id)))change(frame);
+   for(let frame=Math.max(start,gap.start);frame<=Math.min(end,gap.end??end);frame++)if(!oldGaps.some(g=>covers(g,frame))||(!c.before&&gap.repair_id===gap.id&&!oldGaps.some(g=>(g.repair_id||g.id)===gap.repair_id)))change(frame);
   }
   for(const [frame,row] of deleted)change(frame,{observation:row,segmentStatus:status.get(row.segment_id)||'unresolved'});
   effects.set(operation.id,changed);updateSegments();
