@@ -134,3 +134,16 @@ def test_display_rotation_is_preserved_without_resizing(client,tmp_path):
     with av.open(io.BytesIO(client.get(result['download_url']).content)) as output:
         frames=list(output.decode(video=0));assert len(frames)==2
         assert all((f.width,f.height,f.rotation)==(160,120,90) for f in frames)
+
+
+def test_source_playback_and_timing_match_decoded_frames(client,reviewed_project):
+    source=Path(db.snapshot(reviewed_project[0])['videos'][reviewed_project[1]]['source']);job=scan(client,source)
+    prefix='/api/video-trims/'+job['id']
+    assert client.get(prefix+'/source',headers={'Range':'bytes=0-99'}).status_code==206
+    assert client.get(prefix+'/source').content==source.read_bytes()
+    timing=client.get(prefix+'/timing').json()
+    with av.open(str(source)) as video:
+        origin=(video.start_time or 0)/av.time_base
+        frames=list(video.decode(video=0))
+        assert timing['timestamps']==pytest.approx([float(f.pts*f.time_base)-origin for f in frames])
+        assert timing['duration']>timing['timestamps'][-1]

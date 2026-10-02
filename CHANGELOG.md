@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.8.0
+
+Play a source video and press **C** to cut without stopping playback. Select sections to remove/restore, undo or redo edits, then combine the remaining sections into a new MP4 at the original resolution. Includes frame stepping, slow playback, migration of saved 3.7.0 selections and optional playback previews for unsupported source formats. See the [release notes](docs/releases/v3.8.0.md).
+
 ## 3.7.0
 
 Standalone **Trim sections** prepares a separate MP4 before annotation. Drag handles to keep multiple sections; the output preserves source dimensions, aspect ratio, selected-frame timing and audio while starting again at frame 0. The original file and annotations stay intact. JSON downloads default to the video name, accept a custom filename, and show stale or missing export errors before downloading. See the [release notes](docs/releases/v3.7.0.md).

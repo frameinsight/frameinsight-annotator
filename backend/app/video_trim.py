@@ -76,6 +76,7 @@ def scan_video(jid):
         with av.open(job['source']) as source:
             if not source.streams.video:raise ValueError('This file has no video stream.')
             stream=source.streams.video[0];tb=stream.time_base
+            media_start_seconds=float(Fraction(source.start_time or 0, av.time_base))
             width,height=stream.codec_context.width,stream.codec_context.height
             for n,frame in enumerate(source.decode(stream)):
                 if n==0:
@@ -95,6 +96,7 @@ def scan_video(jid):
             sar=Fraction(stream.sample_aspect_ratio or 1)
             info={'name':job['name'],'width':width,'height':height,'sample_aspect_num':sar.numerator,'sample_aspect_den':sar.denominator,'frame_count':len(rows),'time_base_num':tb.numerator,'time_base_den':tb.denominator,'rate_num':rate.numerator,'rate_den':rate.denominator,'stream_index':stream.index,'has_audio':bool(source.streams.audio),'frames':rows}
         info['display_matrix']=display_matrix
+        info['media_start_seconds']=media_start_seconds
         (folder(jid)/'metadata.json').write_text(json.dumps(info))
         if not cancelled(jid):db.job_update(jid,status='completed',progress=len(rows),total=len(rows),metadata={k:v for k,v in info.items() if k!='frames'})
     except Exception as e:
@@ -130,6 +132,20 @@ def preview_frame(jid:str,frame_index:int):
                 if frame.pts is not None and frame.pts>pts:break
         if not dest.exists():raise ValueError('This source cannot seek to the requested frame.')
     return FileResponse(dest,media_type='image/jpeg',headers={'Cache-Control':'private, max-age=86400, immutable'})
+
+
+@router.get('/{jid}/source')
+def source_video(jid:str):
+    metadata(jid)
+    return FileResponse(trim_job(jid,'trim_scan')['source'])
+
+
+@router.get('/{jid}/timing')
+def source_timing(jid:str):
+    info=metadata(jid);tb=Fraction(info['time_base_num'],info['time_base_den'])
+    origin=info.get('media_start_seconds',float(info['frames'][0]['pts']*tb))
+    return {'timestamps':[float(row['pts']*tb)-origin for row in info['frames']],
+            'duration':float((info['frames'][-1]['pts']+info['frames'][-1]['duration'])*tb)-origin}
 
 
 @router.post('/{jid}/render')

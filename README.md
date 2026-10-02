@@ -70,9 +70,11 @@ The app does not recognize objects or guarantee identity correctness. Human revi
 ## Trim sections before annotation
 
 1. From the project/video homepage, choose **Trim sections**, then choose the source video.
-2. Drag each section’s two handles to the first and last frames you want to keep. Add another section to keep a later part. A large preview follows the handle; exact frame inputs are optional.
-3. Enter a filename and click **Create new video**. Kept sections join in source order, with overlapping selections combined.
-4. Play the new video, click **Save new video (.mp4)**, then use **New video** in your project to upload it.
+2. Play the video and press **C** at each cut point. Playback continues. You can also drag the playhead or step frame by frame before cutting. A cut starts a new section at the current frame.
+3. Click a section in the timeline/list and press **Delete** (or **Remove selected section**). Removed sections stay visible in red and can be restored. Use **Ctrl+Z** / **Ctrl+Shift+Z** to undo/redo cuts and removals.
+4. Enter a filename and click **Combine & save video**. Play the result, click **Save new video (.mp4)**, then upload it using **New video**.
+
+**Space** plays/pauses; left/right arrows step frames when focus is outside a control. Playback speeds are **0.25×, 0.5×, 1× and 2×**. Shortcuts do not fire while typing. If your browser cannot play the source format, choose **Prepare playback preview**; cuts and the original file are retained. Existing kept sections from 3.7.0 migrate to the new timeline.
 
 Trimming changes duration only: width, height and pixel aspect ratio are preserved, with no cropping, resizing or padding. Selected-frame timing is retained, including variable frame rates; new frame numbers start at 0. The first audio track is retained when present. The output is re-encoded as H.264/AAC, so file size and compression can change. Odd pixel dimensions require H.264 4:4:4, which some browser players cannot preview; the output still retains its dimensions and can be imported into Frameinsight. This tool creates a separate file and never changes saved annotations or the original video. It is not part of the annotation canvas.
 
@@ -159,7 +161,7 @@ Browser tests need an **isolated** server at `127.0.0.1:5173` and Chrome. Set a 
 FRAMEINSIGHT_TEST_URL=http://127.0.0.1:5173 npm --prefix frontend run test:e2e
 ```
 
-Build and release instructions are in [Windows packaging](docs/WINDOWS.md), [Debian packaging](docs/LINUX.md) and the [release workflow](.github/workflows/desktop-release.yml). See the [3.7.0 verification record](docs/releases/v3.7.0-acceptance.md) for test coverage and limits.
+Build and release instructions are in [Windows packaging](docs/WINDOWS.md), [Debian packaging](docs/LINUX.md) and the [release workflow](.github/workflows/desktop-release.yml). See the [3.8.0 verification record](docs/releases/v3.8.0-acceptance.md) for test coverage and limits.
 
 ## Contributing
 

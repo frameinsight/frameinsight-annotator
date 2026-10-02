@@ -1,11 +1,11 @@
-FRAMEINSIGHT 3.7.0 — WINDOWS 11 (64-bit)
+FRAMEINSIGHT 3.8.0 — WINDOWS 11 (64-bit)
 
 INSTALL AND OPEN
 1. Download Window_setup.exe from the official Frameinsight release:
    https://github.com/frameinsight/frameinsight-annotator/releases/latest
 2. Open Window_setup.exe and follow the installer.
 3. Double-click Frameinsight on your desktop. Your normal browser opens.
-4. Check that the app says LOCAL · 3.7.0.
+4. Check that the app says LOCAL · 3.8.0.
 
 No terminal, Python, Node or GPU setup is needed. Annotation works offline;
 internet is needed for checking and downloading updates.
@@ -107,6 +107,7 @@ To remove old work, open its project and use the trash button in the video row.
 Confirm the filename. Deleting the video and annotations cannot be undone.
 Original files and downloaded exports are not deleted.
 
-Prepare a shorter video: choose Trim sections on the homepage, drag the section
-handles, create and save a new MP4, then upload that file using New video.
+Prepare a shorter video: choose Trim sections on the homepage. Play and press C
+to cut. Select a section and press Delete to remove it; Ctrl+Z undoes an edit.
+Choose Combine & save video, download the MP4, then upload it using New video.
 Trimming keeps the original width and height; the original file stays intact.

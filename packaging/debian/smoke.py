@@ -63,6 +63,8 @@ def trim_sections_smoke(body, boundary):
     with urllib.request.urlopen(query, timeout=30) as response:
         scan = finished(json.load(response))
     info = scan['metadata']; assert info['frame_count'] == 24
+    timing = request('/api/video-trims/' + scan['id'] + '/timing'); assert len(timing['timestamps']) == 24
+    assert request('/api/video-trims/' + scan['id'] + '/source', raw=True)
     result = finished(request('/api/video-trims/' + scan['id'] + '/render', {'sections': [{'start': 0, 'end': 2}, {'start': 20, 'end': 23}], 'name': 'Prepared.mp4'}))
     with av.open(io.BytesIO(request(result['download_url'], raw=True))) as video:
         frames = list(video.decode(video=0))
