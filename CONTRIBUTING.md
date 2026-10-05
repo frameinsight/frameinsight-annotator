@@ -2,7 +2,11 @@
 
 Use the source setup and test commands in the README. Work against an isolated `FRAMEINSIGHT_DATA` directory; never run acceptance tests on an annotator’s working database.
 
-For a bug report, include the app version, operating system, reproduction steps, expected behavior and actual behavior. Synthetic videos and minimal anonymized annotations are ideal. Do not include private videos, credentials or personal annotation data.
+Use [New issue](https://github.com/frameinsight/frameinsight-annotator/issues/new/choose) and choose **Bug report** or **Feature request**. Report one problem or idea per issue and check existing issues first.
+
+The bug form requires your operating system and version, Frameinsight version, installation method, browser, actual behavior, reproduction steps, expected behavior and how often it happens. Find the app version beside **LOCAL** at the top of Frameinsight. If the app cannot open or you cannot find a version, explain that in the field. Include relevant frame numbers, track IDs and class names in the steps. Screenshots, short recordings and error logs are optional; synthetic videos and minimal anonymized annotations are ideal. Do not include private videos, credentials or personal annotation data.
+
+The feature form asks about your current workflow, proposed behavior and who benefits. Blank issues are disabled for regular contributors; GitHub still allows maintainers to create them.
 
 Before opening a pull request:
 

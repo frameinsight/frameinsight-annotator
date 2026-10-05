@@ -1,0 +1,49 @@
+name: Feature request
+description: Suggest a new feature or an improvement to an existing workflow.
+title: "[Feature]: "
+labels: [enhancement]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Describe one improvement per issue. If something is broken, please use the Bug report form instead.
+        Check [existing requests](https://github.com/frameinsight/frameinsight-annotator/issues?q=is%3Aissue%20label%3Aenhancement) first. Attach only examples that you can share publicly.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What are you trying to do?
+      description: Describe your current workflow and what makes it difficult or slow.
+      placeholder: When several tracks overlap, it is difficult to select the one I need.
+    validations:
+      required: true
+  - type: textarea
+    id: proposed-behavior
+    attributes:
+      label: How should it work?
+      description: Explain the desired behavior, where you would use it, and what should happen after each action.
+      placeholder: I would like to right-click the overlapping area, see the tracks there, and choose one from a list.
+    validations:
+      required: true
+  - type: textarea
+    id: benefit
+    attributes:
+      label: Who would this help, and why?
+      description: Tell us how often you need this and what it would improve.
+    validations:
+      required: true
+  - type: textarea
+    id: workaround
+    attributes:
+      label: What do you do currently? (optional)
+      description: Describe any workaround or alternative you have tried.
+  - type: input
+    id: environment
+    attributes:
+      label: Operating system and Frameinsight version (optional)
+      description: Include these if the request depends on your computer or app version.
+      placeholder: Windows 11, Frameinsight 3.9.1
+  - type: textarea
+    id: examples
+    attributes:
+      label: Screenshots or examples (optional)
+      description: Drag an image here or link to an example that helps explain the idea.
