@@ -96,3 +96,60 @@ def test_native_import_keeps_id_used_only_in_another_video(exported):
     assert result['mapping'] == [{'source': 7, 'track_id': 7}]
     db.apply(p['id'], Operation(id='import', base_revision=p['revision'], label='Import', changes=result['changes']))
     assert next(iter(annotation_document(p['id'], v)['state']['identities'].values()))['person_id'] == 7
+
+
+def test_replace_is_video_scoped_preserves_ids_and_undo_restores_every_entity(exported):
+    doc, p, v = exported
+    imported = inspect(doc, p, v)
+    db.apply(p['id'], Operation(id='first', base_revision=0, label='Seed', changes=imported['changes']))
+    before = db.snapshot(p['id'])
+    who = imported['changes'][0]['id']
+    other = add_video(p['id'])['id']
+    # An old cross-video identity must survive, with its other video untouched.
+    rows = [('segments', MODELS['segments'](id='shared-segment', video_id=other, identity_uuid=who, start=0)),
+            ('observations', MODELS['observations'](id='other-box', video_id=other, identity_uuid=who, segment_id='shared-segment', frame_index=0, boxes={'class:Visible':[3,4,30,40]})),
+            ('identities', MODELS['identities'](id='only-here', person_id=8)),
+            ('segments', MODELS['segments'](id='only-here', video_id=v, identity_uuid='only-here', start=0)),
+            ('links', MODELS['links'](id='link', source=who, target='only-here', relation='different', evidence_note='test')),
+            ('reviews', MODELS['reviews'](id='review', video_id=v, frame_index=0)),
+            ('reviews', MODELS['reviews'](id='other-review', video_id=other, frame_index=0))]
+    db.apply(p['id'], Operation(id='shared', base_revision=before['revision'], label='Shared', changes=[
+        {'collection':col,'id':row.id,'before':None,'after':row.model_dump(mode='json')} for col,row in rows]))
+    before = db.snapshot(p['id'])
+    result = preview(json.dumps(doc).encode(), 'labels.json', before, v, 'frameinsight', mode='replace')
+    assert result['mapping'] == [{'source':7,'track_id':7}]
+    assert result['replaced'] == {'tracks':2,'boxes':6}
+    assert db.snapshot(p['id']) == before  # confirmation/preview is read-only
+    db.apply(p['id'], Operation(id='replace', base_revision=before['revision'], label='Replace', changes=result['changes']))
+    after = db.snapshot(p['id'])
+    assert after['state']['identities'][who] == before['state']['identities'][who]
+    for col, key in [('segments','shared-segment'), ('observations','other-box'), ('reviews','other-review')]:
+        assert after['state'][col][key] == before['state'][col][key]
+    assert 'only-here' not in after['state']['identities'] and not after['state']['links']
+    assert 'review' not in after['state']['reviews']
+    assert len([o for o in after['state']['observations'].values() if o['video_id'] == v]) == 3
+    inverse = [{**c,'before':c['after'],'after':c['before']} for c in result['changes']]
+    db.apply(p['id'], Operation(id='undo-replace', base_revision=after['revision'], label='Undo', compensates='replace', changes=inverse))
+    assert db.snapshot(p['id'])['state'] == before['state']
+    db.apply(p['id'], Operation(id='redo-replace', base_revision=after['revision']+1, label='Redo', compensates='undo-replace', changes=result['changes']))
+    assert db.snapshot(p['id'])['state'] == after['state']
+
+
+def test_replace_preview_validates_before_mutation_and_rejects_stale_apply(exported, client):
+    doc, p, v = exported
+    route = f'/api/projects/{p["id"]}/imports/annotations/preview?video_id={v}'
+    def request(document, mode='replace', format='frameinsight'):
+        return client.post(route, files={'file':('labels.json',json.dumps(document))},data={'format':format,'mode':mode})
+    invalid = copy.deepcopy(doc); invalid['state']['identities']['who']['person_id'] = None
+    assert request(invalid).status_code == 422
+    assert request(doc, 'unknown').status_code == 422
+    assert request(doc, format='yolo').status_code == 422
+    assert db.snapshot(p['id']) == p
+    result = request(doc).json()
+    assert result['mode'] == 'replace'
+    initial = inspect(doc, p, v)
+    db.apply(p['id'], Operation(id='competing', base_revision=0, label='Another edit', changes=initial['changes']))
+    state = db.snapshot(p['id'])['state']
+    response = client.post(f'/api/projects/{p["id"]}/operations',json={'id':'stale','base_revision':0,'label':'Replace','changes':result['changes']})
+    assert response.status_code == 409
+    assert db.snapshot(p['id'])['state'] == state

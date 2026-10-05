@@ -301,3 +301,62 @@ def test_handoff_does_not_wait_for_a_reused_linux_pid(monkeypatch):
     monkeypatch.setattr(update_handoff.Path, 'read_text', lambda self: '123 (server) ' + ' '.join(fields))
     assert not update_handoff.linux_process_alive(123, {123: 'original-start-time'})
     assert update_handoff.linux_process_alive(123, {})
+
+
+@pytest.mark.skipif(update_handoff.sys.platform != 'linux', reason='Debian handoff')
+def test_debian_staging_is_readable_outside_private_data_and_verified(tmp_path):
+    import shutil
+    private = tmp_path / 'private'; private.mkdir(mode=0o700)
+    source = private / 'package with spaces.deb'; source.write_bytes(PACKAGE); source.chmod(0o600)
+    staged = update_handoff.stage_debian_package(source, len(PACKAGE), hashlib.sha256(PACKAGE).hexdigest())
+    try:
+        assert staged.parent.parent == update_handoff.Path('/tmp')
+        assert staged.read_bytes() == PACKAGE
+        assert staged.stat().st_mode & 0o777 == 0o644
+        assert staged.parent.stat().st_mode & 0o777 == 0o755
+        assert private.stat().st_mode & 0o777 == 0o700
+        assert source.stat().st_mode & 0o777 == 0o600
+    finally:
+        shutil.rmtree(staged.parent)
+    with pytest.raises(ValueError, match='changed'):
+        update_handoff.stage_debian_package(source, len(PACKAGE), '0' * 64)
+
+
+@pytest.mark.skipif(update_handoff.sys.platform != 'linux', reason='Debian handoff')
+@pytest.mark.parametrize('exit_code', [0, 19])
+def test_debian_handoff_executes_outside_runtime_and_records_installer_errors(tmp_path, exit_code):
+    import os
+    import shutil
+    import subprocess
+    import sys
+    private = tmp_path / 'private'; private.mkdir(mode=0o700)
+    source = private / 'test package.deb'; source.write_bytes(PACKAGE)
+    binary = tmp_path / 'bin'; binary.mkdir()
+    # Acts only as the package manager, never modifies the host machine.
+    installer = binary / 'gdebi-gtk'
+    installer.write_text(f'''#!/bin/sh
+readlink /proc/$PPID/exe
+pwd
+printf '%s\\n' "$1"
+cat "$1"
+printf 'Diagnostic from package manager\\n' >&2
+exit {exit_code}
+''')
+    installer.chmod(0o755)
+    zenity = binary / 'zenity'; zenity.write_text('#!/bin/sh\nprintf "Dialog: %s\\n" "$@"\n'); zenity.chmod(0o755)
+    env = dict(os.environ, PATH=str(binary)+':'+os.environ['PATH'])
+    env.pop('LD_LIBRARY_PATH', None)
+    process = subprocess.run([sys.executable, str(update_handoff.Path(update_handoff.__file__)), '--package', str(source),
+        '--sha256', hashlib.sha256(PACKAGE).hexdigest(), '--size', str(len(PACKAGE)), '--server', '2147483647',
+        '--platform', 'debian', '--installer', 'gdebi-gtk'], env=env, capture_output=True, timeout=15)
+    assert process.returncode == exit_code, process.stderr.decode()
+    log = (private/'install-handoff.log').read_text()
+    assert '/usr/bin/dash' in log or '/usr/bin/bash' in log or '/bin/dash' in log or '/bin/bash' in log
+    assert '\n/\n' in log
+    assert 'Diagnostic from package manager' in log and f'exit code: {exit_code}' in log
+    staged = next(line for line in log.splitlines() if line.startswith('/tmp/frameinsight-update-'))
+    assert update_handoff.Path(staged).read_bytes() == PACKAGE
+    shutil.rmtree(update_handoff.Path(staged).parent)
+    if exit_code:
+        assert 'The system installer did not complete' in log
+        assert 'Your annotations are unchanged' in log

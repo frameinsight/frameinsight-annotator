@@ -12,6 +12,7 @@ from pathlib import Path
 import shutil
 import subprocess
 import sys
+import tempfile
 import time
 
 
@@ -83,6 +84,72 @@ def system_environment():
     return environment
 
 
+def stage_debian_package(package, size, checksum):
+    """PackageKit/_apt cannot traverse the private annotation data directory.
+
+    Stage only the public release installer, never project data. The unique
+    directory is not writable by other users; verify the copied bytes before
+    making them readable by the system package manager.
+    """
+    directory = Path(tempfile.mkdtemp(prefix='frameinsight-update-', dir='/tmp'))
+    try:
+        target = directory / package.name
+        digest, copied = hashlib.sha256(), 0
+        with package.open('rb') as source, target.open('xb') as destination:
+            for chunk in iter(lambda: source.read(1024 * 1024), b''):
+                copied += len(chunk)
+                if copied > size:
+                    raise ValueError('Downloaded package changed while preparing installation')
+                digest.update(chunk)
+                destination.write(chunk)
+        if copied != size or digest.hexdigest() != checksum:
+            raise ValueError('Downloaded package changed while preparing installation')
+        target.chmod(0o644)
+        directory.chmod(0o755)
+        return target
+    except Exception:
+        shutil.rmtree(directory)
+        raise
+
+
+# Replace the frozen helper with a system shell before starting the installer.
+# A waiting frozen helper would itself trigger the package's running-app guard.
+# Arguments are passed separately, never interpolated into shell program text.
+DEBIAN_HANDOFF = r'''
+log=$1
+package=$2
+shift 2
+cd / || exit 1
+printf '%s\n' 'Opening verified installer. Its output follows.' >> "$log"
+"$@" >> "$log" 2>&1
+result=$?
+printf '\nInstaller process exit code: %s\n' "$result" >> "$log"
+if [ "$result" -ne 0 ]; then
+    message="The system installer did not complete (exit $result). Your annotations are unchanged. Close Frameinsight and open the verified package manually: $package
+
+Details: $log"
+    if command -v zenity >/dev/null 2>&1; then
+        zenity --error --title='Frameinsight update' --text="$message" --width=520 >> "$log" 2>&1
+    fi
+else
+    printf '%s\n' 'Installer closed. Reopen Frameinsight to check the installed version. Closing or cancelling the installer does not confirm an update.' >> "$log"
+fi
+exit "$result"
+'''
+
+
+def launch_debian(package, size, checksum, installer, log):
+    # Resolve the system installer before creating the staged copy.
+    installer_command('debian', package, installer)
+    staged = stage_debian_package(package, size, checksum)
+    command = installer_command('debian', staged, installer)
+    log.write_text('Verified Debian update prepared. Project data stays private.\n', encoding='utf-8')
+    # The system shell survives replacement of /opt/frameinsight and records
+    # failures instead of throwing away the package manager's stdout/stderr.
+    os.execve('/bin/sh', ['/bin/sh', '-c', DEBIAN_HANDOFF, 'frameinsight-update',
+                         str(log), str(staged), *command], system_environment())
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--package', required=True, type=Path)
@@ -104,6 +171,9 @@ def main():
                 digest.update(chunk)
         if digest.hexdigest() != args.sha256:
             raise ValueError('The downloaded package checksum changed. Nothing was installed.')
+        if args.platform == 'debian':
+            launch_debian(args.package, args.size, args.sha256, args.installer, log)
+            return 0
         subprocess.Popen(installer_command(args.platform, args.package, args.installer),
                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=system_environment())
         log.write_text('Verified installer opened. Complete its prompts; then reopen Frameinsight.\n', encoding='utf-8')

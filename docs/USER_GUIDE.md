@@ -144,12 +144,12 @@ Ordinary YOLO detection labels cannot tell the app which detections belong to on
 
 ## Reopen exported annotation JSON
 
-1. Create a new project and add the original video. Wait for preparation to finish.
+1. Open the original video, or add it to a project. Wait for preparation to finish.
 2. Choose **Import annotations → Frameinsight annotations — JSON** and select the export.
-3. Choose **Preview import**. Check the counts and ID mapping. The video dimensions, frame count and available SHA-256 fingerprints must match.
-4. Choose **Add annotations**. Boxes, classes, numeric IDs (when unused), keyframes and deleted intervals remain editable. Undo reverses the whole import.
+3. Choose **Add to existing annotations** to keep current work, or **Replace this video’s annotations** to review a revised submission alone.
+4. Choose **Preview import**. Check the counts and ID mapping. Dimensions, frame count and available SHA-256 fingerprints must match. For replacement, check the confirmation naming the video and affected tracks/boxes, then choose **Replace annotations**. Other videos are kept and the file’s numeric IDs are preserved. **Ctrl+Z** restores the previous annotations; **Ctrl+Shift+Z** reapplies the import. Add mode keeps current tracks and remaps colliding IDs.
 5. Review playback and validate again before a new export. Previous validation and historical deleted boxes/undo records are not imported; use a project backup for full history.
 
-Only single-video Frameinsight v2/v3 exports are accepted. Existing tracks are kept; numeric IDs colliding in the destination video are remapped rather than silently joined. Import into an unannotated video to preserve all original numeric IDs.
+Only single-video Frameinsight v2/v3 exports are accepted. Boxes, class styles, keyframes and hidden intervals remain editable. Neither mode silently joins tracks. Original videos and other videos’ annotations stay unchanged.
 
 Track numbers are local to each video: separate videos in one project can each start at ID 1. Duplicate numbers within one video are rejected. In exported data, use `video_id` together with `track_id` (or the internal `identity_uuid`); matching numbers across videos do not imply the same object. Existing IDs are not automatically renumbered. To change a saved track number, select the track and press **I**.

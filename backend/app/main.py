@@ -320,10 +320,10 @@ def download_export(eid:str,filename:str|None=None):
         name=f'frameinsight-{e["settings"]["format"]}-{eid[:8]}.zip'
     return FileResponse(e['path'],filename=name,media_type='application/json' if is_json else 'application/zip',headers={'X-Content-Type-Options':'nosniff'})
 @app.post('/api/projects/{pid}/imports/annotations/preview')
-def annotation_preview(pid:str,video_id:str,file:UploadFile=File(...),format:str=Form('yolo'),frame_base:int=Form(0),coordinate_base:int=Form(0),class_names:str=Form(''),clip_boxes:bool=Form(False)):
+def annotation_preview(pid:str,video_id:str,file:UploadFile=File(...),format:str=Form('yolo'),frame_base:int=Form(0),coordinate_base:int=Form(0),class_names:str=Form(''),clip_boxes:bool=Form(False),mode:str=Form('add')):
     from .annotation_import import preview
     try:
-        return preview(file.file.read(50*1024*1024+1),file.filename or 'labels.txt',db.snapshot(pid),video_id,format,frame_base,coordinate_base,json.loads(class_names) if class_names.strip() else None,clip_boxes)
+        return preview(file.file.read(50*1024*1024+1),file.filename or 'labels.txt',db.snapshot(pid),video_id,format,frame_base,coordinate_base,json.loads(class_names) if class_names.strip() else None,clip_boxes,mode)
     except (UnicodeError, zipfile.BadZipFile) as error:
         raise ValueError('Use a readable UTF-8 annotation file or ZIP archive') from error
 @app.post('/api/projects/{pid}/imports/cvat')

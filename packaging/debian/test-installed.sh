@@ -9,6 +9,7 @@ id annotator >/dev/null 2>&1 || useradd -m annotator
 python /src/packaging/make_smoke_fixture.py /tmp/frameinsight-numbered.mp4
 runuser -u annotator -- env XDG_DATA_HOME=/tmp/frameinsight-test-data XDG_STATE_HOME=/tmp/frameinsight-test-state \
   python /src/packaging/debian/smoke.py --fixture /tmp/frameinsight-numbered.mp4 --report /tmp/frameinsight-debian-runtime.json
+python /src/packaging/debian/test-update-handoff.py "$package"
 apt-get install -y --reinstall --no-install-recommends "$package"
 python - <<'PY'
 from pathlib import Path

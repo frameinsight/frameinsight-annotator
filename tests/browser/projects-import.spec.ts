@@ -12,7 +12,7 @@ async function openImport(page:Page,format:string,name:string,text:string){
 
 test('project workflow, class order, tracked import, undo, reload and video isolation',async({page,request})=>{
  await page.route('**/api/updates/check*',route=>route.fulfill({json:{status:'current',current_version:'test',can_install:false}}));
- await page.goto('/');await page.getByRole('button',{name:'New project',exact:true}).click();
+ await page.goto('/');await page.getByRole('button',{name:'New project',exact:true}).first().click();
  const name='Project workflow '+Date.now();await page.getByLabel('Project name',{exact:true}).fill(name);await page.getByLabel('Project classes').fill('Visible\nExtended\nHead');
  const created=page.waitForResponse(r=>r.url().endsWith('/api/projects')&&r.request().method()==='POST');await page.getByRole('button',{name:'Create project',exact:true}).click();const pid=(await(await created).json()).id;
  await expect(page.getByRole('heading',{name,exact:true})).toBeVisible();
@@ -50,4 +50,47 @@ test('retrying a failed import save never adds the tracks twice',async({page,req
  await page.route(`**/api/projects/${pid}/operations`,route=>route.fulfill({status:503,json:{detail:'Temporary test outage'}}));
  await page.getByRole('button',{name:'Add annotations',exact:true}).click();await expect(page.getByRole('alert')).toContainText('Import added locally');await expect(page.getByRole('button',{name:'Retry saving import',exact:true})).toBeEnabled();
  await page.unroute(`**/api/projects/${pid}/operations`);await page.getByRole('button',{name:'Retry saving import',exact:true}).click();await expect(page.getByRole('dialog')).toHaveCount(0);const p=await(await request.get('/api/projects/'+pid)).json();expect(Object.keys(p.state.identities)).toHaveLength(1);expect(Object.keys(p.state.observations)).toHaveLength(1);
+});
+
+test('JSON replacement confirms scope, preserves IDs, survives save retry, reload and undo/redo',async({page,request})=>{
+ const pid=(await(await request.post('/api/projects',{data:{name:'Replace JSON review '+Date.now(),classes:['Person']}})).json()).id;
+ const vid=(await(await request.post(`/api/projects/${pid}/videos/local`,{data:{path:'tests/fixtures/numbered.mp4'}})).json()).video_id;
+ const state=async()=>(await request.get('/api/projects/'+pid)).json();
+ await expect.poll(async()=>(await state()).videos[vid].status).toBe('ready');
+ await page.route('**/api/updates/check*',route=>route.fulfill({json:{status:'current',current_version:'test',can_install:false}}));
+ async function reopen(){await page.goto('/');await page.getByTestId('open-project-'+pid).click();await page.getByTestId('open-video-'+vid).click();await expect(page.getByTestId('canvas')).toBeVisible()}
+ await reopen();await openImport(page,'yolo_tracks','0.txt','0 .5 .5 .2 .4 7');
+ await page.getByRole('button',{name:'Add annotations',exact:true}).click();await expect(page.getByRole('dialog')).toHaveCount(0);await expect(page.locator('.save-status')).toHaveText('Saved');
+ const revision=(await state()).revision;
+ const validation=await(await request.post(`/api/videos/${vid}/validate`,{data:{revision,visual_confirmed:true,coverage:'selected_people'}})).json();expect(validation.passed).toBe(true);
+ const job=await(await request.post(`/api/projects/${pid}/exports`,{data:{format:'annotations_json',video_id:vid,revision,validation_id:validation.validation_id}})).json();
+ await expect.poll(async()=>(await(await request.get('/api/jobs/'+job.id)).json()).status).toBe('completed');
+ const exportId=(await(await request.get('/api/jobs/'+job.id)).json()).export_id;
+ const json=await(await request.get('/api/exports/'+exportId)).body();
+ await openImport(page,'yolo_tracks','0.txt','0 .8 .5 .1 .3 9');await page.getByRole('button',{name:'Add annotations',exact:true}).click();await expect(page.getByRole('dialog')).toHaveCount(0);await expect(page.locator('.save-status')).toHaveText('Saved');
+ const before=await state();expect(Object.keys(before.state.identities)).toHaveLength(2);
+ await page.getByRole('button',{name:'Import annotations',exact:true}).click();
+ await page.getByLabel('Annotation file',{exact:true}).setInputFiles({name:'revised.json',mimeType:'application/json',buffer:json});
+ await page.getByRole('button',{name:'Preview import',exact:true}).click();
+ await expect(page.getByRole('region',{name:'Import preview'})).toContainText('Source 7 → Track 1');
+ await selectOption(page,'Import behavior','Replace this video’s annotations');
+ await expect(page.getByRole('region',{name:'Import preview'})).toHaveCount(0);
+ await page.getByRole('button',{name:'Preview import',exact:true}).click();
+ await expect(page.getByRole('region',{name:'Import preview'})).toContainText('Source 7 → Track 7');
+ await expect(page.getByRole('region',{name:'Import preview'})).toContainText('replaces 2 tracks and 2 boxes');
+ const replace=page.getByRole('button',{name:'Replace annotations',exact:true});await expect(replace).toBeDisabled();
+ expect((await state()).state).toEqual(before.state);
+ await page.getByRole('checkbox',{name:'Confirm replacement',exact:true}).check();
+ await page.getByRole('button',{name:'Preview again',exact:true}).click();await expect(replace).toBeDisabled();await page.getByRole('checkbox',{name:'Confirm replacement',exact:true}).check();
+ await page.route(`**/api/projects/${pid}/operations`,route=>route.fulfill({status:503,json:{detail:'Temporary test outage'}}));
+ await replace.click();await expect(page.getByRole('button',{name:'Retry saving import',exact:true})).toBeEnabled();
+ await page.unroute(`**/api/projects/${pid}/operations`);await page.getByRole('button',{name:'Retry saving import',exact:true}).click();
+ await expect(page.getByRole('dialog')).toHaveCount(0);await expect(page.locator('.save-status')).toHaveText('Saved');
+ const after=await state();expect(Object.values(after.state.identities).map((p:any)=>p.person_id)).toEqual([7]);expect(Object.keys(after.state.observations)).toHaveLength(1);
+ await page.reload();await reopen();await page.getByTestId('canvas').press('Control+z');await expect(page.locator('.save-status')).toHaveText('Saved');expect((await state()).state).toEqual(before.state);
+ await page.getByTestId('canvas').press('Control+Shift+z');await expect(page.locator('.save-status')).toHaveText('Saved');expect((await state()).state).toEqual(after.state);
+ await page.getByRole('button',{name:'Import annotations',exact:true}).click();await selectOption(page,'Import behavior','Replace this video’s annotations');
+ await page.getByLabel('Annotation file',{exact:true}).setInputFiles({name:'bad.json',mimeType:'application/json',buffer:Buffer.from('{}')});
+ await page.getByRole('button',{name:'Preview import',exact:true}).click();await expect(page.getByRole('alert')).toContainText('Expected Frameinsight');
+ await expect(page.getByRole('button',{name:'Replace annotations',exact:true})).toHaveCount(0);expect((await state()).state).toEqual(after.state);
 });

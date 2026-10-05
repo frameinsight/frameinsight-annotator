@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.9.0
+
+Import revised Frameinsight JSON with **Add** or confirmed **Replace this video’s annotations**. Replacement preserves imported numeric IDs, keeps other videos intact, and supports single-action Undo/Redo. Debian updates stage verified packages outside private data folders, leave the app runtime before launching the system installer, and retain installer output for troubleshooting. See the [release notes](docs/releases/v3.9.0.md).
+
 ## 3.8.1
 
 Play a source video and press **C** to cut without stopping playback. Select sections to remove/restore, undo or redo edits, then combine the remaining sections into a new MP4 at the original resolution. Includes frame stepping, slow playback, migration of saved 3.7.0 selections and optional playback previews for unsupported source formats. See the [release notes](docs/releases/v3.8.1.md).

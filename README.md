@@ -64,7 +64,7 @@ The app does not recognize objects or guarantee identity correctness. Human revi
 - Width × height appears in source pixels while drawing or adjusting, independent of zoom. Right-click an overlap and use **Select overlapping box** to choose the exact track and class.
 - Diamonds mark anchor frames for the selected track/class. Use **Previous/Next keyframe** or **[ / ]** to jump between them. Generated boxes have no diamond until corrected. Single-frame copies and imported boxes may also be anchors.
 - Press **I** to edit the current track’s ID, class and color. IDs already used by another track in the same video are rejected. **B + drag** replaces the current box; **C** only copies into an empty frame.
-- **Import annotations → Frameinsight annotations — JSON** previews a single-video v2/v3 export before adding it. Numeric IDs are retained when free; collisions are explicitly remapped. Original frame dimensions/count and available video hashes must match. Boxes, class styles, anchor provenance and deleted intervals are retained; review/validation and old edit history are not restored. Existing tracks remain intact; Undo reverses the import.
+- **Import annotations → Frameinsight annotations — JSON** previews a single-video v2/v3 export before adding it. Numeric IDs are retained when free; collisions are explicitly remapped. Original frame dimensions/count and available video hashes must match. Boxes, class styles, anchor provenance and deleted intervals are retained; review/validation and old edit history are not restored. Choose **Add** to keep existing tracks, or **Replace this video’s annotations** to load a revised submission with its original IDs. Replacement previews the affected counts, requires confirmation, leaves other videos intact and can be undone in one action.
 - Empty projects remain reusable after video deletion and are clearly labeled.
 
 ## Trim sections before annotation
@@ -161,7 +161,7 @@ Browser tests need an **isolated** server at `127.0.0.1:5173` and Chrome. Set a 
 FRAMEINSIGHT_TEST_URL=http://127.0.0.1:5173 npm --prefix frontend run test:e2e
 ```
 
-Build and release instructions are in [Windows packaging](docs/WINDOWS.md), [Debian packaging](docs/LINUX.md) and the [release workflow](.github/workflows/desktop-release.yml). See the [3.8.1 verification record](docs/releases/v3.8.1-acceptance.md) for test coverage and limits.
+Build and release instructions are in [Windows packaging](docs/WINDOWS.md), [Debian packaging](docs/LINUX.md) and the [release workflow](.github/workflows/desktop-release.yml). See the [3.9.0 verification record](docs/releases/v3.9.0-acceptance.md) for test coverage and limits.
 
 ## Contributing
 
@@ -193,7 +193,7 @@ Supported layouts and limits:
 - Class names come from `obj.names`, `classes.txt`, or YAML `names`. Without those, YOLO uses the project's class order. You can override names in the dialog, one per line in source class-ID order.
 - Ordinary five-column YOLO contains **no identity information**. Each detection becomes a separate track; the importer cannot know which detections belong to the same object. Use tracked YOLO or MOT for existing tracking work.
 - MOT accepts `gt/gt.txt` and optional `gt/labels.txt`, or a standalone ground-truth TXT: `frame,id,left,top,width,height,included,class_id,visibility`. Class IDs start at 1; without class names, standard MOT labels are used. Rows with `included=0` are excluded. Scored MOT tracking-result files are not supported as ground truth. Visibility is retained in the observation evidence note.
-- Existing tracks are never replaced or automatically merged. Positive source IDs are preserved when unused in the destination video; IDs colliding in the same video and YOLO ID 0 receive a new positive ID shown in the preview. Separate classes with the same source ID share one track.
+- YOLO/MOT imports add tracks without replacing or automatically merging existing tracks. Frameinsight JSON additionally offers confirmed, undoable replacement for the selected video. Positive source IDs are preserved when unused in the destination video; IDs colliding in the same video and YOLO ID 0 receive a new positive ID shown in the preview. Separate classes with the same source ID share one track.
 - Upload limit: 50 MB; archive text limit: 64 MB; at most 45,000 boxes and 49,000 new entities per import. Oversized, ambiguous or invalid imports fail without changing annotations. Out-of-image boxes require explicit clipping; boxes fully outside the image are rejected.
 - Preview checks structure, not visual identity accuracy or whether the selected video matches the labels. Use **Finish** for visual review and final JSON validation before training. Imports remain local; no videos or annotations are sent to a cloud service.
 

@@ -2,11 +2,29 @@
 import copy
 import json
 import uuid
-from .schema import video_identity_ids, MODELS, validate_state
+from .schema import video_identity_ids, identity_video_scopes, MODELS, validate_state
 from .geometry import box_items, box_style
 
 
-def preview_native(raw, project, video_id):
+def replacement_changes(project, video_id):
+    """Remove only this video's state; shared identities remain in other videos."""
+    state = project['state']
+    scopes = identity_video_scopes(state)
+    removed = {key for key, videos in scopes.items()
+               if videos == {video_id} or (not videos and len(project['videos']) == 1)}
+    changes = []
+    for collection, values in state.items():
+        for key, value in values.items():
+            if (value.get('video_id') == video_id
+                or collection == 'identities' and key in removed
+                or collection == 'links' and (value['source'] in removed or value['target'] in removed)):
+                changes.append({'collection': collection, 'id': key, 'before': copy.deepcopy(value), 'after': None})
+    return changes
+
+
+def preview_native(raw, project, video_id, mode='add'):
+    if mode not in ('add', 'replace'):
+        raise ValueError('Choose Add or Replace annotations')
     if len(raw) > 50 * 1024 * 1024:
         raise ValueError('Annotation upload limit is 50 MB')
     try:
@@ -52,10 +70,16 @@ def preview_native(raw, project, video_id):
         raise ValueError('Import would exceed the project limit of 100 classes')
     # Never trust exported identity UUIDs to join current tracks implicitly.
     ids = {collection: {key: str(uuid.uuid4()) for key in values} for collection, values in normalized.items()}
-    used = {project['state']['identities'][ident]['person_id'] for ident in video_identity_ids(project['state'], video_id)}
+    removals = replacement_changes(project, video_id) if mode == 'replace' else []
+    retained = copy.deepcopy(project['state'])
+    for change in removals:
+        del retained[change['collection']][change['id']]
+    used = {retained['identities'][ident]['person_id'] for ident in video_identity_ids(retained, video_id)}
+    if mode == 'replace' and used & {p['person_id'] for p in normalized['identities'].values()}:
+        raise ValueError('An imported ID belongs to an unattached legacy track. Assign that track to its video or remove it before replacing annotations.')
     reserved = {p['person_id'] for p in normalized['identities'].values()} - used
     allocated = used | reserved
-    mapping, changes, next_number = [], [], 1
+    mapping, changes, next_number = [], list(removals), 1
     for collection in ('identities', 'segments', 'observations', 'intervals', 'links'):
         for key, value in normalized[collection].items():
             row = copy.deepcopy(value)
@@ -84,9 +108,14 @@ def preview_native(raw, project, video_id):
                 for provenance in row['provenance'].values():
                     provenance['proposal_id'] = None
             changes.append({'collection': collection, 'id': row['id'], 'before': None, 'after': row})
+    if len(changes) > 49000:
+        raise ValueError('This replacement exceeds the 49,000-entity import limit. Use a separate video or a smaller annotation file.')
     merged = copy.deepcopy(project['state'])
     for change in changes:
-        merged[change['collection']][change['id']] = change['after']
+        if change['after'] is None:
+            del merged[change['collection']][change['id']]
+        else:
+            merged[change['collection']][change['id']] = change['after']
     validate_state(merged, project['videos'], visible_only=True, structural_only=True)
     warnings = ['Imported annotations need a fresh visual review and validation. Exported validation and edit history are not restored; use a project backup for full history.']
     if not source.get('source_hash') or not target.get('source_hash'):
@@ -94,5 +123,8 @@ def preview_native(raw, project, video_id):
     if any(m['source'] != m['track_id'] for m in mapping):
         warnings.append('Some IDs already exist in this video and were reassigned. Import into an unannotated video to retain every numeric ID.')
     frames = [o['frame_index'] for o in normalized['observations'].values()]
-    return {'base_revision': project['revision'], 'changes': changes, 'classes': sorted(names), 'mapping': mapping, 'warnings': warnings,
+    replaced_tracks = {c['before']['identity_uuid'] for c in removals if c['collection'] in ('segments', 'observations', 'intervals')}
+    replaced_tracks.update(c['id'] for c in removals if c['collection'] == 'identities')
+    return {'base_revision': project['revision'], 'mode': mode, 'changes': changes, 'classes': sorted(names), 'mapping': mapping, 'warnings': warnings,
+            'replaced': {'tracks': len(replaced_tracks), 'boxes': sum(len(list(box_items(c['before']))) for c in removals if c['collection'] == 'observations')},
             'summary': {'boxes': boxes, 'tracks': len(mapping), 'frames': len(set(frames)), 'first_frame': min(frames, default=0), 'last_frame': max(frames, default=0)}}
