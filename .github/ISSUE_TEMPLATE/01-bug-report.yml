@@ -9,23 +9,11 @@ body:
         Report one problem per issue. Give the title a short, specific description, such as "Selected box dimensions disappear after releasing the mouse".
         Fields marked * are required. Plain language is fine; no technical knowledge is needed.
         Check [existing issues](https://github.com/frameinsight/frameinsight-annotator/issues) first. Attach only screenshots or sample files that you can share publicly.
-  - type: dropdown
+  - type: input
     id: operating-system
     attributes:
-      label: Operating system
-      options:
-        - Windows 11
-        - Windows 10
-        - Ubuntu
-        - Debian
-        - Other (name it below)
-    validations:
-      required: true
-  - type: input
-    id: os-version
-    attributes:
-      label: Operating system version
-      description: "For example: Windows 11 24H2, Ubuntu 24.04, or Debian 12. Write 'Not sure' if you cannot find it."
+      label: Operating system and version
+      description: "Name your operating system, such as Windows 11, Windows 10, Ubuntu or Debian. Include the version if known; for example, Windows 11 24H2 or Ubuntu 24.04."
       placeholder: Ubuntu 24.04
     validations:
       required: true
@@ -37,29 +25,20 @@ body:
       placeholder: "3.9.1"
     validations:
       required: true
-  - type: dropdown
+  - type: input
     id: installation
     attributes:
       label: How did you install or run Frameinsight?
-      options:
-        - Windows installer (Window_setup.exe)
-        - Ubuntu / Debian installer (.deb)
-        - Running the source code
-        - Other / not sure
+      description: "Windows installer (Window_setup.exe), Ubuntu / Debian installer (.deb), source code, or another method. Write 'Not sure' if someone set it up for you."
+      placeholder: Windows installer (Window_setup.exe)
     validations:
       required: true
-  - type: dropdown
+  - type: input
     id: browser
     attributes:
       label: Browser
-      description: Choose the browser where you use Frameinsight.
-      options:
-        - Google Chrome
-        - Microsoft Edge
-        - Firefox
-        - Other (name it in the additional details)
-        - The problem happens before a browser opens
-        - Not sure
+      description: "Name the browser where you use Frameinsight, such as Chrome, Edge or Firefox. Include its version if known. If the problem happens before a browser opens, say so."
+      placeholder: Google Chrome
     validations:
       required: true
   - type: textarea
@@ -90,15 +69,12 @@ body:
       placeholder: The dimensions should stay visible while the box is selected, even when I am not dragging it.
     validations:
       required: true
-  - type: dropdown
+  - type: input
     id: frequency
     attributes:
       label: How often does it happen?
-      options:
-        - Every time I follow these steps
-        - Sometimes
-        - It happened once; I have not tried again
-        - It happened once; I cannot reproduce it again
+      description: Every time, sometimes, or just once? If you have not tried the steps again, say so.
+      placeholder: Every time I follow these steps
     validations:
       required: true
   - type: textarea
