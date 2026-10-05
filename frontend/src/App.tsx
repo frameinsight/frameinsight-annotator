@@ -210,7 +210,7 @@ export default function App(){
       <CanvasToolButton label="Fit video" title="Fit video (0)" disabled={!canvasControls.ready} onClick={()=>{canvas.current?.finish();canvas.current?.fit()}}><Maximize/></CanvasToolButton>
       <span className="canvas-tool-zoom" aria-label="Canvas zoom level">{Math.round(canvasControls.scale*100)}%</span>
      </div>
-     <CanvasToolButton label="Canvas settings" title="Labels, dimensions and new-track confirmation" onClick={()=>act('canvasSettings')}><Settings2/></CanvasToolButton>
+     <CanvasToolButton label="Canvas settings" title="Labels and new-track confirmation" onClick={()=>act('canvasSettings')}><Settings2/></CanvasToolButton>
      <div className="toolbar-shortcuts" aria-label="Quick shortcuts">{[['new','New'],['id','ID / class'],['copy','Copy'],['next','Next'],['previous','Back'],['undo','Undo']].map(([action,label])=><span key={action} title={keyDescriptions[action]}><kbd>{keys[action]?.toUpperCase()}</kbd>{label}</span>)}<span title="Hold Space and drag to pan"><kbd>Space</kbd>Pan</span></div>
     </div>
     <EditorCanvas preferences={canvasPreferences} colorMode={colorMode} onColorModeChange={changeColorMode} onControlsChange={setCanvasControls} onAction={act} dimOutside={true} hiddenClasses={hiddenClasses} ref={canvas} proposals={filteredProposals} showProposals={!VISIBLE_ONLY&&showProposals}/>

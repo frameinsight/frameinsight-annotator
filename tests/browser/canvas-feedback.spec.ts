@@ -58,19 +58,35 @@ test('label modes and confirmation preference persist without modifying annotati
  await canvas(page).press('n');const start=await point(page,20,80),end=await point(page,70,280);await page.mouse.move(start.x,start.y);await page.mouse.down();await page.mouse.move(end.x,end.y,{steps:5});await page.mouse.up();await expect(page.getByRole('dialog',{name:'Track ID, class & color'})).toBeVisible();
 });
 
-test('live dimensions use source pixels while drawing, moving and resizing at different zoom levels',async({page,request})=>{
+test('selected dimensions persist without dragging and use source pixels across zoom, edits and reload',async({page,request})=>{
+ // Earlier versions saved false while changing unrelated preferences. It must
+ // no longer suppress the selected box's readout after upgrading.
+ await page.evaluate(()=>localStorage.setItem('frameinsight:canvasPreferences',JSON.stringify({labels:'all',keepDimensions:false,confirmNewTracks:false})));
+ await reopen(page);
  await settings(page);await page.getByRole('checkbox',{name:'Confirm new tracks',exact:true}).uncheck();await closeSettings(page);
  await canvas(page).press('n');let start=await point(page,100,80),end=await point(page,200,280);
  await page.mouse.move(start.x,start.y);await page.mouse.down();await page.mouse.move(end.x,end.y,{steps:6});
  const dimensions=page.getByTestId('box-dimensions');await expect(dimensions).toBeVisible();expect(Number(await dimensions.getAttribute('data-width'))).toBeCloseTo(100,0);expect(Number(await dimensions.getAttribute('data-height'))).toBeCloseTo(200,0);
- await page.mouse.up();await expect(dimensions).toHaveCount(0);
- await settings(page);await page.getByRole('checkbox',{name:'Keep selected box dimensions visible',exact:true}).check();await closeSettings(page);
+ await page.mouse.up();await expect(dimensions).toBeVisible();await expect(page.locator('.save-status')).toHaveText('Saved');
  const before=await state(request);await page.getByRole('button',{name:'Zoom in',exact:true}).click();await page.getByRole('button',{name:'Zoom in',exact:true}).click();
  expect(Number(await dimensions.getAttribute('data-width'))).toBeCloseTo(100,0);expect(Number(await dimensions.getAttribute('data-height'))).toBeCloseTo(200,0);
  await drag(page,[150,180],[160,180]);expect(Number(await dimensions.getAttribute('data-width'))).toBeCloseTo(100,0);
  await drag(page,[210,180],[230,180]);expect(Number(await dimensions.getAttribute('data-width'))).toBeCloseTo(120,0);expect(Number(await dimensions.getAttribute('data-height'))).toBeCloseTo(200,0);
  await canvas(page).press('Control+z');await canvas(page).press('Control+z');await expect(page.locator('.save-status')).toHaveText('Saved');expect((await state(request)).state).toEqual(before.state);
  await reopen(page);await page.getByRole('button',{name:'Select Track 1',exact:true}).click();await expect(dimensions).toBeVisible();
+ const unchanged=await state(request);
+ // Hidden/absent boxes must not leave stale dimensions on the next frame.
+ await page.getByRole('button',{name:'Hide class person_visible',exact:true}).click();await expect(dimensions).toHaveCount(0);
+ await page.getByRole('button',{name:'Show class person_visible',exact:true}).click();await expect(dimensions).toBeVisible();
+ await page.getByLabel('Go to frame').fill('1');await expect(canvas(page)).toHaveAttribute('data-frame','1');await expect(dimensions).toHaveCount(0);
+ await page.getByLabel('Go to frame').fill('0');await expect(canvas(page)).toHaveAttribute('data-frame','0');await expect(dimensions).toBeVisible();
+ expect((await state(request)).state).toEqual(unchanged.state);
+ // Selecting a different box without moving it immediately changes the readout.
+ await canvas(page).press('n');await drag(page,[300,80],[360,240]);
+ expect(Number(await dimensions.getAttribute('data-width'))).toBeCloseTo(60,0);expect(Number(await dimensions.getAttribute('data-height'))).toBeCloseTo(160,0);
+ const first=await point(page,150,180);await page.mouse.click(first.x,first.y);
+ expect(Number(await dimensions.getAttribute('data-width'))).toBeCloseTo(100,0);expect(Number(await dimensions.getAttribute('data-height'))).toBeCloseTo(200,0);
+ await page.getByRole('button',{name:'Hide Track 1',exact:true}).click();await expect(dimensions).toHaveCount(0);
 });
 
 test('overlap chooser selects each class without hiding or modifying identical boxes',async({page,request})=>{

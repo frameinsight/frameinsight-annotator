@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.9.1
+
+The selected box’s width × height now stays visible automatically, including after releasing the mouse and when opening existing browser settings. Removed the optional dimensions toggle. Measurements remain in source pixels and disappear for absent or hidden boxes. See the [release notes](docs/releases/v3.9.1.md).
+
 ## 3.9.0
 
 Import revised Frameinsight JSON with **Add** or confirmed **Replace this video’s annotations**. Replacement preserves imported numeric IDs, keeps other videos intact, and supports single-action Undo/Redo. Debian updates stage verified packages outside private data folders, leave the app runtime before launching the system installer, and retain installer output for troubleshooting. See the [release notes](docs/releases/v3.9.0.md).

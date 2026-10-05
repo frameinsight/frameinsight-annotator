@@ -153,7 +153,7 @@ export const EditorCanvas=forwardRef<CanvasHandle,{proposals:Proposal[];showProp
  if(preview&&gesture.current?.kind==='draw'&&!getBox(active,gesture.current.geometry))renderBoxes.unshift({key:'drawing',g:gesture.current.geometry,box:preview,person:project!.state.identities[activeId],selected:true});
  const labels=renderBoxes.filter(({box})=>box[2]*view.scale+view.x>=0&&box[0]*view.scale+view.x<size.w&&box[3]*view.scale+view.y>=0&&box[1]*view.scale+view.y<size.h).map(({key,g,box,person,selected})=>({key,x:box[0]*view.scale+view.x,y:box[1]*view.scale+view.y,className:boxStyle(person,g).class_name,id:person?.person_id!=null?'#'+person.person_id:person?.name||'Draft',color:displayColor(person,g),selected,identity:person?.id||'',geometry:g,interactive:key!=='drawing'&&!!person}));
  const badges=layoutLabels(preferences.labels==='hidden'?[]:preferences.labels==='selected'?labels.filter(label=>label.selected):labels,{width:size.w,height:size.h},measureLabelText,preferences.labels==='ids');
- const measured=ready&&(preferences.keepDimensions||preview)&&renderBoxes.find(entry=>entry.selected);
+ const measured=ready&&renderBoxes.find(entry=>entry.selected);
  const dimension=(n:number)=>Number(n.toFixed(2)).toLocaleString(undefined,{maximumFractionDigits:2});
  const drawBox=(box:Box,g:Geometry,key:string,selected=false,color=boxStyle(undefined,g).color)=>{
   const [x1,y1,x2,y2]=box;

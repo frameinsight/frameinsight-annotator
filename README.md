@@ -59,7 +59,7 @@ The app does not recognize objects or guarantee identity correctness. Human revi
 
 ## Team annotation tools
 
-- Open **Canvas settings** beside the zoom tools (or from right-click). Choose full labels, selected-only labels, compact IDs or hidden labels; keep box dimensions visible; or turn off first-box confirmation. These preferences stay in this browser.
+- Open **Canvas settings** beside the zoom tools (or from right-click). Choose full labels, selected-only labels, compact IDs or hidden labels, or turn off first-box confirmation. The selected box’s width × height stays visible at the bottom of the canvas automatically. These preferences stay in this browser.
 - **View by class** uses the project palette consistently across tracks. **View by track** gives each track one color across its classes. Both are display preferences; saved annotation styles and export colors stay unchanged.
 - Width × height appears in source pixels while drawing or adjusting, independent of zoom. Right-click an overlap and use **Select overlapping box** to choose the exact track and class.
 - Diamonds mark anchor frames for the selected track/class. Use **Previous/Next keyframe** or **[ / ]** to jump between them. Generated boxes have no diamond until corrected. Single-frame copies and imported boxes may also be anchors.
@@ -161,7 +161,7 @@ Browser tests need an **isolated** server at `127.0.0.1:5173` and Chrome. Set a 
 FRAMEINSIGHT_TEST_URL=http://127.0.0.1:5173 npm --prefix frontend run test:e2e
 ```
 
-Build and release instructions are in [Windows packaging](docs/WINDOWS.md), [Debian packaging](docs/LINUX.md) and the [release workflow](.github/workflows/desktop-release.yml). See the [3.9.0 verification record](docs/releases/v3.9.0-acceptance.md) for test coverage and limits.
+Build and release instructions are in [Windows packaging](docs/WINDOWS.md), [Debian packaging](docs/LINUX.md) and the [release workflow](.github/workflows/desktop-release.yml). See the [3.9.1 verification record](docs/releases/v3.9.1-acceptance.md) for test coverage and limits.
 
 ## Contributing
 

@@ -79,7 +79,7 @@ Right-click a box **or its class/ID label** to select that exact track and class
 Open **Canvas settings** using the settings icon beside the zoom tools, or from the canvas right-click menu. Preferences are saved in this browser.
 
 - **Box labels:** show all class/ID labels, only the selected box’s label, compact IDs, or hide labels. Box outlines and editing remain available in every mode.
-- **Dimensions:** width × height appears at the lower right while drawing, moving or resizing. Values use the original image pixels and do not change with zoom. Enable **Keep selected box dimensions visible** to see them between edits too.
+- **Dimensions:** select a box to see its width × height at the lower right. The readout stays visible after you stop dragging, updates while drawing or adjusting, and follows the selected box when you change frames or classes. Values use the original image pixels and do not change with zoom. No setting is required; hidden or absent boxes have no readout.
 - **Confirm new tracks:** on by default. Turn it off to draw new tracks without opening the ID dialog each time. The app still assigns the next available ID in this video, a distinct track color, and the current class. Press **I** whenever you need to edit those details.
 
 ## Read the frame bar

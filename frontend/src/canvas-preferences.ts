@@ -1,13 +1,12 @@
 import {useState} from 'react';
 export type LabelMode='all'|'selected'|'ids'|'hidden';
-export type CanvasPreferences={labels:LabelMode;keepDimensions:boolean;confirmNewTracks:boolean};
-export const defaultCanvasPreferences:CanvasPreferences={labels:'all',keepDimensions:false,confirmNewTracks:true};
+export type CanvasPreferences={labels:LabelMode;confirmNewTracks:boolean};
+export const defaultCanvasPreferences:CanvasPreferences={labels:'all',confirmNewTracks:true};
 const key='frameinsight:canvasPreferences';
 export function readCanvasPreferences():CanvasPreferences{
  try{
   const saved=JSON.parse(localStorage.getItem(key)||'{}');
   return {labels:['all','selected','ids','hidden'].includes(saved?.labels)?saved.labels:'all',
-   keepDimensions:typeof saved?.keepDimensions==='boolean'?saved.keepDimensions:false,
    confirmNewTracks:typeof saved?.confirmNewTracks==='boolean'?saved.confirmNewTracks:true};
  }catch{return {...defaultCanvasPreferences};}
 }
