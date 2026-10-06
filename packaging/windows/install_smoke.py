@@ -4,8 +4,9 @@ from pathlib import Path
 build=Path(__file__).resolve().parent
 def report_failure(kind, error, traceback):
  message=str(error)
- log=build/'automatic update/install-handoff.log'
- if log.exists():message+='\n'+log.read_text(encoding='utf-8-sig',errors='replace')[-3000:]
+ for name in ('install-handoff.log','install-process.log'):
+  log=build/'automatic update'/name
+  if log.exists():message+='\n'+name+':\n'+log.read_text(encoding='utf-8-sig',errors='replace')[-3000:]
  print('::error::'+message.replace('%','%25').replace('\r','%0D').replace('\n','%0A'),flush=True)
  sys.__excepthook__(kind,error,traceback)
 sys.excepthook=report_failure

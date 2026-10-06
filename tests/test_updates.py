@@ -352,7 +352,7 @@ def test_automatic_commands_keep_package_paths_as_arguments(monkeypatch, tmp_pat
 def test_windows_automatic_handoff_runs_outside_bundled_runtime(monkeypatch, tmp_path):
     import base64
     monkeypatch.setenv('SystemRoot', 'C:/Windows')
-    monkeypatch.setattr(update_handoff.subprocess, 'DETACHED_PROCESS', 8, raising=False)
+    monkeypatch.setattr(update_handoff.subprocess, 'CREATE_NO_WINDOW', 0x08000000, raising=False)
     monkeypatch.setattr(update_handoff.subprocess, 'CREATE_NEW_PROCESS_GROUP', 512, raising=False)
     launched = []
     monkeypatch.setattr(update_handoff.subprocess, 'Popen', lambda cmd, **kw: launched.append((cmd, kw)))
@@ -364,6 +364,7 @@ def test_windows_automatic_handoff_runs_outside_bundled_runtime(monkeypatch, tmp
     assert base64.b64decode(command[-1]).decode('utf-16-le') == update_handoff.WINDOWS_AUTOMATIC_HANDOFF
     assert str(path) not in command[-1] and kw['env']['FRAMEINSIGHT_UPDATE_PACKAGE'] == str(path)
     assert kw['env']['FRAMEINSIGHT_UPDATE_RESTART'] == str(restart)
+    assert kw['creationflags'] == 0x08000000 | 512
 
 
 @pytest.mark.skipif(update_handoff.sys.platform != 'linux', reason='Debian handoff')

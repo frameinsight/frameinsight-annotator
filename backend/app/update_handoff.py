@@ -178,11 +178,14 @@ WINDOWS_AUTOMATIC_HANDOFF = r'''
 $ErrorActionPreference = 'Stop'
 $log = $env:FRAMEINSIGHT_UPDATE_LOG
 try {
+    Add-Content -LiteralPath $log -Value 'System updater started. Waiting for the Python helper to exit.'
     Wait-Process -Id ([int]$env:FRAMEINSIGHT_UPDATE_HELPER) -Timeout 120 -ErrorAction SilentlyContinue
     if (Get-Process -Id ([int]$env:FRAMEINSIGHT_UPDATE_HELPER) -ErrorAction SilentlyContinue) { throw 'Update helper did not exit.' }
+    Add-Content -LiteralPath $log -Value 'Python helper stopped. Verifying the installer.'
     $package = $env:FRAMEINSIGHT_UPDATE_PACKAGE
     if ((Get-Item -LiteralPath $package).Length -ne [long]$env:FRAMEINSIGHT_UPDATE_SIZE) { throw 'Installer size changed.' }
     if ((Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash -ne $env:FRAMEINSIGHT_UPDATE_SHA256) { throw 'Installer checksum changed.' }
+    Add-Content -LiteralPath $log -Value 'Running the verified silent installer.'
     $installer = Start-Process -FilePath $package -ArgumentList '/S' -PassThru -Wait
     if ($installer.ExitCode -ne 0) { throw "Installer failed with exit code $($installer.ExitCode)." }
     $restart = $env:FRAMEINSIGHT_UPDATE_RESTART
@@ -210,10 +213,15 @@ def launch_windows_automatic(package, size, checksum, version, restart, log):
                        FRAMEINSIGHT_UPDATE_RESTART=str(restart))
     encoded = base64.b64encode(WINDOWS_AUTOMATIC_HANDOFF.encode('utf-16-le')).decode('ascii')
     log.write_text('Verified automatic update prepared. Waiting for the app runtime to exit.\n', encoding='utf-8')
-    subprocess.Popen([str(powershell), '-NoProfile', '-NonInteractive', '-EncodedCommand', encoded],
-                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                     cwd=str(package.parent), env=environment,
-                     creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP)
+    # PowerShell's ConsoleHost needs a valid console even for a noninteractive
+    # script. CREATE_NO_WINDOW supplies one without showing a terminal; unlike
+    # DETACHED_PROCESS it does not leave ConsoleHost with invalid handles.
+    # Capture startup errors as well as script errors for offline diagnostics.
+    with (package.parent / 'install-process.log').open('ab') as process_log:
+        subprocess.Popen([str(powershell), '-NoProfile', '-NonInteractive', '-EncodedCommand', encoded],
+                         stdin=subprocess.DEVNULL, stdout=process_log, stderr=process_log,
+                         cwd=str(package.parent), env=environment,
+                         creationflags=subprocess.CREATE_NO_WINDOW | subprocess.CREATE_NEW_PROCESS_GROUP)
 
 
 def launch_debian(package, size, checksum, installer, log, automatic=False, version=None, restart=None):
