@@ -17,7 +17,7 @@ Frameinsight is a local video annotation app for detection and tracking datasets
 
 The installers include the app and its runtime. No Python, Node.js, terminal setup, GPU, or model is needed for annotators. Packages are currently unsigned; see the [Windows guide](docs/WINDOWS.md) and [Linux guide](docs/LINUX.md). Release assets include SHA-256 checksums and an update manifest.
 
-Installed copies check for updates whenever Frameinsight starts. A newer stable release is downloaded, checksum-verified, installed, and the app reopens automatically—no Update button is required. Windows updates run silently; Debian/Ubuntu may ask for administrator authorization through the system prompt. Offline or failed checks leave the current app usable. Projects stay outside the program folder. Install 3.10.0 once to enable this behavior for future releases; older versions still need their existing update flow. Source checkouts are never replaced automatically.
+Installed copies check for updates whenever Frameinsight starts. A newer stable release is downloaded, checksum-verified, installed, and the app reopens automatically—no Update button is required. Windows updates run silently; Debian/Ubuntu may ask for administrator authorization through the system prompt. Offline or failed checks leave the current app usable. Projects stay outside the program folder. Install 3.10.1 once to enable this behavior for future releases; older versions still need their existing update flow. Source checkouts are never replaced automatically.
 
 ## A simple annotation workflow
 
@@ -168,7 +168,7 @@ Browser tests need an **isolated** server at `127.0.0.1:5173` and Chrome. Set a 
 FRAMEINSIGHT_TEST_URL=http://127.0.0.1:5173 npm --prefix frontend run test:e2e
 ```
 
-Build and release instructions are in [Windows packaging](docs/WINDOWS.md), [Debian packaging](docs/LINUX.md) and the [release workflow](.github/workflows/desktop-release.yml). See the [3.10.0 verification record](docs/releases/v3.10.0-acceptance.md) for test coverage and limits.
+Build and release instructions are in [Windows packaging](docs/WINDOWS.md), [Debian packaging](docs/LINUX.md) and the [release workflow](.github/workflows/desktop-release.yml). See the [3.10.1 verification record](docs/releases/v3.10.1-acceptance.md) for test coverage and limits.
 
 ## Contributing
 
