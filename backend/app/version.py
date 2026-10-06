@@ -1,2 +1,2 @@
 """Application version shared by the API, updater, and review provenance."""
-APP_VERSION = '3.10.1'
+APP_VERSION = '3.10.2'

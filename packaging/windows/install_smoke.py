@@ -54,10 +54,14 @@ while time.time()<deadline:
  time.sleep(.3)
 else:raise AssertionError('Automatic Windows update/relaunch timed out: '+log)
 kernel=ctypes.WinDLL('kernel32',use_last_error=True)
-kernel.OpenEventW.argtypes=[ctypes.c_ulong,ctypes.c_int,ctypes.c_wchar_p];kernel.OpenEventW.restype=ctypes.c_void_p
-kernel.SetEvent.argtypes=kernel.CloseHandle.argtypes=[ctypes.c_void_p]
-event=kernel.OpenEventW(0x0002,False,'Local\\Frameinsight.Stop.v1');assert event
-kernel.SetEvent(event);kernel.CloseHandle(event)
+kernel.CloseHandle.argtypes=[ctypes.c_void_p]
+# Ask the launcher to close, exactly as the real update service does. Signaling
+# only the server event makes the launcher report an unexpected server exit.
+user=ctypes.WinDLL('user32',use_last_error=True)
+user.FindWindowW.argtypes=[ctypes.c_wchar_p,ctypes.c_wchar_p];user.FindWindowW.restype=ctypes.c_void_p
+user.PostMessageW.argtypes=[ctypes.c_void_p,ctypes.c_uint,ctypes.c_size_t,ctypes.c_ssize_t]
+hwnd=user.FindWindowW('Frameinsight.Desktop.v1',None);assert hwnd
+assert user.PostMessageW(hwnd,0x0010,0,0)
 kernel.OpenMutexW.argtypes=[ctypes.c_ulong,ctypes.c_int,ctypes.c_wchar_p];kernel.OpenMutexW.restype=ctypes.c_void_p
 for _ in range(150):
  mutex=kernel.OpenMutexW(0x100000,False,'Local\\Frameinsight.Desktop.v1')

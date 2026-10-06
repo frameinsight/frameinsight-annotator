@@ -1,16 +1,16 @@
 # Ubuntu and Debian desktop installation
 
-Download `frameinsight_3.10.1_amd64.deb` and `START-HERE-LINUX.txt` from the [official releases](https://github.com/frameinsight/frameinsight-annotator/releases). Open the package with Software Install, GDebi, or your distribution's package installer, then choose **Install**. Launch **Frameinsight** from Applications. Its local browser interface opens automatically.
+Download `frameinsight_3.10.2_amd64.deb` and `START-HERE-LINUX.txt` from the [official releases](https://github.com/frameinsight/frameinsight-annotator/releases). Open the package with Software Install, GDebi, or your distribution's package installer, then choose **Install**. Launch **Frameinsight** from Applications. Its local browser interface opens automatically.
 
 The package targets **Ubuntu 24.04+ and Debian 12+, Intel/AMD 64-bit**, with glibc 2.36 or newer and a graphical desktop. Python and the CPU video libraries are bundled. Node, Python setup, CUDA and AI models are not required. Standard desktop libraries and a graphical package installer may be installed by your package manager. Automatic updates use apt-get and pkexec, which is included as a package dependency. Your desktop provides the normal authorization prompt.
 
 If your desktop opens `.deb` files as archives, use **Open With → Software Install/GDebi**, or run:
 
 ```bash
-sudo apt install ./frameinsight_3.10.1_amd64.deb
+sudo apt install ./frameinsight_3.10.2_amd64.deb
 ```
 
-The app works offline. On app startup, newer stable releases are downloaded, checksum-verified and installed automatically, then Frameinsight reopens. The desktop may ask for your administrator password through its standard authorization prompt; Frameinsight never receives that password. Update checks do not upload videos or annotations. Offline checks, failed downloads and cancelled authorization leave saved data intact and allow the current version to be reopened. Install 3.10.1 once to enable automatic updates for subsequent releases.
+The app works offline. On app startup, newer stable releases are downloaded, checksum-verified and installed automatically, then Frameinsight reopens. The desktop may ask for your administrator password through its standard authorization prompt; Frameinsight never receives that password. Update checks do not upload videos or annotations. Offline checks, failed downloads and cancelled authorization leave saved data intact and allow the current version to be reopened. Install 3.10.2 once to enable automatic updates for subsequent releases.
 
 ## Annotate, review and export
 

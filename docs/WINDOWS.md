@@ -57,9 +57,9 @@ exact-frame editing. Leave sufficient disk space for these files.
 
 # Updates
 
-From 3.10.1 onward, every app start checks the latest stable release. If an update is available, the app downloads and verifies the installer, closes safely, installs silently, and reopens automatically. The startup progress screen does not require any Update or Install clicks. Closing the browser alone does not restart the app: exit from the tray icon, then use the desktop shortcut.
+From 3.10.2 onward, every app start checks the latest stable release. If an update is available, the app downloads and verifies the installer, closes safely, installs silently, and reopens automatically. The startup progress screen does not require any Update or Install clicks. Closing the browser alone does not restart the app: exit from the tray icon, then use the desktop shortcut.
 
-Install 3.10.1 once using the older version’s updater or the official installer. Offline checks and failed downloads let you keep annotating. A failed installation is not automatically retried for one hour, preventing a restart loop; App updates remains available for a manual retry. Saved projects are preserved.
+Install 3.10.2 once using the older version’s updater or the official installer. Offline checks and failed downloads let you keep annotating. A failed installation is not automatically retried for one hour, preventing a restart loop; App updates remains available for a manual retry. Saved projects are preserved.
 
 You can also close Frameinsight from its tray icon and install a newer official
 `Window_setup.exe` yourself. The installer refuses to replace a running app.
