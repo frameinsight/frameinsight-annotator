@@ -41,19 +41,19 @@
     },
     {
       "name": "gmp",
-      "url": "https://ftp.gnu.org/gnu/gmp/gmp-6.3.0.tar.xz",
+      "url": "https://mirrors.kernel.org/gnu/gmp/gmp-6.3.0.tar.xz",
       "sha256": "a3c2b80201b89e68616f4ad30bc66aee4927c3ce50e33929ca819d5c43538898",
       "filename": "gmp-6.3.0.tar.xz"
     },
     {
       "name": "unistring",
-      "url": "https://ftp.gnu.org/gnu/libunistring/libunistring-1.4.2.tar.gz",
+      "url": "https://mirrors.kernel.org/gnu/libunistring/libunistring-1.4.2.tar.gz",
       "sha256": "e82664b170064e62331962126b259d452d53b227bb4a93ab20040d846fec01d8",
       "filename": "libunistring-1.4.2.tar.gz"
     },
     {
       "name": "nettle",
-      "url": "https://ftp.gnu.org/gnu/nettle/nettle-3.10.2.tar.gz",
+      "url": "https://mirrors.kernel.org/gnu/nettle/nettle-3.10.2.tar.gz",
       "sha256": "fe9ff51cb1f2abb5e65a6b8c10a92da0ab5ab6eaf26e7fc2b675c45f1fb519b5",
       "filename": "nettle-3.10.2.tar.gz"
     },
@@ -138,7 +138,7 @@
     {
       "name": "libiconv",
       "filename": "libiconv-1.19.tar.gz",
-      "url": "https://ftp.gnu.org/pub/gnu/libiconv/libiconv-1.19.tar.gz",
+      "url": "https://mirrors.kernel.org/gnu/libiconv/libiconv-1.19.tar.gz",
       "sha256": "88dd96a8c0464eca144fc791ae60cd31cd8ee78321e67397e25fc095c4a19aa6"
     }
   ]
