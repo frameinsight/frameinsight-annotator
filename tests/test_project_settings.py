@@ -80,7 +80,7 @@ def test_deleted_box_recovery_nested_restored_history_and_export_names(named_pro
         connection.execute('INSERT INTO restored_history VALUES(?,?)', (p['id'], json.dumps({'operations': [delete.model_dump(mode='json')], 'previous_restored_history': {'operations': [operation.model_dump(mode='json')]}})))
     current = db.snapshot(p['id'])
     result = update_settings(p['id'], request(current, class_renames={'Person': 'Pedestrian', 'Extended': 'Full body'}))
-    doc = annotation_document(p['id'])
+    doc = annotation_document(p['id'], include_history=True)
     assert doc['classes'] == ['Pedestrian', 'Full body']
     assert doc['project_settings_history'][0]['class_renames'] == {'Person': 'Pedestrian', 'Extended': 'Full body'}
     recovered_delete = next(op for op in doc['operations'] if op['id'] == delete.id)

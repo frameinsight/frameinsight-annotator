@@ -6,25 +6,25 @@ from .geometry import box_items, box_style
 from .version import APP_VERSION
 
 
-def annotation_document(pid, video_id=None):
+def annotation_document(pid, video_id=None, *, include_history=False):
     with connect() as c:
         c.execute('BEGIN')
         project = get_state(c, pid)
         frames = {vid: [json.loads(r['data']) for r in c.execute(
             'SELECT data FROM frames WHERE video_id=? ORDER BY frame_index', (vid,))]
-            for vid in project['videos']}
+            for vid in project['videos'] if video_id is None or vid == video_id}
         operations = [{**json.loads(r['data']), 'revision': r['revision'], 'recorded_at': r['created_at']}
-                      for r in c.execute('SELECT data,revision,created_at FROM operations WHERE project_id=? ORDER BY revision', (pid,))]
+                      for r in c.execute('SELECT data,revision,created_at FROM operations WHERE project_id=? ORDER BY revision', (pid,))] if include_history else []
         proposals = [json.loads(r['data']) for vid in project['videos'] for r in c.execute(
-            'SELECT data FROM proposals WHERE video_id=? ORDER BY frame_index,id', (vid,))]
+            'SELECT data FROM proposals WHERE video_id=? ORDER BY frame_index,id', (vid,))] if include_history else []
         proposal_frames = [dict(r) for vid in project['videos'] for r in c.execute(
-            'SELECT video_id,cache_key,frame_index FROM proposal_frames WHERE video_id=? ORDER BY cache_key,frame_index', (vid,))]
+            'SELECT video_id,cache_key,frame_index FROM proposal_frames WHERE video_id=? ORDER BY cache_key,frame_index', (vid,))] if include_history else []
         detector_jobs = [j for r in c.execute('SELECT data FROM jobs WHERE project_id=? ORDER BY rowid', (pid,))
-                         if (j := json.loads(r['data'])).get('kind') == 'proposals']
+                         if (j := json.loads(r['data'])).get('kind') == 'proposals'] if include_history else []
         table = c.execute("SELECT name FROM sqlite_master WHERE type='table' AND name='restored_history'").fetchone()
-        restored = c.execute('SELECT data FROM restored_history WHERE project_id=?', (pid,)).fetchone() if table else None
+        restored = c.execute('SELECT data FROM restored_history WHERE project_id=?', (pid,)).fetchone() if table and include_history else None
         restored_history = json.loads(restored['data']) if restored else None
-        settings_history = [json.loads(row['data']) for row in c.execute('SELECT data FROM project_settings_events WHERE project_id=? ORDER BY revision', (pid,))]
+        settings_history = [json.loads(row['data']) for row in c.execute('SELECT data FROM project_settings_events WHERE project_id=? ORDER BY revision', (pid,))] if include_history else []
     if video_id is not None:
         if video_id not in project['videos']:raise ValueError('Video does not belong to this project')
         state=project['state']
@@ -79,8 +79,9 @@ def annotation_document(pid, video_id=None):
                 'origin': provenance.get('origin'), 'human_corrected': provenance.get('human_corrected', False),
                 'protected_from_interpolation': o['review_state'] == 'approved' or not generated,
             })
-    return {
+    document = {
         'format': 'frameinsight.annotations', 'schema_version': 3, 'app_version': APP_VERSION, 'exported_at': now(),
+        'export_profile': 'with_history' if include_history else 'annotations_only', 'history_included': include_history,
         'media_included': False, 'video_scope': video_id, 'classes': project.get('classes', []), 'class_colors': project.get('class_colors', {}),
         'project': {k: project[k] for k in ('id', 'name', 'revision', 'created_at')},
         'conventions': {
@@ -99,8 +100,8 @@ def annotation_document(pid, video_id=None):
             'annotation_index_key': 'video_id, frame_index, identity_uuid, class_key; observation_id is shared by all boxes of the track on that frame; track_id aliases person_id',
             'frame_annotations': 'One row per track per annotated frame; boxes maps class_key to source-image xyxy coordinates. An omitted class has no saved box on that frame.',
             'source_references': 'Video names, hashes and paths are metadata only. No video, image, thumbnail or binary media is embedded.',
-            'history_scope': 'Selected-video changes only; project backups preserve full replayable history.' if video_id else 'Full project history.',
-            'history': 'Operations preserve before/after values and undo links. Class keys and labels in recovery history follow project renames; project_settings_history records those mappings. recorded_at is server UTC time; no annotator identity is invented.',
+            'history_scope': ('Selected-video changes only.' if video_id else 'Full project history.') if include_history else 'Omitted. Use a project backup to preserve full editing history.',
+            'history': 'Current box provenance is retained. Editing history is separate from training annotations; omitting it from delivery never deletes local history.',
         },
         'summary': {'videos': len(project['videos']), 'people': len(state['identities']),
                     'observations': len(state['observations']), 'boxes': len(annotation_index),
@@ -115,3 +116,8 @@ def annotation_document(pid, video_id=None):
         'state': state, 'operations': operations, 'restored_history': restored_history, 'project_settings_history': settings_history,
         'detector': {'proposals': proposals, 'processed_frames': proposal_frames, 'jobs': detector_jobs},
     }
+    if not include_history:
+        for key in ('operations', 'restored_history', 'project_settings_history', 'detector'):
+            document.pop(key)
+        document['summary'].pop('operations')
+    return document

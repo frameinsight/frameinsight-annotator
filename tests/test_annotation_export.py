@@ -32,7 +32,7 @@ def test_annotation_json_preserves_every_saved_collection_and_history_without_me
     current=db.snapshot(p['id'])
     # Document construction remains media-free; final delivery separately requires
     # the full-video review proof exercised in test_review_delivery.py.
-    document=json.loads(json.dumps(annotation_document(p['id']),allow_nan=False))
+    document=json.loads(json.dumps(annotation_document(p['id'], include_history=True),allow_nan=False))
     assert document['format']=='frameinsight.annotations' and document['media_included'] is False
     assert document['state']==current['state'] and document['videos']==current['videos']
     assert document['project']['revision']==1 and document['summary']['whole_frames_checked']==0
@@ -44,6 +44,16 @@ def test_annotation_json_preserves_every_saved_collection_and_history_without_me
     assert document['operations'][0]['changes'][0]['before']==old
     assert document['operations'][0]['recorded_at'] and document['operations'][0]['revision']==1
     assert document['detector']['proposals']==[proposal] and document['detector']['processed_frames'][0]['frame_index']==99
+    compact = annotation_document(p['id'])
+    assert compact['state'] == current['state']
+    assert compact['annotation_index'] == document['annotation_index']
+    assert compact['frame_annotations'] == document['frame_annotations']
+    assert compact['presence_intervals'] == document['presence_intervals']
+    assert compact['history_included'] is False
+    assert not {'operations', 'restored_history', 'project_settings_history', 'detector'} & compact.keys()
+    # Compact delivery does not touch local undo/recovery history or revisions.
+    assert annotation_document(p['id'], include_history=True)['operations'] == document['operations']
+    assert db.snapshot(p['id']) == current
 
 
 

@@ -144,6 +144,7 @@ try:
  assert export['app_version']==app_version and export['validation']['validation_id']==validation['validation_id']
  assert export['class_colors']==palette
  assert export['schema_version']==3 and len(export['annotation_index'])==5
+ assert export['history_included'] is False and 'operations' not in export
  assert {row['track_id'] for row in export['annotation_index']}=={7}
  assert all(export['frame_annotations'][0]['boxes'][key]==box for key,box in named_boxes.items())
  assert export['annotation_index'][1]['person_id']==7 and export['annotation_index'][1]['box_type']=='person_extended'

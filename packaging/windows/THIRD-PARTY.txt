@@ -21,3 +21,7 @@ The application backend is supplied
 as Python source under app/backend. Application frontend source and
 build files are supplied in app/frontend-source. On Debian, application source
 and notices are under /usr/share/doc/frameinsight/source and licenses.
+
+ijson 3.5.1 (BSD-3-Clause) and its bundled YAJL JSON parser (ISC)
+provide streaming annotation import. Their license notices are included with
+the installed Python distribution metadata. https://github.com/ICRAR/ijson

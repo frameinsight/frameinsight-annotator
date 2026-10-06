@@ -42,6 +42,8 @@ test('class colors match the palette across tracks, labels, class pills and time
 
 test('label modes and confirmation preference persist without modifying annotations; I remains available',async({page,request})=>{
  await canvas(page).press('n');await drag(page,[100,80],[200,280]);await canvas(page).press('n');await drag(page,[300,80],[400,280]);
+ const smart=await labels(page);expect(smart.filter((b:any)=>b.name)).toHaveLength(1);
+ await settings(page);await selectOption(page,'Box labels','All labels');await closeSettings(page);
  const before=await state(request),full=await labels(page);expect(full).toHaveLength(2);
  for(const [choice,count] of [['Selected box only',1],['Compact IDs only',2],['Hide labels',0]] as const){
   await settings(page);await selectOption(page,'Box labels',choice);await closeSettings(page);expect(await labels(page)).toHaveLength(count);
@@ -102,18 +104,17 @@ test('overlap chooser selects each class without hiding or modifying identical b
  await page.getByRole('button',{name:'Hide class person_extended',exact:true}).click();await page.mouse.click(center.x,center.y,{button:'right'});await expect(page.getByRole('menuitem',{name:'Select overlapping box',exact:true})).toHaveCount(0);
 });
 
-test('active inner box remains editable when the outer label covers it',async({page,request})=>{
+test('top-edge labels avoid boxes and disappear during editing without changing the other class',async({page,request})=>{
  await canvas(page).press('n');await drag(page,[100,1],[160,140]);
  await page.getByRole('button',{name:'Select class person_extended',exact:true}).click();await drag(page,[90,0],[170,220]);
  await page.getByRole('button',{name:'Select class person_visible',exact:true}).click();
  const before=await state(request),observation=Object.values(before.state.observations)[0] as any;
- const target=await canvas(page).evaluate(el=>{
-  const badges=JSON.parse(el.getAttribute('data-labels')||'[]'),badge=badges.find((b:any)=>b.className==='person_extended'),s=Number(el.getAttribute('data-scale')),ox=Number(el.getAttribute('data-offset-x')),oy=Number(el.getAttribute('data-offset-y')),r=el.getBoundingClientRect();
-  const x=ox+130*s,y=Math.max(badge.y+3,oy+4*s);
-  return {x:r.x+x,y:r.y+y,overlaps:x>=badge.x&&x<=badge.x+badge.width&&y>=badge.y&&y<=badge.y+badge.height&&y<oy+140*s};
- });
- expect(target.overlaps).toBe(true);
- await page.mouse.move(target.x,target.y);await page.mouse.down();await page.mouse.move(target.x+15,target.y+15,{steps:5});await page.mouse.up();await expect(page.locator('.save-status')).toHaveText('Saved');
+ const corners=await Promise.all([point(page,90,0),point(page,170,220)]),bounds=(await canvas(page).boundingBox())!;
+ for(const b of await labels(page))expect(b.x+b.width<=corners[0].x-bounds.x||b.x>=corners[1].x-bounds.x||b.y+b.height<=corners[0].y-bounds.y||b.y>=corners[1].y-bounds.y).toBe(true);
+ const target=await point(page,130,50);
+ await page.mouse.move(target.x,target.y);await page.mouse.down();await page.mouse.move(target.x+15,target.y+15,{steps:5});
+ expect(await labels(page)).toHaveLength(0);await expect(page.getByTestId('box-dimensions')).toBeVisible();
+ await page.mouse.up();await expect(page.locator('.save-status')).toHaveText('Saved');expect(await labels(page)).toHaveLength(2);
  await expect(page.getByRole('button',{name:'Select class person_visible',exact:true})).toHaveAttribute('aria-pressed','true');
  const after=await state(request),changed=after.state.observations[observation.id];
  expect(changed.boxes['class:person_visible']).not.toEqual(observation.boxes['class:person_visible']);

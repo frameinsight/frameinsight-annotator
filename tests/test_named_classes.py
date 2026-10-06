@@ -78,7 +78,7 @@ def test_legacy_observation_shape_and_compensation_stay_exact(project):
     assert 'boxes' not in db.snapshot(p['id'])['state']['observations'][obs]
     db.apply(p['id'], Operation(id=str(uuid.uuid4()), base_revision=1, compensates=op.id, label='Undo legacy', changes=[{'collection':'observations','id':obs,'before':after,'after':before}]))
     assert db.snapshot(p['id'])['state']['observations'][obs] == before
-    document = annotation_document(p['id'])
+    document = annotation_document(p['id'], include_history=True)
     assert document['operations'][0]['changes'][0]['before'] == before
     assert document['operations'][0]['changes'][0]['after'] == after
 

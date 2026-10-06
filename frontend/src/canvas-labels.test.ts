@@ -22,6 +22,11 @@ describe('canvas label placement',()=>{
       const a=labels[i],b=labels[j];expect(a.x+a.width<=b.x||b.x+b.width<=a.x||a.y+LABEL_HEIGHT<=b.y||b.y+LABEL_HEIGHT<=a.y).toBe(true);
     }
   });
+  it('moves labels beside boxes at the top edge instead of covering their interiors',()=>{
+    const obstacle={x:90,y:0,width:100,height:220};
+    const badges=placeLabels([{key:'inner',x:100,y:1,width:130},{key:'outer',x:90,y:0,width:150}],{width:800,height:600},4,[obstacle]);
+    for(const b of badges)expect(b.x+b.width<=obstacle.x||b.x>=obstacle.x+obstacle.width||b.y>=obstacle.y+obstacle.height).toBe(true);
+  });
 });
 
 describe('canvas badge targets',()=>{
@@ -64,5 +69,11 @@ describe('canvas badge targets',()=>{
     expect(compact.width).toBeLessThan(full.width);
     expect(hitLabel([compact],[compact.x+22,compact.y+12])?.identity).toBe('track-7');
     expect(hitLabel([compact],[compact.x+compact.width+1,compact.y+12])).toBeUndefined();
+  });
+  it('smart labels retain the selected class name and use compact IDs for other boxes',()=>{
+    const badges=layoutLabels([label('one',{selected:true}),label('two')],{width:800,height:600},measure,'unselected');
+    expect(badges[0].name).toBe('Helmet');expect(badges[1].name).toBe('');
+    expect(badges[1].width).toBeLessThan(badges[0].width);
+    expect(hitLabel(badges,[badges[1].x+2,badges[1].y+2])?.key).toBe('two');
   });
 });

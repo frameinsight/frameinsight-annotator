@@ -1,7 +1,7 @@
 """Import current annotation state, never historical operations or validation proofs."""
 import copy
-import json
 import uuid
+from .json_stream import read_annotation_json
 from .schema import video_identity_ids, identity_video_scopes, MODELS, validate_state
 from .geometry import box_items, box_style
 
@@ -25,12 +25,7 @@ def replacement_changes(project, video_id):
 def preview_native(raw, project, video_id, mode='add'):
     if mode not in ('add', 'replace'):
         raise ValueError('Choose Add or Replace annotations')
-    if len(raw) > 50 * 1024 * 1024:
-        raise ValueError('Annotation upload limit is 50 MB')
-    try:
-        doc = json.loads(raw)
-    except (ValueError, UnicodeDecodeError):
-        raise ValueError('Choose a valid Frameinsight annotation JSON file') from None
+    doc = read_annotation_json(raw)
     if not isinstance(doc, dict) or doc.get('format') != 'frameinsight.annotations' or doc.get('schema_version') not in (2, 3):
         raise ValueError('Expected Frameinsight annotation JSON version 2 or 3')
     videos, state = doc.get('videos'), doc.get('state')

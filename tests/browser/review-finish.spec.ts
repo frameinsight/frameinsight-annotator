@@ -86,6 +86,7 @@ test('reviews existing canvas at slow speeds and exports validated JSON without 
  const exported=await(await request.get((await download.getAttribute('href'))!)).json();
  await page.route('**/api/exports/*/check',r=>r.fulfill({status:409,json:{detail:'Annotations changed. Validate again.'}}));await download.click();await expect(page.getByRole('alert')).toContainText('Annotations changed. Validate again.');
  expect(exported.media_included).toBe(false);expect(exported.video_scope).toBe(videoId);expect(exported.annotation_index).toHaveLength(21);
+ expect(exported.history_included).toBe(false);expect(exported).not.toHaveProperty('operations');expect(exported.state).toEqual(original);
  expect(new Set(exported.annotation_index.map((row:any)=>row.person_id))).toEqual(new Set([1]));
  expect(exported.validation.mode).toBe('structural');expect(exported.validation.coverage).toBe('selected_people');
  expect(exported.validation).not.toHaveProperty('review_video_hash');expect(JSON.stringify(exported)).not.toContain('data:image/');

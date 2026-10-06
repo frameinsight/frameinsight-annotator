@@ -59,7 +59,7 @@ The app does not recognize objects or guarantee identity correctness. Human revi
 
 ## Team annotation tools
 
-- Open **Canvas settings** beside the zoom tools (or from right-click). Choose full labels, selected-only labels, compact IDs or hidden labels, or turn off first-box confirmation. The selected box’s width × height stays visible at the bottom of the canvas automatically. These preferences stay in this browser.
+- Open **Canvas settings** beside the zoom tools (or from right-click). By default, the selected box has a full label and other boxes show compact IDs. Choose full labels, selected-only labels, compact IDs or hidden labels, or turn off first-box confirmation. The selected box’s width × height stays visible at the bottom of the canvas automatically. Labels avoid box interiors when space allows and temporarily disappear during drawing, moving and resizing. Existing label preferences stay in this browser.
 - **View by class** uses the project palette consistently across tracks. **View by track** gives each track one color across its classes. Both are display preferences; saved annotation styles and export colors stay unchanged.
 - Width × height appears in source pixels while drawing or adjusting, independent of zoom. Right-click an overlap and use **Select overlapping box** to choose the exact track and class.
 - Diamonds mark anchor frames for the selected track/class. Use **Previous/Next keyframe** or **[ / ]** to jump between them. Generated boxes have no diamond until corrected. Single-frame copies and imported boxes may also be anchors.
@@ -80,7 +80,7 @@ Trimming changes duration only: width, height and pixel aspect ratio are preserv
 
 ## How to use annotation JSON
 
-After **Finish → I reviewed — continue → Run annotation validation**, use **Prepare validated JSON → Download annotations (.json)**. The file includes current annotations, source metadata, validation, and edit history. It embeds **no video, image, crop or thumbnail**. Keep the original video separately; its recorded name and SHA-256 hash identify the matching footage. **Review in editor** shows all saved tracks and classes; display hiding never removes boxes from export.
+After **Finish → I reviewed — continue → Run annotation validation**, use **Prepare validated JSON → Download annotations (.json)**. The compact file includes current annotations, source metadata and validation. Editing history is omitted; your local history is unchanged. Use **Back up project** for a compressed ZIP with full history. It embeds **no video, image, crop or thumbnail**. Keep the original video separately; its recorded name and SHA-256 hash identify the matching footage. **Review in editor** shows all saved tracks and classes; display hiding never removes boxes from export.
 
 New exports use `format: "frameinsight.annotations"`, `schema_version: 3`.
 
@@ -95,7 +95,14 @@ New exports use `format: "frameinsight.annotations"`, `schema_version: 3`.
 | `frame_annotations` | One row per object/frame, with a `boxes` map containing the present class keys. |
 | `presence_intervals` | Inclusive per-class runs of `present` / `absent` boxes. Absence does not prove physical occlusion or a verified negative example. |
 | `validation` | Revision-bound structural checks, human visual confirmation, and declared annotation coverage. |
-| `state`, `operations` | Saved entities and edit history. Historical/deleted boxes are **not current training labels**. |
+| `state` | Current saved entities, allowing editable reimport. |
+| `export_profile`, `history_included` | New deliveries use `annotations_only` and `false`. Older exports may include `operations`; historical/deleted boxes are **not current training labels**. |
+
+### Large files and backups
+
+Frameinsight JSON imports accept `.json` and `.json.gz` up to **1 GiB** (compressed input and decoded content). The importer streams older history-heavy files and retains only the current annotation state. No manual editing of the JSON is needed. Import limits are 49,000 entities, 45,000 boxes, and 128 MiB of retained state; YOLO/MOT uploads retain their separate 50 MiB limit. The preview changes nothing until you choose Add or confirm Replace.
+
+Project backups preserve complete editing history in a compressed ZIP. Their native JSON metadata can be up to 1 GiB uncompressed; keep the original videos separately. Gzip makes a large legacy file easier to transfer but does not change its decoded-content limit.
 
 ### Name and download annotation JSON
 
@@ -161,7 +168,7 @@ Browser tests need an **isolated** server at `127.0.0.1:5173` and Chrome. Set a 
 FRAMEINSIGHT_TEST_URL=http://127.0.0.1:5173 npm --prefix frontend run test:e2e
 ```
 
-Build and release instructions are in [Windows packaging](docs/WINDOWS.md), [Debian packaging](docs/LINUX.md) and the [release workflow](.github/workflows/desktop-release.yml). See the [3.9.1 verification record](docs/releases/v3.9.1-acceptance.md) for test coverage and limits.
+Build and release instructions are in [Windows packaging](docs/WINDOWS.md), [Debian packaging](docs/LINUX.md) and the [release workflow](.github/workflows/desktop-release.yml). See the [3.9.2 verification record](docs/releases/v3.9.2-acceptance.md) for test coverage and limits.
 
 ## Contributing
 

@@ -1,5 +1,6 @@
 import json
 import uuid
+import zipfile
 from pathlib import Path
 from fractions import Fraction
 import av
@@ -9,6 +10,33 @@ from backend.app.config import DATA,ROOT
 from backend.app.video import index_video,new_job
 from backend.app.formats import export_project
 from backend.app.restore import restore_archive
+
+
+def test_restore_accepts_legacy_metadata_above_200_mib_and_keeps_audit_history(tmp_path):
+    from backend.app.formats import native_manifest
+    pid, vid = setup_video(tmp_path)
+    original = native_manifest(db.snapshot(pid))
+    history = [{'id': 'old-edit', 'label': 'Move box', 'changes': [{'before': [1,2,3,4], 'after': [2,3,4,5]}]}]
+    original['operations'] = history
+    archive_path = tmp_path / 'large-backup.zip'
+    with zipfile.ZipFile(archive_path, 'w', zipfile.ZIP_DEFLATED) as archive:
+        with archive.open('native/project.json', 'w') as output:
+            # Old pretty exports count whitespace toward the uncompressed limit.
+            for _ in range(201):
+                output.write(b' ' * 1024**2)
+            output.write(json.dumps(original).encode())
+    job = new_job('native-import', 'restore')
+    restore_archive(archive_path, job['id'])
+    result = db.job_get(job['id'])
+    assert result['status'] == 'completed', result
+    restored_id = result['restored_project_id']
+    assert next(iter(db.snapshot(restored_id)['videos'].values()))['source_hash'] == original['videos'][vid]['source_hash']
+    with db.connect() as connection:
+        saved = json.loads(connection.execute('SELECT data FROM restored_history WHERE project_id=?', (restored_id,)).fetchone()['data'])
+    assert saved['operations'] == history
+    # Re-backing up keeps archived edits; compact delivery never needs them.
+    again = native_manifest(db.snapshot(restored_id))
+    assert again['restored_history']['operations'] == history
 
 def setup_video(tmp_path):
     db.init();pid=str(uuid.uuid4());vid=str(uuid.uuid4());source=tmp_path/'vfr.mkv'

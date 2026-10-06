@@ -56,7 +56,7 @@ def test_selected_video_json_excludes_other_video_annotations_and_history(projec
     db.apply(p['id'],Operation(id=str(uuid.uuid4()),base_revision=0,label='Other video',video_id=other,changes=changes))
     doc=annotation_document(p['id'],v)
     assert list(doc['videos'])==[v] and list(doc['state']['observations'])==[o]
-    assert list(doc['state']['identities'])==[i] and doc['operations']==[]
+    assert list(doc['state']['identities'])==[i] and 'operations' not in doc
     assert doc['video_scope']==v and not doc['media_included']
 
 

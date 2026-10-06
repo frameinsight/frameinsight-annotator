@@ -30,8 +30,8 @@ def fingerprint(document):
 def live_fingerprint(c, pid, vid, project=None, ledger=None):
     """Hash saved state directly: operation history does not affect freshness.
 
-    The full frozen export still preserves history. Rebuilding that export for a
-    freshness check can parse hundreds of megabytes unnecessarily.
+    Delivery snapshots omit history. Freshness checks also avoid rebuilding
+    derived annotation indexes and presence intervals.
     """
     project = project if project is not None else db.get_state(c, pid)
     ledger = ledger if ledger is not None else [json.loads(r['data']) for r in c.execute('SELECT data FROM frames WHERE video_id=? ORDER BY frame_index', (vid,))]
@@ -84,7 +84,7 @@ def create_review(vid, revision):
         document = annotation_document(project['id'], vid)
         document['app_version'] = APP_VERSION
         document['conventions']['delivery'] = 'This immutable document is the source of the full annotated video review. Final delivery adds the revision-bound validation report.'
-        raw = json.dumps(document, ensure_ascii=False, allow_nan=False, sort_keys=True)
+        raw = json.dumps(document, ensure_ascii=False, allow_nan=False, sort_keys=True, separators=(',', ':'))
         folder.mkdir(parents=True)
         path = folder / 'annotations.json'; path.write_text(raw, encoding='utf-8')
         job = {'id': jid, 'kind': 'review', 'project_id': project['id'], 'video_id': vid,
@@ -287,7 +287,7 @@ def validate_annotations(vid, revision, visual_confirmed, coverage):
     path = folder / 'annotations.json'
     raw = None
     if report['passed']:
-        raw = json.dumps(document, ensure_ascii=False, allow_nan=False, sort_keys=True).encode('utf-8')
+        raw = json.dumps(document, ensure_ascii=False, allow_nan=False, sort_keys=True, separators=(',', ':')).encode('utf-8')
         report.update(snapshot_path=str(path), snapshot_hash=hashlib.sha256(raw).hexdigest(), fingerprint=expected_fingerprint)
         folder.mkdir(parents=True)
         path.write_bytes(raw)

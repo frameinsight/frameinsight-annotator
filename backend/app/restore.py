@@ -10,6 +10,8 @@ from . import db
 from .schema import MODELS, validate_state
 from .video import index_video, sha256, new_job
 
+NATIVE_METADATA_LIMIT = 1024 * 1024**2
+
 def restore_archive(path, jid):
     try:
         db.job_update(jid,status='running')
@@ -17,8 +19,9 @@ def restore_archive(path, jid):
             members=archive.infolist()
             if sum(m.file_size for m in members)>100*1024**3:raise ValueError('Archive exceeds 100 GB uncompressed limit')
             info=archive.getinfo('native/project.json')
-            if info.file_size>200*1024**2:raise ValueError('Native metadata exceeds 200 MB limit')
-            original=json.loads(archive.read(info))
+            if info.file_size>NATIVE_METADATA_LIMIT:raise ValueError('Native metadata exceeds 1 GiB uncompressed limit')
+            with archive.open(info) as source:
+                original=json.load(source)
             if original.get('format')!='frameinsight' or original.get('schema_version') not in (1,2):raise ValueError('Unsupported native schema')
             classes=original.get('classes',[])
             if not isinstance(classes,list) or len(classes)>100 or any(not isinstance(name,str) or not name.strip() or len(name)>80 for name in classes):raise ValueError('Invalid class catalog in backup')
@@ -67,7 +70,7 @@ def restore_archive(path, jid):
                 if col=='reviews':
                     entities={e['video_id']+':'+str(e['frame_index']):{**e,'id':e['video_id']+':'+str(e['frame_index'])} for e in entities.values()};state[col]=entities
                 for e in entities.values():MODELS[col].model_validate(e)
-            current=db.snapshot(pid);validate_state(state,current['videos'],visible_only=True)
+            current=db.snapshot(pid);validate_state(state,current['videos'],visible_only=True,structural_only=True)
             with db.transaction() as c:
                 for col,entities in state.items():
                     for ident,e in entities.items():c.execute('INSERT INTO entities VALUES(?,?,?,?)',(pid,col,ident,json.dumps(e)))

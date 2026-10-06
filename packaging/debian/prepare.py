@@ -76,7 +76,7 @@ def main():
     command = [sys.executable, '-m', 'PyInstaller', '--noconfirm', '--clean', '--onedir', '--noupx',
                '--name', 'Frameinsight', '--distpath', str(build / 'dist'), '--workpath', str(build / 'work'),
                '--specpath', str(build), '--paths', str(ROOT), '--add-data', str(frontend / 'dist') + ':frontend/dist',
-               '--collect-all', 'av', '--collect-all', 'PIL', '--collect-submodules', 'uvicorn',
+               '--collect-all', 'av', '--collect-all', 'PIL', '--collect-all', 'ijson', '--collect-submodules', 'uvicorn',
                '--collect-submodules', 'websockets', '--collect-submodules', 'backend',
                '--exclude-module', 'torch', '--exclude-module', 'ultralytics', '--exclude-module', 'cv2']
     for unused in ('readline', '_curses', 'tkinter', 'PIL.ImageTk'):

@@ -199,9 +199,10 @@ export function ReviewFinish({project, videoId, visualConfirmed, onEdit, onBacku
 
         <aside className="finish-sidebar" aria-label="Export and project details">
           <Card>
-            <CardHeader><CardTitle className="flex items-center gap-2"><FileJson2 className="size-5"/>Annotations JSON</CardTitle><CardDescription>Save annotations without video or image files.</CardDescription></CardHeader>
+            <CardHeader><CardTitle className="flex items-center gap-2"><FileJson2 className="size-5"/>Annotations JSON</CardTitle><CardDescription>Compact annotations for sharing, training and reimport. No edit history, videos or images.</CardDescription></CardHeader>
             <CardContent className="flex flex-col gap-4">
-              <ul className="finish-export-content"><li>Track IDs, classes and boxes</li><li>Frame numbers and exact timestamps</li><li>Annotation history and validation results</li></ul>
+              <ul className="finish-export-content"><li>Track IDs, classes and final boxes</li><li>Frame numbers and exact timestamps</li><li>Editable state and validation results</li></ul>
+              <p className="finish-export-hint">Your local edit history stays saved. To keep a copy of it, use Back up project.</p>
               {!passed && <p className="finish-export-hint">Run validation to enable export.</p>}
               <Button disabled={!passed || !report?.validation_id || !!busy || exporting} onClick={() => void exportAnnotations()}>
                 {busy === "export" || exporting ? <LoaderCircle className="spin"/> : <Download/>}

@@ -1,5 +1,6 @@
 import copy
 import json
+import gzip
 import uuid
 import pytest
 from backend.app import db
@@ -38,6 +39,8 @@ def inspect(doc, p, v):
 
 def test_round_trip_preserves_boxes_ids_classes_provenance_and_gaps(exported):
     doc, p, v = exported
+    assert doc['export_profile'] == 'annotations_only' and doc['history_included'] is False
+    assert not {'operations', 'restored_history', 'project_settings_history', 'detector'} & doc.keys()
     result = inspect(doc, p, v)
     assert result['mapping'] == [{'source': 7, 'track_id': 7}]
     assert result['summary']['boxes'] == 6
@@ -54,6 +57,63 @@ def test_round_trip_preserves_boxes_ids_classes_provenance_and_gaps(exported):
     inverse = [{**c, 'before': c['after'], 'after': None} for c in result['changes']]
     db.apply(p['id'], Operation(id='undo', base_revision=1, label='Undo', compensates='import', changes=inverse))
     assert db.snapshot(p['id'])['state'] == p['state']
+
+
+def test_legacy_json_over_50_mib_uploads_and_gzip_preserves_current_state(exported, client, tmp_path):
+    doc, p, v = exported
+    path = tmp_path / 'legacy.json'
+    # History is before state and larger than the former limit; parsing must
+    # reach state and validate the closing bytes without building history objects.
+    with path.open('wb') as output:
+        output.write(b'{"operations":[')
+        chunk = b'{"before":"' + b'x' * 1010 + b'","after":null},'
+        for _ in range(54 * 1024):
+            output.write(chunk)
+        output.write(b'null],')
+        output.write(json.dumps(doc).encode()[1:])
+    assert path.stat().st_size > 50 * 1024**2
+    route = f'/api/projects/{p["id"]}/imports/annotations/preview?video_id={v}'
+    with path.open('rb') as source:
+        response = client.post(route, files={'file': ('legacy.json', source)}, data={'format': 'frameinsight'})
+    assert response.status_code == 200, response.text
+    assert response.json()['summary']['boxes'] == 6
+    assert response.json()['mapping'] == [{'source': 7, 'track_id': 7}]
+    assert db.snapshot(p['id']) == p
+    compressed = gzip.compress(json.dumps(doc).encode())
+    result = preview(compressed, 'annotations.json.gz', p, v, 'frameinsight')
+    assert result['summary'] == response.json()['summary']
+    assert result['mapping'] == response.json()['mapping']
+
+
+@pytest.mark.parametrize('payload', [b'{"format":"frameinsight.annotations","state":{',
+    b'{"format":"one","format":"two"}', b'{"state":{"a":1,"a":2}}',
+    b'{} trailing garbage', b'[]', b'{"state":{"bad":NaN}}', b'{"operations":[1,]}'])
+def test_streaming_import_rejects_malformed_data_including_skipped_history(exported, payload):
+    _, p, v = exported
+    with pytest.raises(ValueError):
+        preview(payload, 'invalid.json', p, v, 'frameinsight')
+    assert db.snapshot(p['id']) == p
+
+
+def test_streaming_import_enforces_decoded_size_and_state_budget(exported, monkeypatch):
+    from backend.app import json_stream
+    doc, p, v = exported
+    monkeypatch.setattr(json_stream, 'JSON_STATE_LIMIT', 100)
+    with pytest.raises(ValueError, match='Current annotation state'):
+        inspect(doc, p, v)
+    # Exercise the reader directly so no gigabyte allocation is needed.
+    import io
+    source = json_stream.LimitedReader(gzip.GzipFile(fileobj=io.BytesIO(gzip.compress(b'x' * 1000))), limit=100)
+    with pytest.raises(ValueError, match='after decompression'):
+        source.read(1000)
+
+
+def test_streaming_import_preserves_unicode_dotted_class_names_and_bom(exported):
+    doc, p, v = exported
+    raw = b'\xef\xbb\xbf' + json.dumps(doc, ensure_ascii=False).encode()
+    assert preview(raw, 'labels.json', p, v, 'frameinsight')['summary']['boxes'] == 6
+    from backend.app.json_stream import read_annotation_json
+    assert read_annotation_json(b'{"state":{"class:Head.v2":"caf\xc3\xa9"}}') == {'state': {'class:Head.v2': 'caf\u00e9'}}
 
 
 @pytest.mark.parametrize('damage,match', [

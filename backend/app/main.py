@@ -323,7 +323,10 @@ def download_export(eid:str,filename:str|None=None):
 def annotation_preview(pid:str,video_id:str,file:UploadFile=File(...),format:str=Form('yolo'),frame_base:int=Form(0),coordinate_base:int=Form(0),class_names:str=Form(''),clip_boxes:bool=Form(False),mode:str=Form('add')):
     from .annotation_import import preview
     try:
-        return preview(file.file.read(50*1024*1024+1),file.filename or 'labels.txt',db.snapshot(pid),video_id,format,frame_base,coordinate_base,json.loads(class_names) if class_names.strip() else None,clip_boxes,mode)
+        # Native JSON is streamed from the spooled upload: legacy history can be
+        # hundreds of megabytes, but only the current state is needed for import.
+        raw = file.file if format == 'frameinsight' else file.file.read(50*1024*1024+1)
+        return preview(raw,file.filename or 'labels.txt',db.snapshot(pid),video_id,format,frame_base,coordinate_base,json.loads(class_names) if class_names.strip() else None,clip_boxes,mode)
     except (UnicodeError, zipfile.BadZipFile) as error:
         raise ValueError('Use a readable UTF-8 annotation file or ZIP archive') from error
 @app.post('/api/projects/{pid}/imports/cvat')

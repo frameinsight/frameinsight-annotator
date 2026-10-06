@@ -1,4 +1,5 @@
 import copy
+import io
 import json
 import uuid
 import zipfile
@@ -80,7 +81,7 @@ def export_project(pid, settings, jid):
             from .video import sha256
             document = validated_document(pid, settings)
             eid = str(uuid.uuid4()); path = DATA / 'exports' / f'{eid}.json'
-            path.write_text(json.dumps(document, indent=2, ensure_ascii=False, allow_nan=False), encoding='utf-8')
+            path.write_text(json.dumps(document, separators=(',', ':'), ensure_ascii=False, allow_nan=False), encoding='utf-8')
             data = {'id': eid, 'project_id': pid, 'path': str(path), 'revision': document['project']['revision'],
                     'settings': {**settings, 'include_videos': False}, 'included_images': 0, 'excluded_frames': 0, 'created_at': now(), 'file_hash':sha256(path)}
             with transaction() as c:
@@ -93,7 +94,11 @@ def export_project(pid, settings, jid):
         profile = settings['format']; exclusions = []; included = 0
         if profile != 'native': reject_dynamic(project['state']['observations'].values())
         with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as z:
-            z.writestr('native/project.json', json.dumps(native, indent=2))
+            # Stream serialization into ZIP, avoiding an additional huge formatted
+            # string. Backup history is retained in full; delivery JSON omits it.
+            with z.open('native/project.json', 'w', force_zip64=True) as output:
+                with io.TextIOWrapper(io.BufferedWriter(output), encoding='utf-8') as text:
+                    json.dump(native, text, separators=(',', ':'), ensure_ascii=False, allow_nan=False)
             z.writestr('settings.json', json.dumps(settings, indent=2))
             if profile == 'native':
                 if settings.get('include_videos'):
