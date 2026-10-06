@@ -49,6 +49,7 @@ def main():
                 if not hwnd or not user.PostMessageW(hwnd, 0x0010, 0, 0):
                     raise OSError('Unable to close the desktop launcher safely')
             app.state.update_shutdown = update_shutdown
+            app.state.update_restart = str(Path(sys.executable).resolve().parent.parent / 'Frameinsight.exe')
             kernel = ctypes.WinDLL('kernel32', use_last_error=True)
             kernel.OpenEventW.argtypes = [ctypes.c_ulong, ctypes.c_int, ctypes.c_wchar_p]
             kernel.OpenEventW.restype = ctypes.c_void_p

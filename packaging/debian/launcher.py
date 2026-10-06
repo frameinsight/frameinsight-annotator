@@ -114,6 +114,8 @@ def serve(data, state, port):
     import uvicorn
     server = uvicorn.Server(uvicorn.Config(app, host='127.0.0.1', port=port, access_log=False, loop='asyncio', http='h11', ws='websockets'))
     app.state.update_shutdown = lambda: setattr(server, 'should_exit', True)
+    if getattr(sys, 'frozen', False):
+        app.state.update_restart = sys.executable
     session = {'pid': os.getpid(), 'start_ticks': process_start(os.getpid()), 'port': port, 'ready': False}
     write_session(state, session)
     finished = threading.Event()

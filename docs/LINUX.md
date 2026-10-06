@@ -1,16 +1,16 @@
 # Ubuntu and Debian desktop installation
 
-Download `frameinsight_3.9.1_amd64.deb` and `START-HERE-LINUX.txt` from the [official releases](https://github.com/frameinsight/frameinsight-annotator/releases). Open the package with Software Install, GDebi, or your distribution's package installer, then choose **Install**. Launch **Frameinsight** from Applications. Its local browser interface opens automatically.
+Download `frameinsight_3.10.0_amd64.deb` and `START-HERE-LINUX.txt` from the [official releases](https://github.com/frameinsight/frameinsight-annotator/releases). Open the package with Software Install, GDebi, or your distribution's package installer, then choose **Install**. Launch **Frameinsight** from Applications. Its local browser interface opens automatically.
 
-The package targets **Ubuntu 24.04+ and Debian 12+, Intel/AMD 64-bit**, with glibc 2.36 or newer and a graphical desktop. Python and the CPU video libraries are bundled. Node, Python setup, CUDA and AI models are not required. Standard desktop libraries and a graphical package installer may be installed by your package manager. GDebi is recommended for update handoff.
+The package targets **Ubuntu 24.04+ and Debian 12+, Intel/AMD 64-bit**, with glibc 2.36 or newer and a graphical desktop. Python and the CPU video libraries are bundled. Node, Python setup, CUDA and AI models are not required. Standard desktop libraries and a graphical package installer may be installed by your package manager. Automatic updates use apt-get and pkexec, which is included as a package dependency. Your desktop provides the normal authorization prompt.
 
 If your desktop opens `.deb` files as archives, use **Open With → Software Install/GDebi**, or run:
 
 ```bash
-sudo apt install ./frameinsight_3.9.1_amd64.deb
+sudo apt install ./frameinsight_3.10.0_amd64.deb
 ```
 
-The app works offline. Update checks only contact the public release service; they do not upload videos or annotations. Updates are optional, verified against release checksums, and installed through the normal system installer after explicit confirmation. If no supported graphical installer is available, download the package and install it manually.
+The app works offline. On app startup, newer stable releases are downloaded, checksum-verified and installed automatically, then Frameinsight reopens. The desktop may ask for your administrator password through its standard authorization prompt; Frameinsight never receives that password. Update checks do not upload videos or annotations. Offline checks, failed downloads and cancelled authorization leave saved data intact and allow the current version to be reopened. Install 3.10.0 once to enable automatic updates for subsequent releases.
 
 ## Annotate, review and export
 
@@ -64,3 +64,5 @@ The Linux package is not an AppImage, Snap, system service or network server. It
 Version 3.9.0 stages the verified public installer outside private annotation folders before opening the system package manager. The frozen app and its helper exit before installation, so the running-app guard cannot block the helper itself. Installer stdout/stderr and its exit code are saved in `~/.local/share/frameinsight/data/updates/<version>/install-handoff.log` (or your configured XDG data location). Nonzero exits show the log and verified package path. Closing or cancelling a package-manager window does not mean the update was installed; reopen Frameinsight and check its version.
 
 If an older installation cannot update itself, close Frameinsight using its application-menu close action (closing the browser tab alone does not stop the app), download the current `.deb` from the official release, and install it manually once. Saved projects remain in place. Future updates use the repaired handoff.
+
+Automatic update failures are not retried automatically for one hour for the same installed/target version pair, preventing a restart loop. App updates still provides a manual retry. For isolated packaging tests or administrator-managed installations, `FRAMEINSIGHT_DISABLE_AUTO_UPDATE=1` disables startup installation. Source checkouts do not install updates automatically.

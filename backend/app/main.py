@@ -42,6 +42,7 @@ async def lifespan(app):
             if v['status']=='indexing':
                 v.update(status='failed',error='Indexing interrupted. Use Retry indexing.')
                 c.execute('UPDATE videos SET data=? WHERE id=?',(json.dumps(v),row['id']))
+    update_service.startup(app)
     yield
     worker.stop()
 app=FastAPI(title='Frameinsight',version=APP_VERSION,lifespan=lifespan)
@@ -56,8 +57,8 @@ async def local_only(request:Request,call_next):
     origin=request.headers.get('origin')
     if origin and origin not in ('http://localhost:8765','http://127.0.0.1:8765','http://localhost:5173','http://127.0.0.1:5173'):
         return JSONResponse({'detail':'Untrusted origin'},status_code=403)
-    if request.method not in ('GET', 'HEAD', 'OPTIONS') and update_service.installing:
-        return JSONResponse({'detail':'Frameinsight is closing for the update. Reopen it after installation.'},status_code=503)
+    if request.method not in ('GET', 'HEAD', 'OPTIONS') and update_service.blocking:
+        return JSONResponse({'detail':'Frameinsight is updating. Your workspace will reopen when it finishes.'},status_code=503)
     return await call_next(request)
 @app.exception_handler(ValueError)
 async def value_error(request,e): return JSONResponse({'detail':str(e)},status_code=422)

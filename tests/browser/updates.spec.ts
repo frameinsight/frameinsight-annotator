@@ -69,3 +69,37 @@ test('a verified cached installer stays usable while the release check is offlin
  await page.getByRole('button',{name:'Check for updates',exact:true}).click();await expect(page.getByRole('button',{name:'Save installer',exact:true})).toBeEnabled();await expect(page.getByRole('link',{name:'Save verified installer for manual installation'})).toHaveAttribute('href','/cached-update.exe');
  const download=page.waitForEvent('download');await page.getByRole('button',{name:'Save installer',exact:true}).click();expect((await download).suggestedFilename()).toBe('Window_setup.exe');expect(installed).toEqual({version:'3.1.0'});expect(downloads).toBe(0);expect((await state(request)).state).toEqual(before.state);
 });
+
+test('managed startup shows automatic progress and reloads after installation without update clicks',async({page,request})=>{
+ let phase='checking',documentLoads=0,manualActions=0;
+ page.on('request',r=>{if(r.isNavigationRequest()&&r.frame()===page.mainFrame())documentLoads++;});
+ await page.route('**/api/updates/check*',route=>route.fulfill({json:{status:'current',current_version:'3.10.0',latest_version:'3.10.0',can_install:true}}));
+ await page.route('**/api/updates/status',route=>route.fulfill({json:{status:phase,automatic:phase!=='idle',progress:.65,version:'3.10.0',can_install:true}}));
+ await page.route('**/api/updates/download',route=>{manualActions++;return route.abort();});
+ await page.route('**/api/updates/install',route=>{manualActions++;return route.abort();});
+ const before=await state(request);await page.goto('/');
+ await expect(page.getByRole('dialog',{name:'Starting Frameinsight'})).toBeVisible();
+ await page.keyboard.press('Escape');await expect(page.getByRole('dialog')).toBeVisible();
+ phase='downloading';await expect(page.getByRole('dialog')).toContainText('65%');
+ await expect(page.getByRole('button',{name:'Install update',exact:true})).toHaveCount(0);
+ phase='installing';await expect(page.getByRole('status')).toContainText('reopen automatically');
+ phase='idle';await expect.poll(()=>documentLoads).toBeGreaterThanOrEqual(2);
+ await expect(page.getByRole('dialog')).toHaveCount(0);expect(manualActions).toBe(0);
+ expect((await state(request)).state).toEqual(before.state);
+});
+
+test('failed automatic update releases the workspace and preserves annotations',async({page,request})=>{
+ let failed=false;
+ await page.route('**/api/updates/check*',route=>route.fulfill({json:release(true)}));
+ await page.route('**/api/updates/status',route=>route.fulfill({json:failed?
+  {status:'error',automatic:false,progress:0,can_install:true,message:'Update checksum verification failed. Nothing was installed.'}:
+  {status:'checking',automatic:true,progress:0,can_install:true}}));
+ const before=await state(request);await page.goto('/');await expect(page.getByRole('dialog',{name:'Starting Frameinsight'})).toBeVisible();
+ failed=true;await expect(page.getByRole('dialog')).toContainText('Nothing was installed');
+ await page.getByRole('button',{name:'Close dialog',exact:true}).click();
+ await expect(page.getByRole('dialog')).toHaveCount(0);
+ await page.getByTestId('open-project-'+projectId).click();await page.getByTestId('open-video-'+videoId).click();
+ expect((await state(request)).state).toEqual(before.state);
+ await page.getByTestId('canvas').press('n');await draw(page);await expect(page.locator('.save-status')).toHaveText('Saved');
+ expect(Object.keys((await state(request)).state.observations)).toHaveLength(1);
+});

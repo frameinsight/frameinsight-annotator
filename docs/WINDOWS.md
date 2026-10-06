@@ -57,11 +57,9 @@ exact-frame editing. Leave sufficient disk space for these files.
 
 # Updates
 
-The update notice checks the public GitHub release version. **Download update**
-downloads the installer and verifies its published size and SHA-256 checksum.
-**Install update** closes Frameinsight and opens the normal installer; complete
-its pages, then reopen the app. Save first. Nothing installs merely because an
-update is available. A failed check leaves offline annotation available.
+From 3.10.0 onward, every app start checks the latest stable release. If an update is available, the app downloads and verifies the installer, closes safely, installs silently, and reopens automatically. The startup progress screen does not require any Update or Install clicks. Closing the browser alone does not restart the app: exit from the tray icon, then use the desktop shortcut.
+
+Install 3.10.0 once using the older version’s updater or the official installer. Offline checks and failed downloads let you keep annotating. A failed installation is not automatically retried for one hour, preventing a restart loop; App updates remains available for a manual retry. Saved projects are preserved.
 
 You can also close Frameinsight from its tray icon and install a newer official
 `Window_setup.exe` yourself. The installer refuses to replace a running app.

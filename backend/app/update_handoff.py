@@ -1,10 +1,11 @@
 """Detached, standard-library-only installer handoff after the app has stopped.
 
-Run by updates.py only after an explicit Install action. The Windows launcher
+Run by updates.py for a verified startup update or an explicit Install action. The Windows launcher
 mutex must be released before NSIS starts. Debian installers request their own
 administrator authorization; Frameinsight never collects a password.
 """
 import argparse
+import base64
 import ctypes
 import hashlib
 import os
@@ -64,9 +65,13 @@ def wait_for_exit(process_ids, timeout=120):
     raise TimeoutError('Frameinsight did not close within two minutes. Close it before installing the downloaded package.')
 
 
-def installer_command(kind, package, installer=None):
+def installer_command(kind, package, installer=None, automatic=False):
     if kind == 'windows':
-        return [str(package)]
+        return [str(package), '/S'] if automatic else [str(package)]
+    if automatic:
+        if installer != 'pkexec' or not shutil.which('pkexec') or not shutil.which('apt-get'):
+            raise ValueError('Automatic Debian updates require the system authorization service and apt-get')
+        return [shutil.which('pkexec'), shutil.which('apt-get'), 'install', '--yes', '--no-install-recommends', str(package)]
     if installer not in ('gdebi-gtk', 'qapt-deb-installer', 'gnome-software'):
         raise ValueError('Unsupported system package installer')
     executable = shutil.which(installer)
@@ -137,17 +142,92 @@ fi
 exit "$result"
 '''
 
+DEBIAN_AUTOMATIC_HANDOFF = r'''
+log=$1
+package=$2
+expected=$3
+restart=$4
+shift 4
+cd / || exit 1
+printf '%s\n' 'Installing verified update. The system may ask for administrator authorization.' >> "$log"
+"$@" >> "$log" 2>&1
+result=$?
+if [ "$result" -eq 0 ]; then
+    installed=$(dpkg-query -W '-f=${Version}' frameinsight 2>> "$log")
+    if [ "$installed" != "$expected" ]; then result=1; fi
+fi
+printf '\nInstaller process exit code: %s\n' "$result" >> "$log"
+if [ "$result" -eq 0 ]; then
+    printf '%s\n' 'Update installed. Reopening Frameinsight.' >> "$log"
+    "$restart" >> "$log" 2>&1 &
+else
+    message="Frameinsight could not finish updating. Your annotations are unchanged. You can reopen the app and keep working.
 
-def launch_debian(package, size, checksum, installer, log):
+Details: $log"
+    if command -v zenity >/dev/null 2>&1; then
+        zenity --error --title='Frameinsight update' --text="$message" --width=520 >> "$log" 2>&1
+    fi
+fi
+exit "$result"
+'''
+
+# This system process outlives the bundled Python helper. Waiting for the helper
+# to exit releases Python/DLL locks before a silent installer replaces the app.
+# All variable values travel through the environment, never script interpolation.
+WINDOWS_AUTOMATIC_HANDOFF = r'''
+$ErrorActionPreference = 'Stop'
+$log = $env:FRAMEINSIGHT_UPDATE_LOG
+try {
+    Wait-Process -Id ([int]$env:FRAMEINSIGHT_UPDATE_HELPER) -Timeout 120 -ErrorAction SilentlyContinue
+    if (Get-Process -Id ([int]$env:FRAMEINSIGHT_UPDATE_HELPER) -ErrorAction SilentlyContinue) { throw 'Update helper did not exit.' }
+    $package = $env:FRAMEINSIGHT_UPDATE_PACKAGE
+    if ((Get-Item -LiteralPath $package).Length -ne [long]$env:FRAMEINSIGHT_UPDATE_SIZE) { throw 'Installer size changed.' }
+    if ((Get-FileHash -LiteralPath $package -Algorithm SHA256).Hash -ne $env:FRAMEINSIGHT_UPDATE_SHA256) { throw 'Installer checksum changed.' }
+    $installer = Start-Process -FilePath $package -ArgumentList '/S' -PassThru -Wait
+    if ($installer.ExitCode -ne 0) { throw "Installer failed with exit code $($installer.ExitCode)." }
+    $restart = $env:FRAMEINSIGHT_UPDATE_RESTART
+    $manifest = Get-Content -LiteralPath (Join-Path (Split-Path -Parent $restart) 'build-manifest.json') -Raw | ConvertFrom-Json
+    if ($manifest.version -ne $env:FRAMEINSIGHT_UPDATE_VERSION) { throw 'Installed version does not match the verified update.' }
+    Add-Content -LiteralPath $log -Value 'Update installed. Reopening Frameinsight.'
+    Start-Process -FilePath $restart
+    exit 0
+} catch {
+    $message = "Frameinsight could not finish updating. Your annotations are unchanged. You can reopen the app and keep working.`n`n$($_.Exception.Message)`nDetails: $log"
+    Add-Content -LiteralPath $log -Value $message
+    Add-Type -AssemblyName System.Windows.Forms
+    [System.Windows.Forms.MessageBox]::Show($message, 'Frameinsight update') | Out-Null
+    exit 1
+}
+'''
+
+
+def launch_windows_automatic(package, size, checksum, version, restart, log):
+    powershell = Path(os.environ['SystemRoot']) / 'System32/WindowsPowerShell/v1.0/powershell.exe'
+    environment = system_environment()
+    environment.update(FRAMEINSIGHT_UPDATE_HELPER=str(os.getpid()), FRAMEINSIGHT_UPDATE_LOG=str(log),
+                       FRAMEINSIGHT_UPDATE_PACKAGE=str(package), FRAMEINSIGHT_UPDATE_SIZE=str(size),
+                       FRAMEINSIGHT_UPDATE_SHA256=checksum, FRAMEINSIGHT_UPDATE_VERSION=version,
+                       FRAMEINSIGHT_UPDATE_RESTART=str(restart))
+    encoded = base64.b64encode(WINDOWS_AUTOMATIC_HANDOFF.encode('utf-16-le')).decode('ascii')
+    log.write_text('Verified automatic update prepared. Waiting for the app runtime to exit.\n', encoding='utf-8')
+    subprocess.Popen([str(powershell), '-NoProfile', '-NonInteractive', '-EncodedCommand', encoded],
+                     stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                     cwd=str(package.parent), env=environment,
+                     creationflags=subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP)
+
+
+def launch_debian(package, size, checksum, installer, log, automatic=False, version=None, restart=None):
     # Resolve the system installer before creating the staged copy.
-    installer_command('debian', package, installer)
+    installer_command('debian', package, installer, automatic)
     staged = stage_debian_package(package, size, checksum)
-    command = installer_command('debian', staged, installer)
+    command = installer_command('debian', staged, installer, automatic)
     log.write_text('Verified Debian update prepared. Project data stays private.\n', encoding='utf-8')
     # The system shell survives replacement of /opt/frameinsight and records
     # failures instead of throwing away the package manager's stdout/stderr.
-    os.execve('/bin/sh', ['/bin/sh', '-c', DEBIAN_HANDOFF, 'frameinsight-update',
-                         str(log), str(staged), *command], system_environment())
+    script = DEBIAN_AUTOMATIC_HANDOFF if automatic else DEBIAN_HANDOFF
+    extra = [version, str(restart)] if automatic else []
+    os.execve('/bin/sh', ['/bin/sh', '-c', script, 'frameinsight-update',
+                         str(log), str(staged), *extra, *command], system_environment())
 
 
 def main():
@@ -159,9 +239,14 @@ def main():
     parser.add_argument('--launcher', type=int)
     parser.add_argument('--platform', required=True, choices=['windows', 'debian'])
     parser.add_argument('--installer')
+    parser.add_argument('--automatic', action='store_true')
+    parser.add_argument('--version')
+    parser.add_argument('--restart', type=Path)
     args = parser.parse_args()
     log = args.package.parent / 'install-handoff.log'
     try:
+        if args.automatic and (not args.version or not args.restart or not args.restart.is_file()):
+            raise ValueError('Automatic update requires the installed launcher and target version')
         wait_for_exit([pid for pid in (args.server, args.launcher) if pid])
         if args.package.is_symlink() or not args.package.is_file() or args.package.stat().st_size != args.size:
             raise ValueError('The downloaded package changed before installation. Nothing was installed.')
@@ -172,7 +257,11 @@ def main():
         if digest.hexdigest() != args.sha256:
             raise ValueError('The downloaded package checksum changed. Nothing was installed.')
         if args.platform == 'debian':
-            launch_debian(args.package, args.size, args.sha256, args.installer, log)
+            launch_debian(args.package, args.size, args.sha256, args.installer, log,
+                          args.automatic, args.version, args.restart)
+            return 0
+        if args.automatic:
+            launch_windows_automatic(args.package, args.size, args.sha256, args.version, args.restart, log)
             return 0
         subprocess.Popen(installer_command(args.platform, args.package, args.installer),
                          stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, env=system_environment())

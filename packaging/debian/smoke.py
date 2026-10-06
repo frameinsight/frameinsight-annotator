@@ -11,6 +11,7 @@ import time
 import urllib.error
 import urllib.request
 import uuid
+os.environ['FRAMEINSIGHT_DISABLE_AUTO_UPDATE']='1'
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
 from backend.app.schema import Identity, Observation, Segment

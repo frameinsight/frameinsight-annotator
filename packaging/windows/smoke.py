@@ -1,6 +1,7 @@
 """Exercise installed Windows binaries; run with bundled python.exe (Wine or Windows)."""
 import ctypes,io,json,os,subprocess,sys,time,urllib.error,urllib.request,uuid
 from pathlib import Path
+os.environ['FRAMEINSIGHT_DISABLE_AUTO_UPDATE']='1'
 root=Path(sys.argv[1]).resolve();fixture=Path(sys.argv[2]).resolve()
 app_version=json.loads((root/'build-manifest.json').read_text())['version']
 k=ctypes.WinDLL('kernel32',use_last_error=True)

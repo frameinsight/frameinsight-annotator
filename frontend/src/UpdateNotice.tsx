@@ -6,7 +6,7 @@ import {Button} from './components/ui/button';
 import {APP_VERSION} from './release';
 
 type Release = {status: 'available'|'current'|'offline'|'unavailable'; current_version: string; latest_version?: string; release_notes?: string; release_url?: string; can_install: boolean; asset?: {name:string;size:number}; message?:string};
-type Download = {status:'idle'|'downloading'|'ready'|'installing'|'error'; progress:number; version?:string; message?:string; can_install?:boolean; download_url?:string};
+type Download = {status:'idle'|'checking'|'downloading'|'ready'|'installing'|'error'; progress:number; version?:string; message?:string; can_install?:boolean; download_url?:string; automatic?:boolean};
 const message = (e:unknown) => e instanceof Error ? e.message : String(e);
 
 export function UpdateNotice({beforeUpdate}:{beforeUpdate:()=>Promise<void>}) {
@@ -15,9 +15,21 @@ export function UpdateNotice({beforeUpdate}:{beforeUpdate:()=>Promise<void>}) {
   const [open,setOpen]=useState(false),[skipped,setSkipped]=useState(false);
   const [busy,setBusy]=useState(false),[error,setError]=useState(''),[closing,setClosing]=useState('');
   const mounted=useRef(true);
+  const automaticSeen=useRef(false),automaticInstalling=useRef(false);
+  function receiveStatus(data:Download){
+    if(!mounted.current)return;
+    if(automaticInstalling.current&&!data.automatic&&data.status==='idle'){window.location.reload();return;}
+    if(data.automatic){automaticSeen.current=true;if(data.status==='installing')automaticInstalling.current=true;}
+    if(data.status==='error'){
+      automaticInstalling.current=false;setClosing('');setError(data.message||'Update could not finish. You can keep working.');
+      if(automaticSeen.current){automaticSeen.current=false;setOpen(true);void check();}
+    }else setError('');
+    setDownload(data);
+  }
   async function refreshDownload(){
     const data=await api<Download>('/updates/status');
-    if(mounted.current){setDownload(data);if(data.status==='error'){setClosing('');setError(data.message||'Update could not finish. Try again or save the installer.');}}
+    receiveStatus(data);
+    return data;
   }
   async function check(manual=false){
     if(manual){setOpen(true);setBusy(true);setError('');}
@@ -25,14 +37,14 @@ export function UpdateNotice({beforeUpdate}:{beforeUpdate:()=>Promise<void>}) {
     catch(e){if(manual&&mounted.current)setError(message(e));}
     finally {if(mounted.current)setBusy(false);}
   }
-  useEffect(()=>{mounted.current=true;void check();void refreshDownload().catch(()=>{});return()=>{mounted.current=false}},[]);
+  useEffect(()=>{mounted.current=true;void refreshDownload().then(data=>{if(!data.automatic)void check();}).catch(()=>{void check();});return()=>{mounted.current=false}},[]);
   useEffect(()=>{if(open)void refreshDownload().catch(e=>setError(message(e)));},[open]);
   useEffect(()=>{
-    if(!['downloading','installing'].includes(download?.status||''))return;
+    if(!download?.automatic&&!['downloading','installing'].includes(download?.status||''))return;
     let gone=false;
-    const timer=setInterval(()=>void api<Download>('/updates/status').then(value=>{if(!gone){setDownload(value);setError('');if(value.status==='error'){setClosing('');setError(value.message||'Update could not finish. Try again or save the installer.')}}}).catch(e=>{if(!gone&&!closing)setError('Connection interrupted. Retrying update status…')}),1000);
+    const timer=setInterval(()=>void api<Download>('/updates/status').then(value=>{if(!gone)receiveStatus(value)}).catch(()=>{if(!gone&&!closing&&!automaticInstalling.current)setError('Connection interrupted. Retrying update status…')}),1000);
     return()=>{gone=true;clearInterval(timer)};
-  },[download?.status,closing]);
+  },[download?.status,download?.automatic,closing]);
   async function startDownload(){
     setBusy(true);setError('');
     try{await beforeUpdate();setDownload(await post<Download>('/updates/download',{version:release!.latest_version}));}
@@ -55,8 +67,13 @@ export function UpdateNotice({beforeUpdate}:{beforeUpdate:()=>Promise<void>}) {
   const notesMatch=available&&(!hasDownload||download?.version===release?.latest_version);
   return <>
     <Button variant="ghost" size="icon-sm" className={'icon-button update-trigger '+(available&&!skipped?'has-update':'')} aria-label="Check for updates" title={available?'Update available':'Check for updates'} onClick={()=>{setOpen(true);void check(true)}}><RefreshCw size={17}/></Button>
-    {available&&!skipped&&!open&&<aside className="update-banner" aria-label="Update available"><span><strong>Frameinsight {release.latest_version} is available</strong><small>See what’s new and choose when to update.</small></span><Button onClick={()=>setOpen(true)}>View update</Button><Button variant="ghost" size="icon-sm" className="icon-button" aria-label="Skip update for now" onClick={()=>setSkipped(true)}><X size={17}/></Button></aside>}
-    {open&&<Modal title={visibleVersion?`Frameinsight ${visibleVersion}`:'App updates'} onClose={()=>setOpen(false)} busy={busy||!!closingMessage}>
+    {available&&!skipped&&!open&&!download?.automatic&&<aside className="update-banner" aria-label="Update available"><span><strong>Frameinsight {release.latest_version} is available</strong><small>{release.can_install?'Updates install automatically when you restart the app.':'See what’s new and choose when to update.'}</small></span><Button onClick={()=>setOpen(true)}>View update</Button><Button variant="ghost" size="icon-sm" className="icon-button" aria-label="Skip update for now" onClick={()=>setSkipped(true)}><X size={17}/></Button></aside>}
+    {download?.automatic?<Modal title={download.status==='checking'?'Starting Frameinsight':`Updating to ${download.version}`} onClose={()=>{}} busy>
+      <p role="status">{download.status==='checking'?'Checking for updates…':download.status==='installing'?'Installing the update. Frameinsight will reopen automatically.':'Downloading and verifying the latest update…'}</p>
+      {download.status==='downloading'&&<div className="update-progress"><progress aria-label="Update download progress" value={download.progress} max={1}/><span>{Math.round(download.progress*100)}%</span></div>}
+      <p className="muted">Your videos and annotations are kept. If your computer asks for administrator authorization, use its system prompt.</p>
+      {error&&<p role="alert">{error}</p>}
+    </Modal>:open&&<Modal title={visibleVersion?`Frameinsight ${visibleVersion}`:'App updates'} onClose={()=>setOpen(false)} busy={busy||!!closingMessage}>
       <p>Installed version: <strong>{release?.current_version||APP_VERSION}</strong></p>
       {error&&<p className="error" role="alert">{error}</p>}
       {closingMessage?<p role="status">{closingMessage} Reopen Frameinsight after installation finishes.</p>:<>

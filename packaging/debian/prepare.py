@@ -124,7 +124,7 @@ Priority: optional
 Architecture: amd64
 Maintainer: Frameinsight contributors
 Installed-Size: {installed_kib}
-Depends: libc6 (>= 2.36), libgcc-s1, libstdc++6, zlib1g, libglib2.0-0, libgl1, libx11-6, libxext6, libxcb1, libgomp1, ca-certificates, xdg-utils, zenity
+Depends: libc6 (>= 2.36), libgcc-s1, libstdc++6, zlib1g, libglib2.0-0, libgl1, libx11-6, libxext6, libxcb1, libgomp1, ca-certificates, xdg-utils, zenity, pkexec
 Recommends: gdebi
 Homepage: https://github.com/frameinsight/frameinsight-annotator
 Description: Local desktop video annotation and tracking

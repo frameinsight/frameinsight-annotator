@@ -263,6 +263,149 @@ def test_restart_reuses_verified_cached_package_without_network_or_extra_disk(up
     assert restarted.verified_download()[0].read_bytes() == PACKAGE
 
 
+def managed_startup(updater, monkeypatch, tmp_path):
+    monkeypatch.delenv('FRAMEINSIGHT_DISABLE_AUTO_UPDATE', raising=False)
+    monkeypatch.setattr(updates, 'platform_info', lambda: ('debian', 'linux-amd64'))
+    monkeypatch.setattr(updates, 'discover_release', lambda key: candidate())
+    monkeypatch.setattr(updates, 'open_response', lambda *a, **k: Response())
+    monkeypatch.setattr(updates, 'debian_installer', lambda *a, **k: 'pkexec')
+    fake_jobs(monkeypatch, [])
+    restart = tmp_path / 'Frameinsight'; restart.write_text('test launcher')
+    app = SimpleNamespace(state=SimpleNamespace(update_shutdown=lambda: None, update_restart=str(restart)))
+    threads, processes, timers = [], [], []
+    monkeypatch.setattr(updates.threading, 'Thread', lambda **kw: SimpleNamespace(start=lambda: threads.append(kw)))
+    monkeypatch.setattr(updates.subprocess, 'Popen', lambda args, **kw: processes.append(args))
+    monkeypatch.setattr(updates.threading, 'Timer', lambda delay, action: SimpleNamespace(start=lambda: timers.append(action)))
+    return app, threads, processes, timers
+
+
+def test_packaged_startup_installs_verified_update_once_without_button(updater, monkeypatch, tmp_path):
+    app, threads, processes, timers = managed_startup(updater, monkeypatch, tmp_path)
+    updater.startup(app); updater.startup(app)
+    assert len(threads) == 1 and updater.blocking and updater.status()['status'] == 'checking'
+    with pytest.raises(ValueError, match='already in progress'): updater.download(VERSION)
+    threads[0]['target'](*threads[0]['args'])
+    assert updater.status()['automatic'] and updater.installing
+    assert len(processes) == len(timers) == 1
+    assert '--automatic' in processes[0] and processes[0][-2:] == ['--installer', 'pkexec']
+    assert processes[0][processes[0].index('--restart') + 1] == app.state.update_restart
+    assert updater.path.read_bytes() == PACKAGE
+    assert json.loads((updater.directory/'automatic-attempt.json').read_text())['to'] == VERSION
+
+
+@pytest.mark.parametrize('failure', ['offline', 'corrupt', 'current', 'installer_missing'])
+def test_startup_failure_or_no_update_keeps_workspace_usable(updater, monkeypatch, tmp_path, failure):
+    app, threads, processes, timers = managed_startup(updater, monkeypatch, tmp_path)
+    if failure == 'offline':
+        def offline(key): raise OSError('offline')
+        monkeypatch.setattr(updates, 'discover_release', offline)
+    elif failure == 'corrupt': monkeypatch.setattr(updates, 'open_response', lambda *a, **k: Response(b'corrupt'))
+    elif failure == 'current': monkeypatch.setattr(updates, 'discover_release', lambda key: {**candidate(), 'version': updates.APP_VERSION})
+    else: monkeypatch.setattr(updates, 'debian_installer', lambda *a, **k: None)
+    updater.startup(app); threads[0]['target'](*threads[0]['args'])
+    assert not updater.blocking and not processes and not timers
+    assert updater.state['status'] == ('idle' if failure in ('offline', 'current') else 'error')
+
+
+def test_failed_automatic_install_does_not_loop_on_relaunch(updater, monkeypatch, tmp_path):
+    app, threads, processes, timers = managed_startup(updater, monkeypatch, tmp_path)
+    updater.startup(app); threads[0]['target'](*threads[0]['args'])
+    restarted = updates.UpdateService(updater.directory)
+    restarted.startup(app); threads[1]['target'](*threads[1]['args'])
+    assert not restarted.blocking and restarted.state['status'] == 'error'
+    assert 'last automatic update' in restarted.state['message']
+    assert len(processes) == 1
+
+
+def test_source_checkout_and_disabled_startup_never_launch_an_installer(updater, monkeypatch, tmp_path):
+    app, threads, processes, timers = managed_startup(updater, monkeypatch, tmp_path)
+    monkeypatch.setenv('FRAMEINSIGHT_DISABLE_AUTO_UPDATE', '1')
+    updater.startup(app)
+    monkeypatch.delenv('FRAMEINSIGHT_DISABLE_AUTO_UPDATE')
+    monkeypatch.setattr(updates, 'platform_info', lambda: ('development', 'linux-amd64'))
+    updates.UpdateService(tmp_path/'source').startup(app)
+    assert not threads and not processes and not updater.blocking
+
+
+def test_startup_guard_blocks_mutations_until_check_finishes(updater, monkeypatch, tmp_path):
+    from backend.app import main
+    monkeypatch.setattr(updates.db, 'DB', tmp_path/'guard.sqlite3')
+    monkeypatch.setattr(main, 'update_service', updater)
+    monkeypatch.setattr(updates, 'platform_info', lambda: ('development', 'linux-amd64'))
+    with TestClient(app) as client:
+        updater.automatic = True; updater.state['status'] = 'checking'
+        assert client.post('/api/projects', json={'name':'During update'}).status_code == 503
+        assert client.get('/api/projects').status_code == 200
+        updater.automatic = False; updater.state['status'] = 'idle'
+        assert client.post('/api/projects', json={'name':'After update'}).status_code == 200
+
+
+def test_automatic_commands_keep_package_paths_as_arguments(monkeypatch, tmp_path):
+    monkeypatch.setattr(update_handoff.shutil, 'which', lambda name: '/usr/bin/' + name)
+    package = tmp_path / 'package with spaces.deb'
+    assert update_handoff.installer_command('debian', package, 'pkexec', True) == [
+        '/usr/bin/pkexec', '/usr/bin/apt-get', 'install', '--yes', '--no-install-recommends', str(package)]
+    assert update_handoff.installer_command('windows', package, automatic=True) == [str(package), '/S']
+    with pytest.raises(ValueError): update_handoff.installer_command('debian', package, 'sh', True)
+
+
+def test_windows_automatic_handoff_runs_outside_bundled_runtime(monkeypatch, tmp_path):
+    import base64
+    monkeypatch.setenv('SystemRoot', 'C:/Windows')
+    monkeypatch.setattr(update_handoff.subprocess, 'DETACHED_PROCESS', 8, raising=False)
+    monkeypatch.setattr(update_handoff.subprocess, 'CREATE_NEW_PROCESS_GROUP', 512, raising=False)
+    launched = []
+    monkeypatch.setattr(update_handoff.subprocess, 'Popen', lambda cmd, **kw: launched.append((cmd, kw)))
+    path = tmp_path/'package with spaces & symbols.exe'
+    restart = tmp_path/'Frameinsight.exe'
+    update_handoff.launch_windows_automatic(path, len(PACKAGE), 'digest', VERSION, restart, tmp_path/'handoff.log')
+    command, kw = launched[0]
+    assert command[0].endswith('System32/WindowsPowerShell/v1.0/powershell.exe')
+    assert base64.b64decode(command[-1]).decode('utf-16-le') == update_handoff.WINDOWS_AUTOMATIC_HANDOFF
+    assert str(path) not in command[-1] and kw['env']['FRAMEINSIGHT_UPDATE_PACKAGE'] == str(path)
+    assert kw['env']['FRAMEINSIGHT_UPDATE_RESTART'] == str(restart)
+
+
+@pytest.mark.skipif(update_handoff.sys.platform != 'linux', reason='Debian handoff')
+@pytest.mark.parametrize('outcome', ['success', 'denied', 'wrong_version'])
+def test_automatic_debian_handoff_checks_result_before_reopening(tmp_path, outcome):
+    import os
+    import shutil
+    import subprocess
+    import sys
+    import time
+    private = tmp_path/'private'; private.mkdir(mode=0o700)
+    package = private/'verified package.deb'; package.write_bytes(PACKAGE)
+    bins = tmp_path/'bin'; bins.mkdir()
+    def script(name, text):
+        path=bins/name; path.write_text('#!/bin/sh\n'+text+'\n');path.chmod(0o755);return path
+    script('pkexec', 'printf "AUTHORIZATION_REQUESTED\\n"\nprintf "%s\\n" "$@"\n' + ('exit 126' if outcome=='denied' else 'exec "$@"'))
+    script('apt-get', 'printf "%s\\n" "$@"\nexit 0')
+    script('dpkg-query', 'printf "%s" "' + ('0.0.0' if outcome=='wrong_version' else VERSION) + '"')
+    script('zenity', 'exit 0')
+    marker = tmp_path/'reopened'
+    restart = script('restart', 'touch "'+str(marker)+'"')
+    env = dict(os.environ, PATH=str(bins)+':'+os.environ['PATH'])
+    env.pop('LD_LIBRARY_PATH', None)
+    result = subprocess.run([sys.executable, str(update_handoff.Path(update_handoff.__file__)),
+        '--package',str(package),'--sha256',hashlib.sha256(PACKAGE).hexdigest(),'--size',str(len(PACKAGE)),
+        '--server','2147483647','--platform','debian','--installer','pkexec','--automatic',
+        '--version',VERSION,'--restart',str(restart)],env=env,capture_output=True,timeout=15)
+    log = (private/'install-handoff.log').read_text()
+    assert 'AUTHORIZATION_REQUESTED' in log
+    if outcome == 'success':
+        assert result.returncode == 0 and 'Reopening Frameinsight' in log
+        for _ in range(50):
+            if marker.exists(): break
+            time.sleep(.01)
+        assert marker.exists()
+    else:
+        assert result.returncode != 0 and 'Reopening Frameinsight' not in log and not marker.exists()
+    staged = update_handoff.Path(next(line for line in log.splitlines() if line.startswith('/tmp/frameinsight-update-')))
+    assert staged.read_bytes() == PACKAGE
+    shutil.rmtree(staged.parent)
+
+
 def test_failed_managed_shutdown_unblocks_edits_and_keeps_manual_package(updater, monkeypatch):
     ready(updater, monkeypatch)
     fake_jobs(monkeypatch, [])

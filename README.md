@@ -17,7 +17,7 @@ Frameinsight is a local video annotation app for detection and tracking datasets
 
 The installers include the app and its runtime. No Python, Node.js, terminal setup, GPU, or model is needed for annotators. Packages are currently unsigned; see the [Windows guide](docs/WINDOWS.md) and [Linux guide](docs/LINUX.md). Release assets include SHA-256 checksums and an update manifest.
 
-At startup, Frameinsight checks this repository’s latest stable release. When an update is available, read the release notes and choose **Update** or **Skip for now**. Downloads are checksum-verified; **Install update** saves your work and hands off to the system installer. Linux may request your normal installation permission. Project data lives outside the installed program. Offline checks never prevent annotation. Copies run from source offer a manual installer download instead of replacing the checkout.
+Installed copies check for updates whenever Frameinsight starts. A newer stable release is downloaded, checksum-verified, installed, and the app reopens automatically—no Update button is required. Windows updates run silently; Debian/Ubuntu may ask for administrator authorization through the system prompt. Offline or failed checks leave the current app usable. Projects stay outside the program folder. Install 3.10.0 once to enable this behavior for future releases; older versions still need their existing update flow. Source checkouts are never replaced automatically.
 
 ## A simple annotation workflow
 
@@ -53,7 +53,7 @@ A settings change resets the current Undo/Redo stacks, while saved edit history 
 - Automatic saving, undo/redo, recovery journals, and native project backups.
 - Review in the existing annotation canvas with all tracks, frame stepping, and **0.125× / 0.25× / 0.5× / 1×** playback.
 - Structural validation of IDs, references, coordinate data, timestamps, JSON and export counts. It needs no video rendering or source-file hashing. Saved changes require revalidation.
-- Windows and Debian installers with release notes and opt-in updates.
+- Windows and Debian installers with release notes and automatic startup updates.
 
 The app does not recognize objects or guarantee identity correctness. Human review checks placement, identity swaps, missed objects and interpolation. Direction labels, movement prediction and cross-camera identity association are not implemented. This is a localhost app, without network deployment or multi-user authentication.
 
@@ -168,7 +168,7 @@ Browser tests need an **isolated** server at `127.0.0.1:5173` and Chrome. Set a 
 FRAMEINSIGHT_TEST_URL=http://127.0.0.1:5173 npm --prefix frontend run test:e2e
 ```
 
-Build and release instructions are in [Windows packaging](docs/WINDOWS.md), [Debian packaging](docs/LINUX.md) and the [release workflow](.github/workflows/desktop-release.yml). See the [3.9.3 verification record](docs/releases/v3.9.3-acceptance.md) for test coverage and limits.
+Build and release instructions are in [Windows packaging](docs/WINDOWS.md), [Debian packaging](docs/LINUX.md) and the [release workflow](.github/workflows/desktop-release.yml). See the [3.10.0 verification record](docs/releases/v3.10.0-acceptance.md) for test coverage and limits.
 
 ## Contributing
 

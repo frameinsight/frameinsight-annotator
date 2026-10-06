@@ -1,4 +1,4 @@
-"""Optional updates from one public release repository; annotations stay local.
+"""Startup updates from one public release repository; annotations stay local.
 
 Release metadata never supplies commands or arbitrary paths. Downloads are bounded,
 matched to a platform asset and SHA-256 verified before either delivery or launch.
@@ -184,6 +184,63 @@ class UpdateService:
         self.state = {'status': 'idle', 'progress': 0, 'downloaded_bytes': 0, 'total_bytes': 0}
         self.path = None
         self.ready_candidate = None
+        self.startup_started = False
+        self.automatic = False
+
+    @property
+    def blocking(self):
+        with self.lock:
+            return self.automatic or self.state['status'] == 'installing'
+
+    def startup(self, app):
+        """One startup check per managed process, before any editing is accepted."""
+        with self.lock:
+            if self.startup_started:
+                return
+            self.startup_started = True
+            if (os.getenv('FRAMEINSIGHT_DISABLE_AUTO_UPDATE') == '1'
+                    or platform_info()[0] not in ('windows', 'debian')
+                    or not callable(getattr(app.state, 'update_shutdown', None))):
+                return
+            self.automatic = True
+            self.state = {'status': 'checking', 'progress': 0,
+                          'message': 'Checking for updates before opening your workspace…'}
+            threading.Thread(target=self._startup, args=(app,), daemon=True, name='startup-update').start()
+
+    def _startup(self, app):
+        try:
+            result = self.check(force=True)
+            if result['status'] != 'available':
+                with self.lock:
+                    self.automatic = False
+                    self.state = {'status': 'idle', 'progress': 0}
+                return
+            candidate = self.candidate
+            attempt = self.directory / 'automatic-attempt.json'
+            if attempt.is_file():
+                try:
+                    previous = json.loads(attempt.read_text())
+                    if (previous.get('from') == APP_VERSION and previous.get('to') == candidate['version']
+                            and time.time() - previous.get('at', 0) < 3600):
+                        raise RuntimeError('The last automatic update did not finish. You can keep working and retry from App updates.')
+                except (ValueError, TypeError):
+                    pass
+            with self.lock:
+                self.state = {'status': 'downloading', 'version': candidate['version'], 'progress': 0,
+                              'downloaded_bytes': 0, 'total_bytes': candidate['asset']['size']}
+            self._download(candidate)
+            if self.state['status'] != 'ready':
+                with self.lock:
+                    self.automatic = False
+                return
+            # An unsuccessful installer must not cause an endless close/reopen loop.
+            self.directory.mkdir(parents=True, exist_ok=True)
+            attempt.write_text(json.dumps({'from': APP_VERSION, 'to': candidate['version'], 'at': time.time()}))
+            self.install(app, candidate['version'], automatic=True)
+        except Exception as error:
+            with self.lock:
+                self.automatic = False
+                self.state.update(status='error', message=str(error)[:400])
 
     @property
     def installing(self):
@@ -223,6 +280,7 @@ class UpdateService:
     def status(self):
         with self.lock:
             result = dict(self.state)
+            result['automatic'] = self.automatic
         result['can_install'] = platform_info()[0] in ('windows', 'debian')
         if result['status'] in ('ready', 'error') and self.ready_candidate and self.path:
             result['download_url'] = '/api/updates/downloaded'
@@ -231,11 +289,11 @@ class UpdateService:
     def download(self, version):
         version_tuple(version)
         with self.lock:
-            if self.state['status'] in ('downloading', 'installing'):
+            if self.automatic or self.state['status'] in ('downloading', 'installing'):
                 raise ValueError('An update is already in progress')
         self.check(force=True)
         with self.lock:
-            if self.state['status'] in ('downloading', 'installing'):
+            if self.automatic or self.state['status'] in ('downloading', 'installing'):
                 raise ValueError('An update is already in progress')
             candidate = self.candidate
             if self.check_result.get('status') != 'available' or not candidate or candidate['version'] != version:
@@ -318,7 +376,10 @@ class UpdateService:
             verify_file(self.path, self.ready_candidate['asset'])
             return self.path, self.ready_candidate
 
-    def install(self, app, version):
+    def install(self, app, version, automatic=False):
+        with self.lock:
+            if self.automatic and not automatic:
+                raise ValueError('The startup update is already in progress')
         path, candidate = self.verified_download(version)
         kind, _ = platform_info()
         if kind == 'development':
@@ -336,13 +397,18 @@ class UpdateService:
         command = [*helper, '--package', str(path),
                    '--sha256', candidate['asset']['sha256'], '--size', str(candidate['asset']['size']),
                    '--server', str(os.getpid()), '--platform', kind]
+        if automatic:
+            restart = getattr(app.state, 'update_restart', None)
+            if not restart or not Path(restart).is_file():
+                raise ValueError('Cannot restart this launcher automatically. You can keep working and use App updates to retry.')
+            command.extend(['--automatic', '--version', candidate['version'], '--restart', str(restart)])
         if kind == 'windows':
             launcher = os.getenv('FRAMEINSIGHT_LAUNCHER_PID', '')
             if not launcher.isdecimal() or int(launcher) <= 0:
                 raise ValueError('Cannot identify the desktop launcher. Close the app and install the downloaded update manually.')
             command.extend(['--launcher', launcher])
         else:
-            installer = debian_installer(path)
+            installer = debian_installer(path, automatic=True) if automatic else debian_installer(path)
             if not installer:
                 raise ValueError('No supported system package installer was found. Download the verified .deb and open it with your software installer.')
             command.extend(['--installer', installer])
@@ -351,12 +417,15 @@ class UpdateService:
                 raise ValueError('An update is already in progress')
             subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
                              **({'creationflags': subprocess.DETACHED_PROCESS | subprocess.CREATE_NEW_PROCESS_GROUP} if kind == 'windows' else {'start_new_session': True}))
-            self.state.update(status='installing', message='Closing Frameinsight so the system installer can open. Follow its prompts to complete the update.')
+            self.state.update(status='installing', message=(
+                'Installing the update. Frameinsight will reopen automatically.' if automatic else
+                'Closing Frameinsight so the system installer can open. Follow its prompts to complete the update.'))
         def close():
             try:
                 shutdown()
             except Exception:
                 with self.lock:
+                    self.automatic = False
                     self.state.update(status='error', message='Could not close Frameinsight. Close it manually before installing the downloaded update.')
         timer = threading.Timer(1, close)
         timer.daemon = True
@@ -364,7 +433,9 @@ class UpdateService:
         return {'action': 'closing', 'message': self.state['message']}
 
 
-def debian_installer(path=None):
+def debian_installer(path=None, automatic=False):
+    if automatic:
+        return 'pkexec' if shutil.which('pkexec') and shutil.which('apt-get') else None
     # Explicit package installers, never the default file association (which may
     # be an archive viewer). Their normal GUI handles privilege authorization.
     return next((name for name in ('gdebi-gtk', 'qapt-deb-installer', 'gnome-software') if shutil.which(name)), None)
