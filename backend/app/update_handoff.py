@@ -210,7 +210,7 @@ def launch_windows_automatic(package, size, checksum, version, restart, log):
     # A launch from PowerShell 7 (including Windows CI) can leave its module
     # paths in our inherited environment. Let Windows PowerShell 5.1 compute
     # its own standard paths so Get-FileHash/ConvertFrom-Json load correctly.
-    environment.pop('PSModulePath', None)
+    environment = {key: value for key, value in environment.items() if key.casefold() != 'psmodulepath'}
     environment.update(FRAMEINSIGHT_UPDATE_HELPER=str(os.getpid()), FRAMEINSIGHT_UPDATE_LOG=str(log),
                        FRAMEINSIGHT_UPDATE_PACKAGE=str(package), FRAMEINSIGHT_UPDATE_SIZE=str(size),
                        FRAMEINSIGHT_UPDATE_SHA256=checksum, FRAMEINSIGHT_UPDATE_VERSION=version,

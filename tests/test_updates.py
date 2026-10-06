@@ -349,10 +349,11 @@ def test_automatic_commands_keep_package_paths_as_arguments(monkeypatch, tmp_pat
     with pytest.raises(ValueError): update_handoff.installer_command('debian', package, 'sh', True)
 
 
-def test_windows_automatic_handoff_runs_outside_bundled_runtime(monkeypatch, tmp_path):
+@pytest.mark.parametrize('module_path_key', ['PSModulePath', 'PSMODULEPATH'])
+def test_windows_automatic_handoff_runs_outside_bundled_runtime(monkeypatch, tmp_path, module_path_key):
     import base64
     monkeypatch.setenv('SystemRoot', 'C:/Windows')
-    monkeypatch.setenv('PSModulePath', 'C:/PowerShell7Only/Modules')
+    monkeypatch.setenv(module_path_key, 'C:/PowerShell7Only/Modules')
     monkeypatch.setattr(update_handoff.subprocess, 'CREATE_NO_WINDOW', 0x08000000, raising=False)
     monkeypatch.setattr(update_handoff.subprocess, 'CREATE_NEW_PROCESS_GROUP', 512, raising=False)
     launched = []
@@ -365,7 +366,7 @@ def test_windows_automatic_handoff_runs_outside_bundled_runtime(monkeypatch, tmp
     assert base64.b64decode(command[-1]).decode('utf-16-le') == update_handoff.WINDOWS_AUTOMATIC_HANDOFF
     assert str(path) not in command[-1] and kw['env']['FRAMEINSIGHT_UPDATE_PACKAGE'] == str(path)
     assert kw['env']['FRAMEINSIGHT_UPDATE_RESTART'] == str(restart)
-    assert 'PSModulePath' not in kw['env']
+    assert not any(key.casefold() == 'psmodulepath' for key in kw['env'])
     assert kw['creationflags'] == 0x08000000 | 512
 
 
