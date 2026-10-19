@@ -58,6 +58,8 @@ A settings change resets the current Undo/Redo stacks, while saved edit history 
 
 The app does not recognize objects or guarantee identity correctness. Human review checks placement, identity swaps, missed objects and interpolation. Direction labels, movement prediction and automatic cross-camera identity recognition are not implemented. Cross-camera associations are assigned and reviewed manually. This is a localhost app, without network deployment or multi-user authentication.
 
+<a id="multi-camera-sessions"></a>
+
 ## Multiple cameras
 
 Start new annotation work by choosing **Single video** or **Multiple cameras**. Existing videos keep their usual single-video workflow; nothing is converted or linked automatically.
