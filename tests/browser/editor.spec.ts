@@ -31,7 +31,7 @@ test('simple workspace, explicit save and keyboard save retain annotations',asyn
  await reopen(page);await ready(page,0);expect((await state(request)).state).toEqual(p.state);
 });
 test('new video inherits project classes and opens editor',async({page,request})=>{
- await page.getByRole('button',{name:'New video',exact:true}).click();
+ await page.getByRole('button',{name:'New video',exact:true}).click();await page.getByRole('button',{name:/^Single video/}).click();
  const response=page.waitForResponse(r=>r.url().endsWith('/videos')&&r.request().method()==='POST');
  await page.getByLabel('Upload video').setInputFiles(path.resolve('../tests/fixtures/numbered.mp4'));
  const result=await (await response).json();videoId=result.video_id;

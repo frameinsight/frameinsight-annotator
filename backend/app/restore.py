@@ -25,6 +25,11 @@ def restore_archive(path, jid):
             if original.get('format')!='frameinsight' or original.get('schema_version') not in (1,2):raise ValueError('Unsupported native schema')
             classes=original.get('classes',[])
             if not isinstance(classes,list) or len(classes)>100 or any(not isinstance(name,str) or not name.strip() or len(name)>80 for name in classes):raise ValueError('Invalid class catalog in backup')
+            from .multicam import validate_session_snapshot
+            sessions = original.get('camera_sessions', [])
+            if not isinstance(sessions, list): raise ValueError('Invalid camera sessions in backup')
+            for session in sessions:
+                validate_session_snapshot(session, original)
             pid=str(uuid.uuid4());mapping={};videos={}
             # Verify ALL originals before creating any restored project.
             sources={}
@@ -75,11 +80,37 @@ def restore_archive(path, jid):
                 for col,entities in state.items():
                     for ident,e in entities.items():c.execute('INSERT INTO entities VALUES(?,?,?,?)',(pid,col,ident,json.dumps(e)))
                 c.execute('CREATE TABLE IF NOT EXISTS restored_history(project_id TEXT PRIMARY KEY, data TEXT NOT NULL)')
-                c.execute('INSERT INTO restored_history VALUES(?,?)',(pid,json.dumps({'source_project_id':original['id'],'source_revision':original['revision'],'operations':original.get('operations',[]),'project_settings_history':original.get('project_settings_history',[]),'previous_restored_history':original.get('restored_history')})))
+                c.execute('INSERT INTO restored_history VALUES(?,?)',(pid,json.dumps({'source_project_id':original['id'],'source_revision':original['revision'],'operations':original.get('operations',[]),'project_settings_history':original.get('project_settings_history',[]),'camera_session_history':original.get('camera_session_history',[]),'previous_restored_history':original.get('restored_history')})))
                 for p in original.get('proposals',[]):
                     p=copy.deepcopy(p);old_id=p['id'];p['id']=str(uuid.uuid5(uuid.NAMESPACE_URL,pid+old_id));p['video_id']=mapping[p['video_id']]
                     # Keep an audit reference while live provenance uses remapped IDs.
                     p['original_proposal_id']=old_id
                     c.execute('INSERT INTO proposals VALUES(?,?,?,?,?)',(p['id'],p['video_id'],p['frame_index'],p['cache_key'],json.dumps(p)))
+                restore_camera_sessions(c, pid, sessions, mapping)
             db.job_update(jid,status='completed',restored_project_id=pid,progress=1,total=1)
     except Exception as e:db.job_update(jid,status='failed',error=str(e))
+
+
+def restore_camera_sessions(connection, project_id, sessions, video_mapping):
+    """Restore session identity links while keeping the original backup untouched."""
+    from .multicam import insert_session
+    restored = []
+    for session in sessions:
+        people_map = {person['id']: str(uuid.uuid4()) for person in session['people']}
+        body = {'name': session['name'],
+                'cameras': [{**camera, 'id': str(uuid.uuid4()), 'video_id': video_mapping[camera['video_id']]} for camera in session['cameras']],
+                'people': [{**person, 'id': people_map[person['id']]} for person in session['people']],
+                'assignments': [{**assignment, 'video_id': video_mapping[assignment['video_id']],
+                                 'person_uuid': people_map[assignment['person_uuid']]} for assignment in session['assignments']]}
+        # A session can become a single-camera or empty session after a video is
+        # deleted. Preserve it in backups without pretending it is export-ready.
+        if len(body['cameras']) >= 2:
+            restored.append(insert_session(connection, project_id, body))
+        else:
+            from .multicam import validate_session_snapshot
+            timestamp = db.now()
+            value = validate_session_snapshot({**body, 'id': str(uuid.uuid4()), 'project_id': project_id, 'mode': 'multicamera',
+                                               'revision': 0, 'created_at': timestamp, 'updated_at': timestamp}, db.get_state(connection, project_id))
+            connection.execute('INSERT INTO camera_sessions VALUES(?,?,?,?)', (value['id'], project_id, 0, json.dumps(value)))
+            restored.append(value)
+    return restored

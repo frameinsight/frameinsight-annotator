@@ -8,7 +8,7 @@ from xml.etree import ElementTree as ET
 from defusedxml.ElementTree import fromstring
 from .config import DATA
 from .geometry import reject_dynamic
-from .db import snapshot, connect, transaction, now, job_update
+from .db import snapshot, get_state, connect, transaction, now, job_update
 from .schema import video_identity_ids, issues, MODELS, validate_state
 
 def native_manifest(project):
@@ -20,8 +20,12 @@ def native_manifest(project):
         row = c.execute('SELECT data FROM restored_history WHERE project_id=?', (project['id'],)).fetchone() if table else None
         restored_history = json.loads(row['data']) if row else None
         settings_history = [json.loads(row['data']) for row in c.execute('SELECT data FROM project_settings_events WHERE project_id=? ORDER BY revision', (project['id'],))]
+        from .multicam import list_sessions
+        camera_sessions = list_sessions(project['id'], connection=c)
+        camera_session_history = [{**dict(row), 'data': json.loads(row['data'])} for row in c.execute(
+            'SELECT events.* FROM camera_session_events events JOIN camera_sessions sessions ON sessions.id=events.session_id WHERE sessions.project_id=? ORDER BY events.rowid', (project['id'],))]
     # File references are informational only on import, never used as write paths.
-    return {**project, 'format': 'frameinsight', 'exported_at': now(), 'frames': frames, 'operations': operations, 'proposals': proposals, 'restored_history': restored_history, 'project_settings_history': settings_history}
+    return {**project, 'format': 'frameinsight', 'exported_at': now(), 'frames': frames, 'operations': operations, 'proposals': proposals, 'restored_history': restored_history, 'project_settings_history': settings_history, 'camera_sessions': camera_sessions, 'camera_session_history': camera_session_history}
 
 def cvat_xml(project, vid, *, visible_only=False):
     state = project['state']; video = project['videos'][vid]
@@ -89,7 +93,14 @@ def export_project(pid, settings, jid):
                 c.execute('INSERT INTO exports VALUES(?,?,?)', (eid, pid, json.dumps(data)))
             job_update(jid, status='completed', export_id=eid, progress=1, total=1)
             return
-        project = snapshot(pid); native = native_manifest(project)
+        # Freeze annotation state, session associations, frame ledgers and audit
+        # records together. A session assignment saved between separate reads
+        # could otherwise reference a track absent from the backup snapshot.
+        with transaction() as connection:
+            project = get_state(connection, pid)
+            if settings['format'] == 'native' and any(video.get('status') != 'ready' or not video.get('source_hash') for video in project['videos'].values()):
+                raise ValueError('Finish preparing every video, or remove unavailable videos, before creating a project backup.')
+            native = native_manifest(project)
         eid = str(uuid.uuid4()); path = DATA / 'exports' / f'{eid}.zip'
         profile = settings['format']; exclusions = []; included = 0
         if profile != 'native': reject_dynamic(project['state']['observations'].values())

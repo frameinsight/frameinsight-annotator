@@ -59,6 +59,10 @@ def init():
         CREATE TABLE IF NOT EXISTS exports(id TEXT PRIMARY KEY, project_id TEXT NOT NULL, data TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS validations(id TEXT PRIMARY KEY, project_id TEXT NOT NULL, video_id TEXT NOT NULL, revision INTEGER NOT NULL, review_job_id TEXT NOT NULL, data TEXT NOT NULL);
         CREATE TABLE IF NOT EXISTS project_settings_events(id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id), revision INTEGER NOT NULL, request TEXT NOT NULL, data TEXT NOT NULL, created_at TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS camera_sessions(id TEXT PRIMARY KEY, project_id TEXT NOT NULL REFERENCES projects(id), revision INTEGER NOT NULL, data TEXT NOT NULL);
+        CREATE INDEX IF NOT EXISTS camera_sessions_project ON camera_sessions(project_id);
+        CREATE TABLE IF NOT EXISTS camera_session_events(id TEXT PRIMARY KEY, session_id TEXT NOT NULL REFERENCES camera_sessions(id), revision INTEGER NOT NULL, data TEXT NOT NULL, created_at TEXT NOT NULL);
+        CREATE TABLE IF NOT EXISTS camera_session_detached_assignments(session_id TEXT NOT NULL REFERENCES camera_sessions(id), video_id TEXT NOT NULL, identity_uuid TEXT NOT NULL, person_uuid TEXT NOT NULL, PRIMARY KEY(session_id,video_id,identity_uuid));
         ''')
         if 'classes' not in {r['name'] for r in c.execute('PRAGMA table_info(projects)')}:
             c.execute("ALTER TABLE projects ADD COLUMN classes TEXT NOT NULL DEFAULT '[]'")
@@ -149,6 +153,10 @@ def apply(pid, operation: Operation):
                 row=c.execute('SELECT video_id,frame_index FROM proposals WHERE id=?',(e['proposal_id'],)).fetchone()
                 if not row or row['video_id']!=e['video_id'] or row['frame_index']!=e['frame_index']: raise ValueError('Proposal review must reference its original video/frame')
         validate_state(state, project['videos'], visible_only=True)
+        # Session associations are separate from local geometry. Preserve removed
+        # mappings for a later annotation undo without exposing dangling tracks.
+        from .multicam import prune_assignments
+        prune_assignments(c, pid, state)
         classes = list(project.get('classes', []))
         palette = dict(project.get('class_colors', {}))
         for identity in state['identities'].values():

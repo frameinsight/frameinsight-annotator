@@ -27,6 +27,8 @@ from .project_settings import ProjectSettings, update_settings
 from .library_metadata import video_dates
 from .export_names import json_filename
 from .video_trim import router as video_trim_router
+from .multicam import router as multicam_router
+from .multicam_delivery import router as multicam_delivery_router
 worker=Worker(); exports_pool=ThreadPoolExecutor(max_workers=1,thread_name_prefix='export')
 @asynccontextmanager
 async def lifespan(app):
@@ -48,6 +50,8 @@ async def lifespan(app):
 app=FastAPI(title='Frameinsight',version=APP_VERSION,lifespan=lifespan)
 app.include_router(updates_router)
 app.include_router(video_trim_router)
+app.include_router(multicam_router)
+app.include_router(multicam_delivery_router)
 
 @app.middleware('http')
 async def local_only(request:Request,call_next):

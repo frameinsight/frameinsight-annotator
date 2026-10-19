@@ -27,16 +27,16 @@ const resizeCursor=(edge:string)=>edge.length===2?(edge==='nw'||edge==='se'?'nws
 
 const imageCache=new Map<string,HTMLImageElement>();
 function fetchImage(key:string,url:string):Promise<HTMLImageElement>{const cached=imageCache.get(key);if(cached)return Promise.resolve(cached);return new Promise((resolve,reject)=>{const img=new Image();img.onload=()=>{imageCache.set(key,img);while(imageCache.size>15)imageCache.delete(imageCache.keys().next().value!);resolve(img)};img.onerror=()=>reject(new Error('Exact frame unavailable'));img.src=url;});}
-export const EditorCanvas=forwardRef<CanvasHandle,{proposals:Proposal[];showProposals:boolean;hiddenClasses:Record<string,boolean>;dimOutside:boolean;preferences?:CanvasPreferences;colorMode?:'class'|'track';onColorModeChange?:(mode:'class'|'track')=>void;onAction?:(action:string)=>void;onControlsChange?:(state:CanvasControlsState)=>void}>(({proposals,showProposals,hiddenClasses,dimOutside,preferences=defaultCanvasPreferences,colorMode='class',onColorModeChange,onAction,onControlsChange},ref)=>{
+export const EditorCanvas=forwardRef<CanvasHandle,{proposals:Proposal[];showProposals:boolean;hiddenClasses:Record<string,boolean>;dimOutside:boolean;preferences?:CanvasPreferences;colorMode?:'class'|'track';expectedContext?:{videoId:string;frame:number};displayLabels?:Record<string,{label:string;color:string}>;focusedIdentityIds?:string[]|null;onNewTrack?:()=>void;onSelectTrack?:(id:string)=>void;onAssignPerson?:()=>void;onColorModeChange?:(mode:'class'|'track')=>void;onAction?:(action:string)=>void;onControlsChange?:(state:CanvasControlsState)=>void}>(({proposals,showProposals,hiddenClasses,dimOutside,preferences=defaultCanvasPreferences,colorMode='class',expectedContext,displayLabels={},focusedIdentityIds=null,onNewTrack,onSelectTrack,onAssignPerson,onColorModeChange,onAction,onControlsChange},ref)=>{
  const {project,videoId,frame,activeId,geometry,hiddenIds}=useStore();const video=project?.videos[videoId];
- const displayColor=(person:import('./types').Identity|undefined,g:Geometry)=>annotationColor(project,person,g,colorMode);
+ const displayColor=(person:import('./types').Identity|undefined,g:Geometry)=>colorMode==='track'&&person&&displayLabels[person.id]?displayLabels[person.id].color:annotationColor(project,person,g,colorMode);
  const menuDialog=useRef(false),menuOpen=useRef(false);
  const [tool,setTool]=useState<CanvasTool>('select'),[menuTarget,setMenuTarget]=useState<{identity:string;geometry:Geometry}|null>(null);
  const [menuHits,setMenuHits]=useState<{identity:string;geometry:Geometry}[]>([]);
  const host=useRef<HTMLDivElement>(null),gesture=useRef<Gesture|null>(null),spaceDown=useRef(false),panned=useRef(false),cycle=useRef(0);
  const [size,setSize]=useState({w:800,h:600}),[view,setView]=useState<View>({x:0,y:0,scale:1}),[image,setImage]=useState<{key:string;image:HTMLImageElement}|null>(null),[error,setError]=useState(''),[preview,setPreview]=useState<Box|null>(null),[cursor,setCursor]=useState('crosshair');
 
- const requestedKey=videoId+':'+frame;const displayedImage=imageCache.get(requestedKey)||(image?.key===requestedKey?image.image:undefined);const ready=!!displayedImage&&!!video;
+ const requestedKey=videoId+':'+frame;const displayedImage=imageCache.get(requestedKey)||(image?.key===requestedKey?image.image:undefined);const ready=!!displayedImage&&!!video&&(!expectedContext||expectedContext.videoId===videoId&&expectedContext.frame===frame);
  const controlsCallback=useRef(onControlsChange);controlsCallback.current=onControlsChange;
  useEffect(()=>{controlsCallback.current?.({tool,scale:view.scale,ready});},[tool,view.scale,ready]);
  useLayoutEffect(()=>{const ro=new ResizeObserver(entries=>{const r=entries[0].contentRect;setSize({w:r.width,h:r.height})});if(host.current)ro.observe(host.current);return()=>ro.disconnect()},[]);
@@ -49,15 +49,15 @@ export const EditorCanvas=forwardRef<CanvasHandle,{proposals:Proposal[];showProp
  },[videoId,video?.width,size.w,size.h]);
  useEffect(()=>{let cancelled=false;setError('');if(!videoId||!video?.frame_count)return;const key=requestedKey;
  fetchImage(key,`/api/videos/${videoId}/frames/${frame}`).then(img=>{if(!cancelled)setImage({key,image:img});for(const delta of [1,-1,2,-2,3]){const f=frame+delta;if(f>=0&&f<video.frame_count)void fetchImage(videoId+':'+f,`/api/videos/${videoId}/frames/${f}`).catch(()=>{});}}).catch(e=>{if(!cancelled)setError(String(e))});return()=>{cancelled=true};},[requestedKey,video?.frame_count]);
- const observations=frameObservations(project,videoId,frame).filter(o=>!hiddenIds[o.identity_uuid]);
+ const observations=frameObservations(project,videoId,frame).filter(o=>!hiddenIds[o.identity_uuid]&&(focusedIdentityIds===null||focusedIdentityIds.includes(o.identity_uuid)));
  const active=currentObservation(project,videoId,frame,activeId);
  const className=boxStyle(project?.state.identities[activeId],geometry).class_name;
  const classShown=!hiddenClasses[className];
  const displayedGeometries=[...new Set([...boxKeys(active),geometry])].filter(g=>!hiddenClasses[boxStyle(project?.state.identities[activeId],g).class_name]);
  const boxEntries=observations.flatMap(o=>boxKeys(o).filter(g=>!hiddenClasses[boxStyle(project?.state.identities[o.identity_uuid],g).class_name]).map(g=>({o,g,box:getBox(o,g)!}))).sort((a,b)=>Number(b.o.identity_uuid===activeId&&b.g===geometry)-Number(a.o.identity_uuid===activeId&&a.g===geometry));
  const hitBox=(p:[number,number])=>hitCanvasBox(boxEntries,p,7/view.scale,entry=>boxStyle(project?.state.identities[entry.o.identity_uuid],entry.g).class_name===className);
- const selectHit=(hit:typeof boxEntries[number])=>{useStore.getState().selectPerson(hit.o.identity_uuid);useStore.setState({geometry:hit.g});};
- const selectLabel=(badge:CanvasBadge)=>{useStore.getState().selectPerson(badge.identity);useStore.setState({geometry:badge.geometry});};
+ const selectHit=(hit:typeof boxEntries[number])=>{useStore.getState().selectPerson(hit.o.identity_uuid);useStore.setState({geometry:hit.g});onSelectTrack?.(hit.o.identity_uuid);};
+ const selectLabel=(badge:CanvasBadge)=>{useStore.getState().selectPerson(badge.identity);useStore.setState({geometry:badge.geometry});onSelectTrack?.(badge.identity);};
  const hitBadge=(screen:[number,number])=>hitLabel(badges.filter(badge=>badge.interactive),screen);
  const editBadge=(screen:[number,number])=>{
   const badge=hitBadge(screen),p=toSource(...screen,view);
@@ -137,7 +137,7 @@ export const EditorCanvas=forwardRef<CanvasHandle,{proposals:Proposal[];showProp
   if(target&&!hits.some(h=>h.identity===target.identity&&h.geometry===target.geometry))hits.unshift(target);
   setMenuHits(hits);setMenuTarget(target);if(badge)selectLabel(badge);else if(hit)selectHit(hit);menuDialog.current=false;
  }
- function menuAction(action:string){finish();if(['id','copyClass','hiddenRange','restoreRange','canvasSettings','interpolateRange'].includes(action)){menuDialog.current=true;onAction?.(action);return;}const s=useStore.getState();if(action==='new'){s.newPerson();setTool('draw');}else if(action==='copy')s.copyPrevious();else if(action==='hide')s.togglePersonVisibility(s.activeId);else if(action==='focus')s.focusPerson(s.activeId);else if(action==='delete')s.setBox(s.geometry,null);else if(action==='undo')s.undo();else if(action==='redo')s.redo();}
+ function menuAction(action:string){finish();if(['id','copyClass','hiddenRange','restoreRange','canvasSettings','interpolateRange'].includes(action)){menuDialog.current=true;onAction?.(action);return;}const s=useStore.getState();if(action==='new'){if(onNewTrack)onNewTrack();else s.newPerson();setTool('draw');}else if(action==='copy')s.copyPrevious();else if(action==='hide')s.togglePersonVisibility(s.activeId);else if(action==='focus')s.focusPerson(s.activeId);else if(action==='delete')s.setBox(s.geometry,null);else if(action==='undo')s.undo();else if(action==='redo')s.redo();}
  const menuPerson=project?.state.identities[menuTarget?.identity||''];
  const menuIdentity=menuTarget?.identity||activeId,menuGeometry=menuTarget?.geometry||geometry;
  const previous=menuIdentity&&currentObservation(project,videoId,frame-1,menuIdentity);
@@ -151,7 +151,7 @@ export const EditorCanvas=forwardRef<CanvasHandle,{proposals:Proposal[];showProp
   return {key:o.id+g,g,box:editing&&preview?preview:linkedPreview?preview:box,person:project!.state.identities[o.identity_uuid],selected};
  });
  if(preview&&gesture.current?.kind==='draw'&&!getBox(active,gesture.current.geometry))renderBoxes.unshift({key:'drawing',g:gesture.current.geometry,box:preview,person:project!.state.identities[activeId],selected:true});
- const labels=renderBoxes.filter(({box})=>box[2]*view.scale+view.x>=0&&box[0]*view.scale+view.x<size.w&&box[3]*view.scale+view.y>=0&&box[1]*view.scale+view.y<size.h).map(({key,g,box,person,selected})=>({key,x:box[0]*view.scale+view.x,y:box[1]*view.scale+view.y,className:boxStyle(person,g).class_name,id:person?.person_id!=null?'#'+person.person_id:person?.name||'Draft',color:displayColor(person,g),selected,identity:person?.id||'',geometry:g,interactive:key!=='drawing'&&!!person}));
+ const labels=renderBoxes.filter(({box})=>box[2]*view.scale+view.x>=0&&box[0]*view.scale+view.x<size.w&&box[3]*view.scale+view.y>=0&&box[1]*view.scale+view.y<size.h).map(({key,g,box,person,selected})=>({key,x:box[0]*view.scale+view.x,y:box[1]*view.scale+view.y,className:boxStyle(person,g).class_name,id:displayLabels[person?.id||'']?.label||(person?.person_id!=null?'#'+person.person_id:person?.name||'Draft'),color:displayColor(person,g),selected,identity:person?.id||'',geometry:g,interactive:key!=='drawing'&&!!person}));
  const editingBox=!!preview&&gesture.current?.moved&&gesture.current.kind!=='pan';
  const obstacles=renderBoxes.map(({box})=>({x:box[0]*view.scale+view.x,y:box[1]*view.scale+view.y,width:(box[2]-box[0])*view.scale,height:(box[3]-box[1])*view.scale}));
  const badges=layoutLabels(editingBox||preferences.labels==='hidden'?[]:preferences.labels==='selected'?labels.filter(label=>label.selected):labels,{width:size.w,height:size.h},measureLabelText,preferences.labels==='smart'?'unselected':preferences.labels==='ids',obstacles);
@@ -178,9 +178,10 @@ export const EditorCanvas=forwardRef<CanvasHandle,{proposals:Proposal[];showProp
   {ready&&!activeId&&<div className="canvas-hint">Press <kbd>N</kbd> to start a track · Drag to draw</div>}
  </div></ContextMenu.Trigger><ContextMenu.Portal><ContextMenu.Content className="canvas-context-menu" collisionPadding={10} onKeyDown={e=>{if(e.currentTarget.dataset.state!=='closed')e.stopPropagation()}} onKeyUp={e=>{if(e.currentTarget.dataset.state!=='closed')e.stopPropagation()}} onContextMenu={e=>e.preventDefault()} onCloseAutoFocus={e=>{e.preventDefault();if(!menuDialog.current)host.current?.focus();}}>
   <ContextMenu.Label className="canvas-menu-label">{menuTarget?'Selected box':'Canvas'}{menuTarget&&<strong>Track {menuPerson?.person_id??'—'} · {boxStyle(menuPerson,menuTarget.geometry).class_name}</strong>}</ContextMenu.Label>
-  {menuHits.length>1&&<><ContextMenu.Sub><ContextMenu.SubTrigger><MousePointer2/><span>Select overlapping box</span><ChevronRight className="ml-auto"/></ContextMenu.SubTrigger><ContextMenu.Portal><ContextMenu.SubContent className="canvas-context-menu" collisionPadding={10}>{menuHits.map(hit=>{const p=project?.state.identities[hit.identity];return <ContextMenu.Item key={hit.identity+':'+hit.geometry} onSelect={()=>{useStore.getState().selectPerson(hit.identity);useStore.setState({geometry:hit.geometry});setTool('select')}}><i className="canvas-menu-color" style={{background:displayColor(p,hit.geometry)}}/><span>Track {p?.person_id??'—'} · {boxStyle(p,hit.geometry).class_name}</span>{hit.identity===activeId&&hit.geometry===geometry&&<Check className="ml-auto"/>}</ContextMenu.Item>})}</ContextMenu.SubContent></ContextMenu.Portal></ContextMenu.Sub><ContextMenu.Separator className="canvas-menu-separator"/></>}
+  {menuHits.length>1&&<><ContextMenu.Sub><ContextMenu.SubTrigger><MousePointer2/><span>Select overlapping box</span><ChevronRight className="ml-auto"/></ContextMenu.SubTrigger><ContextMenu.Portal><ContextMenu.SubContent className="canvas-context-menu" collisionPadding={10}>{menuHits.map(hit=>{const p=project?.state.identities[hit.identity];return <ContextMenu.Item key={hit.identity+':'+hit.geometry} onSelect={()=>{useStore.getState().selectPerson(hit.identity);useStore.setState({geometry:hit.geometry});onSelectTrack?.(hit.identity);setTool('select')}}><i className="canvas-menu-color" style={{background:displayColor(p,hit.geometry)}}/><span>Track {p?.person_id??'—'} · {boxStyle(p,hit.geometry).class_name}</span>{hit.identity===activeId&&hit.geometry===geometry&&<Check className="ml-auto"/>}</ContextMenu.Item>})}</ContextMenu.SubContent></ContextMenu.Portal></ContextMenu.Sub><ContextMenu.Separator className="canvas-menu-separator"/></>}
   {menuTarget&&<>
    {item('Change ID or class…',<Tags/>,()=>menuAction('id'),!onAction,'I')}
+   {onAssignPerson&&item('Assign to shared person…',<Tags/>,()=>{finish();menuDialog.current=true;onAssignPerson();})}
    {item('Copy to class…',<CopyToClassIcon/>,()=>menuAction('copyClass'),!onAction)}
    {item('Copy previous box',<CopyPreviousBoxIcon/>,()=>menuAction('copy'),!canCopyPrevious,'C')}
    <ContextMenu.Separator className="canvas-menu-separator"/>

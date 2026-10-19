@@ -1,5 +1,9 @@
 # Changelog
 
+## 3.11.0
+
+Choose Single video or Multiple cameras when starting new annotation work. Camera sessions add synchronized views, manual shared-person associations, per-camera editing, timing alignment, and compact session JSON with validated import/export. Existing videos retain their single-video workflow and local track IDs. Native backups preserve camera sessions and reject unfinished video preparation. See the [release notes](docs/releases/v3.11.0.md).
+
 ## 3.9.1
 
 The selected box’s width × height now stays visible automatically, including after releasing the mouse and when opening existing browser settings. Removed the optional dimensions toggle. Measurements remain in source pixels and disappear for absent or hidden boxes. See the [release notes](docs/releases/v3.9.1.md).

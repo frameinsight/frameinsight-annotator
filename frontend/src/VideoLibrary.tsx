@@ -1,7 +1,7 @@
 import {Textarea} from './components/ui/textarea';
 import {Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter} from './components/ui/card';
 import {useEffect, useMemo, useState} from 'react';
-import {Settings2, Scissors, ArrowLeft, FolderOpen, ArrowRight, BookOpen, Check, CheckCircle2, ChevronRight, FileVideo2, FolderArchive, LoaderCircle, LockKeyhole, Play, Plus, Search, Trash2, Upload} from 'lucide-react';
+import {Settings2, Scissors, ArrowLeft, FolderOpen, ArrowRight, BookOpen, Check, CheckCircle2, ChevronRight, FileVideo2, FolderArchive, LayoutGrid, LoaderCircle, LockKeyhole, Play, Plus, Search, Trash2, Upload} from 'lucide-react';
 import {api, post} from './api';
 import {type Video} from './types';
 import {useStore} from './store';
@@ -13,6 +13,7 @@ import './library-table.css';
 import {Modal} from './components/AppDialog';
 import {Onboarding} from './components/Onboarding';
 import {APP_VERSION} from './release';
+import type {CameraSession} from './multicam';
 
 export type LibraryVideo = Video & {project_id: string; project_name: string; finished: boolean; created_at?: string | null; updated_at?: string | null};
 type RestoreJob = {id: string; status: string; error?: string; restored_project_id?: string};
@@ -39,7 +40,7 @@ function lastPosition(videos: LibraryVideo[]) {
   } catch { return null; }
 }
 
-export function VideoLibrary({onOpen, onNew, selectedProject, onSelectProject, onNewProject, onSettings, onTrim}: {onOpen: (p: string, v: string) => Promise<void>; onNew: () => void; selectedProject:string|null; onSelectProject:(id:string|null)=>void; onNewProject:()=>void;onSettings:(id:string)=>void;onTrim:()=>void}) {
+export function VideoLibrary({onOpen, onNew, selectedProject, onSelectProject, onNewProject, onSettings, onTrim, onOpenSession}: {onOpen: (p: string, v: string) => Promise<void>; onNew: () => void; selectedProject:string|null; onSelectProject:(id:string|null)=>void; onNewProject:()=>void;onSettings:(id:string)=>void;onTrim:()=>void;onOpenSession?:(session:CameraSession)=>Promise<void>}) {
   const [projects,setProjects]=useState<{id:string;name:string;classes:string[]|string}[]>([]);
   const [deleting, setDeleting] = useState<LibraryVideo | null>(null);
   const [videos, setVideos] = useState<LibraryVideo[]>([]);
@@ -50,11 +51,26 @@ export function VideoLibrary({onOpen, onNew, selectedProject, onSelectProject, o
   const [busy, setBusy] = useState('');
   const [restore, setRestore] = useState<RestoreJob | null>(null);
   const [guide, setGuide] = useState(false);
+  const [sessions, setSessions] = useState<CameraSession[]>([]);
+  const [sessionsLoading, setSessionsLoading] = useState(false);
+  const [sessionsError, setSessionsError] = useState('');
+  const [sessionsRefresh, setSessionsRefresh] = useState(0);
+  const sessionsEnabled = !!onOpenSession;
   useEffect(() => {
     let gone = false;
     void Promise.all([api<LibraryVideo[]>('/video-library'),api<{id:string;name:string;classes:string[]|string}[]>('/projects')]).then(([rows,groups]) => { if (!gone) {setVideos(rows);setProjects(groups);} }).catch(e => { if (!gone) setError(message(e)); }).finally(() => { if (!gone) setLoading(false); });
     return () => { gone = true; };
   }, []);
+  useEffect(() => {
+    setSessions([]); setSessionsError('');
+    if (!selectedProject || !sessionsEnabled) {setSessionsLoading(false); return;}
+    let gone = false;
+    setSessionsLoading(true);
+    void api<CameraSession[]>(`/projects/${selectedProject}/camera-sessions`).then(rows => {
+      if (!gone) setSessions(rows);
+    }).catch(error => {if (!gone) setSessionsError(message(error));}).finally(() => {if (!gone) setSessionsLoading(false);});
+    return () => {gone = true;};
+  }, [selectedProject, sessionsEnabled, sessionsRefresh]);
   useEffect(() => {
     if (!restore?.id || ['completed', 'failed'].includes(restore.status)) return;
     let gone = false;
@@ -78,6 +94,7 @@ export function VideoLibrary({onOpen, onNew, selectedProject, onSelectProject, o
     setBusy(target.id); setError('');
     void api<{cleanup_warning?: string}>(`/videos/${target.id}?confirmed=true`, {method: 'DELETE'}).then(async result => {
       setVideos(list => list.filter(v => v.id !== target.id)); setDeleting(null);
+      setSessionsRefresh(value => value + 1);
       await useStore.getState().forgetProject(target.project_id);
       if (result.cleanup_warning) setError(result.cleanup_warning);
     }).catch(e => setError(message(e))).finally(() => setBusy(''));
@@ -98,6 +115,23 @@ export function VideoLibrary({onOpen, onNew, selectedProject, onSelectProject, o
           <CardFooter className="mt-auto px-4"><Button variant="outline" size="sm" data-testid={'open-project-'+p.id} onClick={()=>{setQuery('');onSelectProject(p.id)}}>Open project<ChevronRight size={14}/></Button><Button variant="ghost" size="icon-sm" className="ml-auto" aria-label={'Edit project '+p.name} title="Project settings" onClick={()=>onSettings(p.id)}><Settings2 size={16}/></Button></CardFooter>
         </Card>})}</div>{!loading&&projects.length>0&&!projects.some(p=>p.name.toLowerCase().includes(query.toLowerCase()))&&<p className="library-no-results">No projects match this search.</p>}{!loading&&!projects.length&&<div className="library-empty"><FolderOpen size={35}/><h2>Create your first project</h2><p>For example, Person detection or Mobile detection. Add videos inside it.</p><Button onClick={onNewProject}><Plus size={16}/>New project</Button></div>}</>}
         {selectedProject&&<>
+        {onOpenSession && <section aria-labelledby="camera-sessions-heading" className="mb-7">
+          <div className="mb-3 flex items-center justify-between gap-3"><h2 id="camera-sessions-heading" className="text-sm font-medium">Camera sessions</h2><span className="text-xs text-muted-foreground">Linked recordings with shared identities</span></div>
+          {sessionsLoading ? <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground"><LoaderCircle size={16} className="animate-spin"/>Loading camera sessions…</p> : sessionsError ? <p role="alert" className="error">{sessionsError} <Button variant="ghost" size="sm" onClick={() => setSessionsRefresh(value => value + 1)}>Retry</Button></p> : <div className="video-table-panel">
+            <Table className="video-library-table" aria-label="Camera sessions">
+              <TableHeader><TableRow><TableHead scope="col" className="h-10">Session</TableHead><TableHead scope="col" className="h-10">Cameras</TableHead><TableHead scope="col" className="h-10">Last updated</TableHead><TableHead scope="col" className="h-10 text-right">Actions</TableHead></TableRow></TableHeader>
+              <TableBody>{sessions.filter(session => session.project_id === selectedProject).map(session => <TableRow key={session.id} data-testid={'session-row-' + session.id}>
+                <TableCell className="py-2.5"><div className="video-table-name"><LayoutGrid size={18} aria-hidden="true"/><div><strong title={session.name}>{session.name}</strong><small>{session.cameras.map(camera => camera.name).join(' · ') || 'No recordings remaining'}</small></div></div></TableCell>
+                <TableCell className="py-2.5"><span className="text-sm tabular-nums">{session.cameras.length}</span>{session.cameras.length < 2 && <span className="ml-2 text-xs text-muted-foreground">Needs cameras</span>}</TableCell>
+                <TableCell className="py-2.5"><VideoTimestamp value={session.updated_at}/></TableCell>
+                <TableCell className="py-2.5"><div className="video-table-actions"><Button variant="outline" size="sm" disabled={!!busy} data-testid={'open-session-' + session.id} aria-label={'Open camera session ' + session.name} onClick={() => {
+                  setBusy(session.id); setError('');
+                  void onOpenSession(session).catch(error => {setError(message(error)); setBusy('');});
+                }}>{busy === session.id ? <LoaderCircle className="animate-spin"/> : <LayoutGrid/>}{busy === session.id ? 'Opening…' : 'Open session'}</Button></div></TableCell>
+              </TableRow>)}{!sessions.some(session => session.project_id === selectedProject) && <TableRow className="hover:bg-transparent"><TableCell colSpan={4} className="py-5 text-center text-sm text-muted-foreground">No camera sessions yet. Start new work and choose Multiple cameras to link recordings.</TableCell></TableRow>}</TableBody>
+            </Table>
+          </div>}
+        </section>}
         {(loading || projectVideos.length > 0) && <><div className="library-controls"><label className="video-search"><Search size={17}/><Input aria-label="Search videos" placeholder="Search your videos…" value={query} onChange={e => setQuery(e.target.value)}/></label><div className="library-filters" aria-label="Filter videos">{([['all', 'All videos'], ['progress', 'In progress'], ['finished', 'Finished']] as const).map(([value, label]) => <Button variant="ghost" size="sm" className="aria-pressed:bg-accent" key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}>{label}</Button>)}</div></div><p className="library-count">{projectVideos.length} {projectVideos.length === 1 ? 'video' : 'videos'}{finished > 0 && ` · ${finished} finished`}</p></>}
         {loading ? <p role="status" className="flex items-center gap-2"><LoaderCircle size={16} className="animate-spin"/>Loading your videos…</p> : projectVideos.length > 0 && <div className="video-table-panel">
           <Table className="video-library-table" aria-label="Project videos">

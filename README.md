@@ -21,7 +21,7 @@ Installed copies check for updates whenever Frameinsight starts. A newer stable 
 
 ## A simple annotation workflow
 
-1. Choose **New project**, enter its name and class names (one per line). Open the project, choose **New video**, and upload a video or enter its local path.
+1. Choose **New project**, enter its name and class names (one per line). Open the project, choose **New video → Single video**, and upload a video or enter its local path.
 2. Go to the first frame where an object appears. Press **N** for a new track, choose a class, and draw its box. A free numeric ID is assigned automatically.
 3. Move forward with **F** or **Shift+F**, then move or resize the box. Interpolation fills between your drawn/corrected boxes. Inspect the in-between frames and correct any drift.
 4. Keep the same track selected to annotate another class. Choose its class button and draw, or open **Copy to class…**, choose **Source class** and **Target class**, then click **Copy boxes**. Existing target boxes are kept. Adjust the copies at keyframes.
@@ -53,9 +53,26 @@ A settings change resets the current Undo/Redo stacks, while saved edit history 
 - Automatic saving, undo/redo, recovery journals, and native project backups.
 - Review in the existing annotation canvas with all tracks, frame stepping, and **0.125× / 0.25× / 0.5× / 1×** playback.
 - Structural validation of IDs, references, coordinate data, timestamps, JSON and export counts. It needs no video rendering or source-file hashing. Saved changes require revalidation.
+- Separate multi-camera sessions with synchronized playback, shared person IDs, camera focus and annotation-only session export/import.
 - Windows and Debian installers with release notes and automatic startup updates.
 
-The app does not recognize objects or guarantee identity correctness. Human review checks placement, identity swaps, missed objects and interpolation. Direction labels, movement prediction and cross-camera identity association are not implemented. This is a localhost app, without network deployment or multi-user authentication.
+The app does not recognize objects or guarantee identity correctness. Human review checks placement, identity swaps, missed objects and interpolation. Direction labels, movement prediction and automatic cross-camera identity recognition are not implemented. Cross-camera associations are assigned and reviewed manually. This is a localhost app, without network deployment or multi-user authentication.
+
+## Multiple cameras
+
+Start new annotation work by choosing **Single video** or **Multiple cameras**. Existing videos keep their usual single-video workflow; nothing is converted or linked automatically.
+
+1. Choose **Multiple cameras**, name the session, then select or upload at least two related recordings. Give each camera a distinct name and choose **Create camera session**.
+2. Use **Sync cameras** to select matching moments in the recordings, choose **Align matching frames**, and **Save synchronization**. You can also enter timing offsets. One playhead now controls the grid; recordings use their own source timestamps and frame numbers. **No recording** appears before a camera starts or after it ends.
+3. Add a person in **People across cameras**. Select that person, activate a camera, and draw/track their appearance with the usual tools. In another camera, select the same person before adding their track. Assign an existing local track using the workspace's person-assignment control or the box context menu. Wrong assignments can be changed or unlinked without changing the boxes.
+4. Use **Focus person…** and the per-camera appearance timeline to follow one person. Enlarge a camera when you need more drawing space. Boxes, classes, interpolation and hidden ranges stay independent in each video.
+5. Review the synchronized grid, then choose **Export session**. Confirm the visual review, validate the saved data, choose a JSON filename and download. This compact file includes shared identities and timing, with no media or editing history.
+
+Local track numbers remain unique **within a video**. The shared person number is unique **within the session**: Camera 1's Track 1 and Camera 2's Track 4 can both be Person 7. Matching local numbers alone never create a link. A person may be visible in several cameras at once; an uncertain track can remain unassigned.
+
+To reopen a session elsewhere, upload its original videos, open **Multiple cameras → Import a multi-camera annotation JSON**, select the file and explicitly match each camera to its video. Indexed source hashes, dimensions and frame timing must match. Import creates a new session and adds tracks, retaining existing annotations; use unannotated videos to avoid duplicate copies. For full recovery and audit history, use a native project backup after every project video has finished processing.
+
+This release uses manual identity association and a constant time offset per camera. It does not infer matches, calibrate camera clocks, correct clock drift, or copy geometry between viewpoints. See the [multi-camera JSON reference](docs/multicam-json.md) for identity keys, timing and import limits.
 
 ## Team annotation tools
 

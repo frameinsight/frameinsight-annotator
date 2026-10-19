@@ -45,6 +45,8 @@ def delete_video(vid):
                 c.execute('DELETE FROM operations WHERE id=?', (row['id'],))
         for table in ('frames', 'proposals', 'proposal_frames'):
             c.execute(f'DELETE FROM {table} WHERE video_id=?', (vid,))
+        from .multicam import remove_video_memberships
+        remove_video_memberships(c, pid, vid)
         c.execute('DELETE FROM videos WHERE id=?', (vid,))
         remaining = c.execute('SELECT 1 FROM videos WHERE project_id=?', (pid,)).fetchone() is not None
         removed_exports = set()
