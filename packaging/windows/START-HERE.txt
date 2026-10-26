@@ -1,11 +1,11 @@
-FRAMEINSIGHT 3.11.0 — WINDOWS 11 (64-bit)
+FRAMEINSIGHT 3.11.1 — WINDOWS 11 (64-bit)
 
 INSTALL AND OPEN
 1. Download Window_setup.exe from the official Frameinsight release:
    https://github.com/frameinsight/frameinsight-annotator/releases/latest
 2. Open Window_setup.exe and follow the installer.
 3. Double-click Frameinsight on your desktop. Your normal browser opens.
-4. Check that the app says LOCAL · 3.11.0.
+4. Check that the app says LOCAL · 3.11.1.
 
 No terminal, Python, Node or GPU setup is needed. Annotation works offline;
 internet is needed for checking and downloading updates.
@@ -87,6 +87,15 @@ Right-click overlapping boxes > Select overlapping box to choose one.
 These display preferences do not change saved annotations or exports.
 
 Help contains the guide. Press ? to search actions and shortcuts.
+
+HIDE OR REMOVE TRACKS
+Use the eye beside a track to hide both its boxes and labels. This only
+changes your view; hidden annotations remain saved and exported. Use the
+trash button to remove an unwanted track, then confirm. Ctrl+Z undoes it.
+In a multi-camera session these controls are under the active camera's
+track list. Deletion affects that camera only; Undo delete also restores
+its shared-person link. Retry frame reloads a failed preview without
+reloading the page.
 
 CLOSE, UPDATE AND BACK UP
 Closing the browser leaves Frameinsight running. Right-click its icon

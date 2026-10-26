@@ -9,6 +9,8 @@ import {ContextMenu} from 'radix-ui';
 import {MousePointer2,SquareDashed,Hand,Plus,Maximize,Undo2,Redo2,EyeOff,Focus,Trash2,Tags,Settings2,ChevronRight,Check,WandSparkles} from 'lucide-react';
 import {hitCanvasBox} from './canvas-hit';
 import {hasOpenOverlay} from './shortcut-guards';
+import {frameImageCache} from './frame-image-cache';
+import {Button} from './components/ui/button';
 import './canvas-controls.css';
 import {useStore} from './store';
 import {VISIBLE_ONLY,boxStyle,geometryLabel,getBox,boxKeys} from './types';
@@ -25,8 +27,6 @@ function resizeHandles([x1,y1,x2,y2]:Box){return [
 ]}
 const resizeCursor=(edge:string)=>edge.length===2?(edge==='nw'||edge==='se'?'nwse-resize':'nesw-resize'):(edge==='n'||edge==='s'?'ns-resize':'ew-resize');
 
-const imageCache=new Map<string,HTMLImageElement>();
-function fetchImage(key:string,url:string):Promise<HTMLImageElement>{const cached=imageCache.get(key);if(cached)return Promise.resolve(cached);return new Promise((resolve,reject)=>{const img=new Image();img.onload=()=>{imageCache.set(key,img);while(imageCache.size>15)imageCache.delete(imageCache.keys().next().value!);resolve(img)};img.onerror=()=>reject(new Error('Exact frame unavailable'));img.src=url;});}
 export const EditorCanvas=forwardRef<CanvasHandle,{proposals:Proposal[];showProposals:boolean;hiddenClasses:Record<string,boolean>;dimOutside:boolean;preferences?:CanvasPreferences;colorMode?:'class'|'track';expectedContext?:{videoId:string;frame:number};displayLabels?:Record<string,{label:string;color:string}>;focusedIdentityIds?:string[]|null;onNewTrack?:()=>void;onSelectTrack?:(id:string)=>void;onAssignPerson?:()=>void;onColorModeChange?:(mode:'class'|'track')=>void;onAction?:(action:string)=>void;onControlsChange?:(state:CanvasControlsState)=>void}>(({proposals,showProposals,hiddenClasses,dimOutside,preferences=defaultCanvasPreferences,colorMode='class',expectedContext,displayLabels={},focusedIdentityIds=null,onNewTrack,onSelectTrack,onAssignPerson,onColorModeChange,onAction,onControlsChange},ref)=>{
  const {project,videoId,frame,activeId,geometry,hiddenIds}=useStore();const video=project?.videos[videoId];
  const displayColor=(person:import('./types').Identity|undefined,g:Geometry)=>colorMode==='track'&&person&&displayLabels[person.id]?displayLabels[person.id].color:annotationColor(project,person,g,colorMode);
@@ -34,9 +34,10 @@ export const EditorCanvas=forwardRef<CanvasHandle,{proposals:Proposal[];showProp
  const [tool,setTool]=useState<CanvasTool>('select'),[menuTarget,setMenuTarget]=useState<{identity:string;geometry:Geometry}|null>(null);
  const [menuHits,setMenuHits]=useState<{identity:string;geometry:Geometry}[]>([]);
  const host=useRef<HTMLDivElement>(null),gesture=useRef<Gesture|null>(null),spaceDown=useRef(false),panned=useRef(false),cycle=useRef(0);
- const [size,setSize]=useState({w:800,h:600}),[view,setView]=useState<View>({x:0,y:0,scale:1}),[image,setImage]=useState<{key:string;image:HTMLImageElement}|null>(null),[error,setError]=useState(''),[preview,setPreview]=useState<Box|null>(null),[cursor,setCursor]=useState('crosshair');
+ const [size,setSize]=useState({w:800,h:600}),[view,setView]=useState<View>({x:0,y:0,scale:1}),[image,setImage]=useState<{key:string;image:HTMLImageElement}|null>(null),[frameError,setFrameError]=useState<{key:string;message:string}|null>(null),[retryFrame,setRetryFrame]=useState(0),[preview,setPreview]=useState<Box|null>(null),[cursor,setCursor]=useState('crosshair');
 
- const requestedKey=videoId+':'+frame;const displayedImage=imageCache.get(requestedKey)||(image?.key===requestedKey?image.image:undefined);const ready=!!displayedImage&&!!video&&(!expectedContext||expectedContext.videoId===videoId&&expectedContext.frame===frame);
+ const requestedKey=videoId+':'+frame;const displayedImage=frameImageCache.peek(requestedKey)||(image?.key===requestedKey?image.image:undefined);const ready=!!displayedImage&&!!video&&(!expectedContext||expectedContext.videoId===videoId&&expectedContext.frame===frame);
+ const error=frameError?.key===requestedKey?frameError.message:'';
  const controlsCallback=useRef(onControlsChange);controlsCallback.current=onControlsChange;
  useEffect(()=>{controlsCallback.current?.({tool,scale:view.scale,ready});},[tool,view.scale,ready]);
  useLayoutEffect(()=>{const ro=new ResizeObserver(entries=>{const r=entries[0].contentRect;setSize({w:r.width,h:r.height})});if(host.current)ro.observe(host.current);return()=>ro.disconnect()},[]);
@@ -47,8 +48,8 @@ export const EditorCanvas=forwardRef<CanvasHandle,{proposals:Proposal[];showProp
   if(fittedVideo.current!==videoId){fittedVideo.current=videoId;autoFit.current=true;}
   if(autoFit.current&&!gesture.current)fitView();
  },[videoId,video?.width,size.w,size.h]);
- useEffect(()=>{let cancelled=false;setError('');if(!videoId||!video?.frame_count)return;const key=requestedKey;
- fetchImage(key,`/api/videos/${videoId}/frames/${frame}`).then(img=>{if(!cancelled)setImage({key,image:img});for(const delta of [1,-1,2,-2,3]){const f=frame+delta;if(f>=0&&f<video.frame_count)void fetchImage(videoId+':'+f,`/api/videos/${videoId}/frames/${f}`).catch(()=>{});}}).catch(e=>{if(!cancelled)setError(String(e))});return()=>{cancelled=true};},[requestedKey,video?.frame_count]);
+ useEffect(()=>{let cancelled=false;setFrameError(null);if(!videoId||!video?.frame_count)return;const key=requestedKey;
+ frameImageCache.load(key,`/api/videos/${videoId}/frames/${frame}`).then(img=>{if(cancelled)return;setImage({key,image:img});for(const delta of [1,-1]){const f=frame+delta;if(f>=0&&f<video.frame_count)void frameImageCache.load(videoId+':'+f,`/api/videos/${videoId}/frames/${f}`).catch(()=>{});}}).catch(e=>{if(!cancelled)setFrameError({key,message:e instanceof Error?e.message:String(e)})});return()=>{cancelled=true};},[requestedKey,video?.frame_count,retryFrame]);
  const observations=frameObservations(project,videoId,frame).filter(o=>!hiddenIds[o.identity_uuid]&&(focusedIdentityIds===null||focusedIdentityIds.includes(o.identity_uuid)));
  const active=currentObservation(project,videoId,frame,activeId);
  const className=boxStyle(project?.state.identities[activeId],geometry).class_name;
@@ -172,7 +173,7 @@ export const EditorCanvas=forwardRef<CanvasHandle,{proposals:Proposal[];showProp
    {renderBoxes.slice().reverse().map(({key,g,box,person,selected})=>drawBox(box,g,key,selected,displayColor(person,g)))}
   </Group><CanvasLabels badges={badges}/><Group x={view.x} y={view.y} scaleX={view.scale} scaleY={view.scale}>
    {renderBoxes.filter(({selected})=>selected).flatMap(({key,box,person,g})=>resizeHandles(box).map(({x,y,edge})=><Rect key={key+edge} x={x-3/view.scale} y={y-3/view.scale} width={6/view.scale} height={6/view.scale} fill="#10161b" stroke={displayColor(person,g)} strokeWidth={1/view.scale}/>))}
-  </Group></Layer></Stage>:<div className="canvas-loading">{error|| (video?'Loading exact source frame…':'Import a video to begin')}</div>}
+  </Group></Layer></Stage>:<div className="canvas-loading">{error?<div data-canvas-ui className="grid justify-items-center gap-3"><span role="alert">{error}</span><Button variant="outline" size="sm" onClick={()=>{setFrameError(null);setRetryFrame(value=>value+1);}}>Retry frame</Button></div>:(video?'Loading exact source frame…':'Import a video to begin')}</div>}
   {ready&&<div className="canvas-corner">{video.width} × {video.height}<span>{Math.round(view.scale*100)}%</span><span>Source pixels</span></div>}
   {measured&&<output className="canvas-dimensions" aria-label="Box dimensions" data-testid="box-dimensions" data-width={measured.box[2]-measured.box[0]} data-height={measured.box[3]-measured.box[1]}><span>{dimension(measured.box[2]-measured.box[0])} × {dimension(measured.box[3]-measured.box[1])}</span> source px</output>}
   {ready&&!activeId&&<div className="canvas-hint">Press <kbd>N</kbd> to start a track · Drag to draw</div>}

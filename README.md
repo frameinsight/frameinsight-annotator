@@ -70,6 +70,10 @@ Start new annotation work by choosing **Single video** or **Multiple cameras**. 
 4. Use **Focus person…** and the per-camera appearance timeline to follow one person. Enlarge a camera when you need more drawing space. Boxes, classes, interpolation and hidden ranges stay independent in each video.
 5. Review the synchronized grid, then choose **Export session**. Confirm the visual review, validate the saved data, choose a JSON filename and download. This compact file includes shared identities and timing, with no media or editing history.
 
+Use the **eye** beside a local track to hide its boxes and labels without changing saved annotations or exports. **Show all boxes** restores the active camera’s hidden tracks. The **trash** button deletes that camera’s entire track after confirmation; **Undo delete** or **Ctrl+Z** restores it, including its shared-person link. Tracks in other cameras stay intact.
+
+Playback waits for all visible camera frames to load. On slower computers it may run below the selected speed rather than skip pending previews. If a frame fails to load, choose **Retry frame** in that view.
+
 Local track numbers remain unique **within a video**. The shared person number is unique **within the session**: Camera 1's Track 1 and Camera 2's Track 4 can both be Person 7. Matching local numbers alone never create a link. A person may be visible in several cameras at once; an uncertain track can remain unassigned.
 
 To reopen a session elsewhere, upload its original videos, open **Multiple cameras → Import a multi-camera annotation JSON**, select the file and explicitly match each camera to its video. Indexed source hashes, dimensions and frame timing must match. Import creates a new session and adds tracks, retaining existing annotations; use unannotated videos to avoid duplicate copies. For full recovery and audit history, use a native project backup after every project video has finished processing.
