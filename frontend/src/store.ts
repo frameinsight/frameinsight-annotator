@@ -10,9 +10,16 @@ import {previewRestoreRange as previewRecovery,restoreRange as restoreRecovery,t
 import {get,set as dbSet,del as dbDelete} from 'idb-keyval';
 import {api,post} from './api';
 import {type Domain,type Project,type Operation,type Change,type Geometry,type Observation,type Proposal,uuid,currentObservation,emptyObservation,observationIssues,validateDomain} from './types';
-export type ProjectSettingsUpdate={base_revision:number;name:string;class_renames:Record<string,string>;new_classes?:string[];request_id:string};
-type Store={unregisteredTracks:Record<string,boolean>;settingsSaving:boolean;saveProjectSettings:(id:string,update:ProjectSettingsUpdate)=>Promise<Project>;selectClass:(name:string)=>void;copyClassTrack:(source:Geometry,targetClass:string)=>boolean;previewRestoreRange:(start:number,end:number,mode:RestoreMode,operations?:Operation[])=>RestorePreview;restoreRange:(start:number,end:number,mode:RestoreMode,operations?:Operation[])=>boolean;copyVisibleToExtended:()=>void;forgetProject:(id:string)=>Promise<void>;markHiddenRange:(start:number,end:number)=>boolean;saveNow:()=>Promise<void>;hiddenIds:Record<string,boolean>;togglePersonVisibility:(id:string)=>void;focusPerson:(id:string)=>void;showAllPeople:()=>void;selectPerson:(id:string)=>void;deletePerson:(id:string)=>boolean;assignPerson:(target:string,personId:number|null,className:string,color:string,geometry?:Geometry)=>boolean;frameTimes:Record<string,(number|null)[]>;fillInterpolation:()=>void;project:Project|null;videoId:string;frame:number;activeId:string;geometry:Geometry;saveStatus:string;saveError:string;notice:string;pending:Operation[];history:Operation[];redoStack:Operation[];ready:boolean;load:(id:string)=>Promise<void>;commit:(label:string,fn:(d:Domain)=>void)=>boolean;navigate:(n:number)=>void;undo:()=>void;redo:()=>void;retry:()=>void;newPerson:()=>void;editObservation:(label:string,fn:(o:Observation)=>void,propagate?:boolean)=>void;setBox:(geometry:Geometry,box:Box|null,proposal?:Proposal,context?:{videoId:string;frame:number;activeId:string})=>void;equal:()=>void;copyPrevious:()=>void;approve:()=>boolean;rename:(id:string,n:number|null)=>void;toast:(message:string)=>void;};
+export type ProjectSettingsUpdate={base_revision:number;name:string;class_renames:Record<string,string>;new_classes?:string[];deleted_classes?:string[];deletion_confirmed?:boolean;request_id:string};
+export type ProjectDeletionResult={deleted:boolean;project_id:string;cleanup_warning?:string|null};
+type Store={deletingProjectId:string|null;deleteProject:(id:string,revision:number)=>Promise<ProjectDeletionResult>;unregisteredTracks:Record<string,boolean>;settingsSaving:boolean;saveProjectSettings:(id:string,update:ProjectSettingsUpdate)=>Promise<Project>;selectClass:(name:string)=>void;copyClassTrack:(source:Geometry,targetClass:string)=>boolean;previewRestoreRange:(start:number,end:number,mode:RestoreMode,operations?:Operation[])=>RestorePreview;restoreRange:(start:number,end:number,mode:RestoreMode,operations?:Operation[])=>boolean;copyVisibleToExtended:()=>void;forgetProject:(id:string)=>Promise<void>;markHiddenRange:(start:number,end:number)=>boolean;saveNow:()=>Promise<void>;hiddenIds:Record<string,boolean>;togglePersonVisibility:(id:string)=>void;focusPerson:(id:string)=>void;showAllPeople:()=>void;selectPerson:(id:string)=>void;deletePerson:(id:string)=>boolean;assignPerson:(target:string,personId:number|null,className:string,color:string,geometry?:Geometry)=>boolean;frameTimes:Record<string,(number|null)[]>;fillInterpolation:()=>void;project:Project|null;videoId:string;frame:number;activeId:string;geometry:Geometry;saveStatus:string;saveError:string;notice:string;pending:Operation[];history:Operation[];redoStack:Operation[];ready:boolean;load:(id:string)=>Promise<void>;commit:(label:string,fn:(d:Domain)=>void)=>boolean;navigate:(n:number)=>void;undo:()=>void;redo:()=>void;retry:()=>void;newPerson:()=>void;editObservation:(label:string,fn:(o:Observation)=>void,propagate?:boolean)=>void;setBox:(geometry:Geometry,box:Box|null,proposal?:Proposal,context?:{videoId:string;frame:number;activeId:string})=>void;equal:()=>void;copyPrevious:()=>void;approve:()=>boolean;rename:(id:string,n:number|null)=>void;toast:(message:string)=>void;};
 let pumpRunning=false;let persistChain=Promise.resolve();
+const deletedProjects=new Set<string>();
+export function markProjectDeleted(id:string){
+ deletedProjects.add(id);
+ if(useStore.getState().project?.id===id)useStore.setState({saveStatus:'Project deleted',saveError:'This project was deleted in another tab. Unsaved edits remain in this browser until you discard them.'});
+}
+function assertProjectExists(id:string){if(deletedProjects.has(id))throw new Error('This project was deleted. It cannot be saved or reopened.');}
 const clone=<T,>(x:T):T=>structuredClone(x);
 const same=(a:any,b:any)=>JSON.stringify(a)===JSON.stringify(b);
 const journalKey=(id:string)=>'frameinsight:journal:'+id;
@@ -28,9 +35,9 @@ async function pump(){
  if(pumpRunning)return;pumpRunning=true;
  try{while(useStore.getState().pending.length){
   const s=useStore.getState(), op=s.pending[0], pid=s.project!.id;
-  useStore.setState({saveStatus:'Saving'});
+  assertProjectExists(pid);useStore.setState({saveStatus:'Saving'});
   const result=await post('/projects/'+pid+'/operations',op);
-  if(useStore.getState().project?.id!==pid)break;
+  assertProjectExists(pid);if(useStore.getState().project?.id!==pid)break;
   if(result.classes)useStore.setState({project:{...useStore.getState().project!,classes:result.classes,class_colors:result.class_colors}});
   useStore.setState({pending:useStore.getState().pending.filter(p=>p.id!==op.id),saveError:''});await persist();
  }
@@ -52,8 +59,10 @@ function invalidate(before:Domain,after:Domain){
 }
 export const useStore=create<Store>((set,get)=>({
  unregisteredTracks:{},
+ deletingProjectId:null,
  settingsSaving:false,
  saveProjectSettings:async(id,update)=>{
+  assertProjectExists(id);
   if(get().settingsSaving)throw new Error('Project settings are already saving.');
   set({settingsSaving:true});
   try{
@@ -66,22 +75,30 @@ export const useStore=create<Store>((set,get)=>({
    const local=await getJournal(id);
    if(!active&&local?.pending?.length)throw new Error('Open a video in this project and save your pending edits before changing its settings.');
    const saved=await api<Project>('/projects/'+id+'/settings',{method:'PATCH',body:JSON.stringify(update)});
-   const mappedGeometry=(geometry:Geometry)=>geometry.startsWith('class:')&&Object.prototype.hasOwnProperty.call(update.class_renames,geometry.slice(6))?classKey(update.class_renames[geometry.slice(6)]):geometry;
+   assertProjectExists(id);
+   const mappedGeometry=(geometry:Geometry,identityId:string)=>{
+    const original=(liveProject:Project|undefined)=>boxStyle(liveProject?.state.identities[identityId],geometry).class_name;
+    const oldName=original(active?get().project||undefined:local?.project);
+    const name=update.class_renames[oldName]||oldName;
+    const selected=saved.classes?.includes(name)?name:saved.classes?.[0];
+    return selected?geometryForClass(saved.state.identities[identityId],selected):classKey('Person');
+   };
    const live=get();
    if(live.project?.id===id){
     const changed=saved.revision!==live.project.revision||!same(saved.classes,live.project.classes)||saved.name!==live.project.name;
-    set({project:saved,geometry:mappedGeometry(live.geometry),history:changed?[]:live.history,redoStack:changed?[]:live.redoStack,pending:[],saveStatus:'Saved',saveError:''});
+    set({project:saved,geometry:mappedGeometry(live.geometry,live.activeId),activeId:saved.state.identities[live.activeId]?live.activeId:'',hiddenIds:Object.fromEntries(Object.entries(live.hiddenIds).filter(([id])=>!!saved.state.identities[id])),unregisteredTracks:Object.fromEntries(Object.entries(live.unregisteredTracks).filter(([id])=>!!saved.state.identities[id])),history:changed?[]:live.history,redoStack:changed?[]:live.redoStack,pending:[],saveStatus:'Saved',saveError:''});
     try{await persist();}catch(e){set({saveError:'Project settings were saved to the server, but the local recovery copy could not be refreshed. '+String(e)});}
    }else if(local){
     // Server edit history is retained and renamed for deleted-range recovery.
     // Local undo stacks are cleared because older implicit class slots may
     // acquire explicit styles and no longer match compensation snapshots.
     const changed=saved.revision!==local.project?.revision||!same(saved.classes,local.project?.classes)||saved.name!==local.project?.name;
-    const record={...local,project:saved,geometry:mappedGeometry(local.geometry||classKey(saved.classes?.[0]||'Person')),pending:[],history:changed?[]:local.history||[],redoStack:changed?[]:local.redoStack||[]};
+    const record={...local,project:saved,geometry:mappedGeometry(local.geometry||classKey(saved.classes?.[0]||'Person'),local.activeId),activeId:saved.state.identities[local.activeId]?local.activeId:'',pending:[],history:changed?[]:local.history||[],redoStack:changed?[]:local.redoStack||[]};
     const task=persistChain.then(()=>dbSet(journalKey(id),record));persistChain=task.catch(()=>{});
     try{await task;}catch{await dbDelete(journalKey(id));}
    }
-   try{const raw=localStorage.getItem(positionKey(id));if(raw){const position=JSON.parse(raw);if(typeof position.geometry==='string')localStorage.setItem(positionKey(id),JSON.stringify({...position,geometry:mappedGeometry(position.geometry)}));}}catch{/* Cursor recovery is optional; annotation data is already saved. */}
+   try{const raw=localStorage.getItem(positionKey(id));if(raw){const position=JSON.parse(raw);if(typeof position.geometry==='string')localStorage.setItem(positionKey(id),JSON.stringify({...position,geometry:mappedGeometry(position.geometry,position.activeId),activeId:saved.state.identities[position.activeId]?position.activeId:''}));}}catch{/* Cursor recovery is optional; annotation data is already saved. */}
+   try{const key='frameinsight:classVisibility:'+id;const hidden=JSON.parse(localStorage.getItem(key)||'{}');const next=Object.fromEntries(Object.entries(hidden).filter(([name])=>!update.deleted_classes?.includes(name)).map(([name,value])=>[update.class_renames[name]||name,value]).filter(([name])=>saved.classes?.includes(String(name))));localStorage.setItem(key,JSON.stringify(next));}catch{/* Display preferences are optional. */}
    return saved;
   }finally{set({settingsSaving:false});}
  },
@@ -97,8 +114,28 @@ export const useStore=create<Store>((set,get)=>({
    s.toast(count?`${count} Extended boxes copied across this video. Resize at keyframes; Ctrl+Z undoes the whole copy.`:'All available Visible boxes already have Extended boxes.');
   }
  },
- forgetProject:async(id)=>{await persistChain;if(get().project?.id===id)set({project:null,videoId:'',activeId:'',pending:[],history:[],redoStack:[],saveStatus:'Saved',saveError:''});await dbDelete(journalKey(id));for(const key of [positionKey(id),'frameinsight:visibility:'+id])localStorage.removeItem(key);},
- saveNow:async()=>{await persist();await pump();const deadline=Date.now()+30000;while(get().pending.length){if(get().saveStatus==='Save failed')throw new Error(get().saveError||'Saving failed. Your edits are kept locally.');if(Date.now()>deadline)throw new Error('Still saving. Keep this tab open and try again.');await new Promise(resolve=>setTimeout(resolve,50));if(!pumpRunning)await pump();}set({saveStatus:'Saved',saveError:''});},
+ deleteProject:async(id,revision)=>{
+  if(get().settingsSaving)throw new Error('Wait for project changes to finish saving.');
+  set({settingsSaving:true,deletingProjectId:id});
+  try{
+   await persistChain;
+   if(get().project?.id===id)await get().saveNow();
+   else if((await getJournal(id))?.pending?.length)throw new Error('Open a video in this project and save your pending edits before deleting it.');
+   const result=await api<ProjectDeletionResult>('/projects/'+id+'?confirmed=true&base_revision='+revision,{method:'DELETE'});
+   markProjectDeleted(id);
+   try{await get().forgetProject(id);}catch{result.cleanup_warning=[result.cleanup_warning,'The project was deleted, but this browser could not clear its local recovery copy. Reload the app before continuing.'].filter(Boolean).join(' ');}
+   return result;
+  }finally{set({settingsSaving:false,deletingProjectId:null});}
+ },
+ forgetProject:async(id)=>{
+  await persistChain;
+  if(get().project?.id===id)set({project:null,videoId:'',frame:0,activeId:'',geometry:classKey('Person'),pending:[],history:[],redoStack:[],hiddenIds:{},unregisteredTracks:{},frameTimes:{},saveStatus:'Saved',saveError:''});
+  try{await dbDelete(journalKey(id));}finally{
+   for(const key of [positionKey(id),'frameinsight:visibility:'+id,'frameinsight:classVisibility:'+id])localStorage.removeItem(key);
+   if(localStorage.getItem('frameinsight:lastProject')===id)localStorage.removeItem('frameinsight:lastProject');
+  }
+ },
+ saveNow:async()=>{if(get().project)assertProjectExists(get().project!.id);await persist();await pump();const deadline=Date.now()+30000;while(get().pending.length){if(get().saveStatus==='Save failed')throw new Error(get().saveError||'Saving failed. Your edits are kept locally.');if(Date.now()>deadline)throw new Error('Still saving. Keep this tab open and try again.');await new Promise(resolve=>setTimeout(resolve,50));if(!pumpRunning)await pump();}set({saveStatus:'Saved',saveError:''});},
  markHiddenRange:(start,end)=>{const s=get();let removed=0;const ok=s.commit(`Delete person boxes: frames ${start}–${end}`,d=>{removed=deleteGeometryRange(d,s.videoId,s.activeId,start,end,s.project!.videos[s.videoId].frame_count,s.geometry)});if(ok)s.toast(`${removed} boxes deleted. Selected box type absent on frames ${start}–${end}. Ctrl+Z undoes this.`);return ok;},
  hiddenIds:{},
  togglePersonVisibility:(id)=>{const s=get(),hidden=!s.hiddenIds[id];set({hiddenIds:{...s.hiddenIds,[id]:hidden},...(hidden&&s.activeId===id?{activeId:''}:{})});},
@@ -111,9 +148,11 @@ export const useStore=create<Store>((set,get)=>({
  project:null,videoId:'',frame:0,activeId:'',geometry:classKey('Person'),saveStatus:'Saved',saveError:'',notice:'',pending:[],history:[],redoStack:[],ready:false,
  toast:(notice)=>{set({notice});window.setTimeout(()=>{if(get().notice===notice)set({notice:''})},5500)},
  load:async(id)=>{
+  assertProjectExists(id);
   if(get().settingsSaving)throw new Error('Wait for project settings to finish saving.');
   if(get().pending.length)throw new Error('Save or recover pending edits before switching projects.');
   const [remote,local]=await Promise.all([api<Project>('/projects/'+id),getJournal(id)]);
+  assertProjectExists(id);
   const matchingJournal=local?.project?.revision===remote.revision&&same(local?.project?.classes,remote.classes);
   const validGeometry=(geometry:Geometry|undefined)=>geometry?.startsWith('class:')&&!remote.classes?.includes(geometry.slice(6))?classKey(remote.classes?.[0]||'Person'):geometry;
   let position:any=null;try{position=JSON.parse(localStorage.getItem(positionKey(id))||'null')}catch{}
@@ -127,7 +166,7 @@ export const useStore=create<Store>((set,get)=>({
   localStorage.setItem('frameinsight:lastProject',id);
  },
  commit:(label,fn)=>{
-  const s=get();if(!s.project)return false;if(s.settingsSaving){s.toast('Wait for project settings to finish saving.');return false;}
+  const s=get();if(!s.project)return false;if(deletedProjects.has(s.project.id)){s.toast('This project was deleted. Return to your projects.');return false;}if(s.settingsSaving){s.toast('Wait for project settings to finish saving.');return false;}
   const before=s.project.state,after=clone(before);
   try{fn(after);invalidate(before,after);validateDomain(after,s.project.videos);}catch(e){s.toast(String(e));return false;}
   const changes:Change[]=[];
@@ -196,7 +235,7 @@ export const useStore=create<Store>((set,get)=>({
 }));
 async function getJournal(id:string){return get<any>(journalKey(id));}
 function compensate(redo:boolean){
- const s=useStore.getState(),stack=redo?s.redoStack:s.history,original=stack.at(-1);if(!original||!s.project)return;if(s.settingsSaving){s.toast('Wait for project settings to finish saving.');return;}
+ const s=useStore.getState(),stack=redo?s.redoStack:s.history,original=stack.at(-1);if(!original||!s.project)return;if(deletedProjects.has(s.project.id)){s.toast('This project was deleted. Return to your projects.');return;}if(s.settingsSaving){s.toast('Wait for project settings to finish saving.');return;}
  const changes=original.changes.map(c=>({...c,before:c.after,after:c.before}));
  const state=clone(s.project.state);
  for(const c of changes){if(!same(state[c.collection][c.id]??null,c.before)){s.toast('Undo history does not match current data. Reload to review server changes.');return;}if(c.after===null)delete state[c.collection][c.id];else (state[c.collection] as any)[c.id]=clone(c.after);}

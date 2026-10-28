@@ -9,7 +9,7 @@ import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
-from fastapi import FastAPI, UploadFile, File, Form, HTTPException, WebSocket, WebSocketDisconnect, Request
+from fastapi import FastAPI, UploadFile, File, Form, HTTPException, WebSocket, WebSocketDisconnect, Request, Query
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
@@ -22,6 +22,7 @@ from .video import import_video, new_job, POOL, sha256
 from .worker import Worker
 from .formats import export_project, parse_cvat
 from .delete_video import delete_video
+from .delete_project import delete_project
 from .review_delivery import create_review, get_review, review_metadata, validate_review, validate_annotations, validation_proof
 from .project_settings import ProjectSettings, update_settings
 from .library_metadata import video_dates
@@ -199,6 +200,10 @@ def validate_video(vid:str,body:ValidateVideo):
 
 @app.get('/api/projects/{pid}')
 def project(pid:str): return db.snapshot(pid)
+@app.delete('/api/projects/{pid}')
+def remove_project(pid:str,base_revision:int=Query(ge=0),confirmed:bool=False):
+    if not confirmed:raise ValueError('Confirm deletion of this project, its videos, and annotations')
+    return delete_project(pid,base_revision)
 @app.patch('/api/projects/{pid}/settings')
 def project_settings(pid:str,body:ProjectSettings): return update_settings(pid,body)
 @app.post('/api/projects/{pid}/operations')
@@ -385,8 +390,8 @@ async def events(ws:WebSocket,pid:str):
                 await ws.send_json({'project_id':pid,'sequence':seq,'heartbeat':True})
             await asyncio.sleep(1)
     except KeyError:
-        # Deleting the last video removes its project while this stream may be open.
-        await ws.close(code=1008,reason='Project no longer exists')
+        await ws.send_json({'project_id':pid,'project_deleted':True})
+        await ws.close(code=1000,reason='Project deleted')
     except (WebSocketDisconnect,RuntimeError):pass
 
 DIST=ROOT/'frontend'/'dist'

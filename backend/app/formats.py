@@ -172,11 +172,21 @@ def export_project(pid, settings, jid):
             z.writestr('exclusions.json',json.dumps(exclusions,indent=2))
             z.writestr('manifest.json',json.dumps({'schema_version':1,'project_id':pid,'revision':project['revision'],'format':profile,'included_images':included,'excluded_frames':len(exclusions)},indent=2))
         data={'id':eid,'project_id':pid,'path':str(path),'revision':project['revision'],'settings':settings,'included_images':included,'excluded_frames':len(exclusions),'created_at':now()}
-        with transaction() as c: c.execute('INSERT INTO exports VALUES(?,?,?)',(eid,pid,json.dumps(data)))
+        with transaction() as c:
+            # A cancelled export may finish writing after project deletion.
+            # Publish only while its owning project still exists.
+            if not c.execute('SELECT 1 FROM projects WHERE id=?', (pid,)).fetchone():
+                raise KeyError('Project was deleted while preparing this export')
+            c.execute('INSERT INTO exports VALUES(?,?,?)',(eid,pid,json.dumps(data)))
         job_update(jid,status='completed',export_id=eid,progress=1,total=1)
     except Exception as e:
         if 'path' in locals(): path.unlink(missing_ok=True)
-        job_update(jid,status='failed',error=str(e))
+        with transaction() as c:
+            row = c.execute('SELECT data FROM jobs WHERE id=?', (jid,)).fetchone()
+            if row:
+                job = json.loads(row['data'])
+                job.update(status='failed', error=str(e), updated_at=now())
+                c.execute('UPDATE jobs SET data=? WHERE id=?', (json.dumps(job), jid))
 
 def parse_cvat(content, project, vid):
     """Import explicit boxes only. Sparse external tracks remain drafts; no guessed interpolation."""

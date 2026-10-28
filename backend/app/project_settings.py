@@ -9,6 +9,7 @@ from pydantic import Field, field_validator
 from . import db
 from .geometry import LEGACY_KEYS, box_items, box_style
 from .schema import MODELS, Strict, validate_state
+from .class_deletion import ClassDeletion
 
 
 def clean_name(value, *, limit, label):
@@ -23,6 +24,8 @@ class ProjectSettings(Strict):
     name: str = Field(min_length=1, max_length=150)
     class_renames: dict[str, str] = Field(default_factory=dict, max_length=100)
     new_classes: list[str] = Field(default_factory=list, max_length=100)
+    deleted_classes: list[str] = Field(default_factory=list, max_length=100)
+    deletion_confirmed: bool = False
     request_id: str | None = Field(default=None, min_length=1, max_length=100)
 
     @field_validator('name')
@@ -41,7 +44,7 @@ class ProjectSettings(Strict):
             cleaned[old] = clean_name(new, limit=80, label='Class name')
         return cleaned
 
-    @field_validator('new_classes')
+    @field_validator('new_classes', 'deleted_classes')
     @classmethod
     def added_classes(cls, values):
         values = [clean_name(name, limit=80, label='Class name') for name in values]
@@ -173,25 +176,50 @@ def update_settings(pid, settings: ProjectSettings):
                 if name not in known:
                     known.append(name)
         renames = {old: new for old, new in settings.class_renames.items() if old != new}
+        deleted = set(settings.deleted_classes)
+        if deleted and not settings.deletion_confirmed:
+            raise ValueError('Confirm deletion of these classes and all their boxes across the project')
+        if deleted:
+            from .delete_project import project_jobs, require_idle
+            require_idle(project, project_jobs(connection, pid))
+        if deleted - set(known):
+            raise ValueError('A class to delete no longer exists; reload project settings')
+        if deleted & set(settings.class_renames):
+            raise ValueError('A class cannot be renamed and deleted in the same save')
         if any(old not in known for old in settings.class_renames):
             raise ValueError('A class to rename no longer exists; reload project settings')
-        renamed_names = [renames.get(name, name) for name in known]
+        renamed_names = [renames.get(name, name) for name in known if name not in deleted]
+        if deleted & (set(settings.new_classes) | set(renames.values())):
+            raise ValueError('Choose a different name when replacing a deleted class')
         if len(set(renamed_names)) != len(renamed_names) or set(renamed_names) & set(settings.new_classes):
             raise ValueError('Each class needs a different name; renaming cannot merge classes')
         if len(renamed_names) + len(settings.new_classes) > 100:
             raise ValueError('A project supports at most 100 classes')
 
         # No-op requests do not invalidate a finished video.
-        if not renames and not settings.new_classes and settings.name == project['name']:
+        if not renames and not deleted and not settings.new_classes and settings.name == project['name']:
             return project
+        classes = list(dict.fromkeys([*(renames.get(name, name) for name in project['classes'] if name not in deleted), *(renames[name] for name in renames if name not in project['classes']), *settings.new_classes]))
+        if deleted and not classes:
+            raise ValueError('Keep at least one class, or add a replacement before saving')
+        removed_proposals = set()
+        if deleted:
+            for row in connection.execute('SELECT id,data FROM proposals WHERE video_id IN (SELECT id FROM videos WHERE project_id=?)', (pid,)):
+                value = json.loads(row['data'])
+                if value.get('class_name') in deleted or ((value.get('geometry') or '').startswith('class:') and value['geometry'][6:] in deleted):
+                    removed_proposals.add(row['id'])
+        deletion = ClassDeletion(project, entities, used_keys, deleted, removed_proposals) if deleted else None
+        rename_keys = {} if deletion else used_keys
         state = {collection: {key: rename_entity(collection, value, renames, used_keys) for key, value in values.items()} for collection, values in project['state'].items()}
+        if deletion:
+            # Delete by original names, then rename remaining channels.
+            state = {collection: {key: rename_entity(collection, changed, renames, rename_keys) for key, value in values.items() if (changed := deletion.entity(collection, value)) is not None} for collection, values in project['state'].items()}
         for collection, values in state.items():
             for value in values.values():
                 MODELS[collection].model_validate(value)
         validate_state(state, project['videos'], visible_only=True)
-        classes = list(dict.fromkeys([*(renames.get(name, name) for name in project['classes']), *(renames[name] for name in renames if name not in project['classes']), *settings.new_classes]))
         # Unused generated legacy palette entries are not class collisions.
-        palette = {name: color for name, color in project['class_colors'].items() if name not in renames and name not in renames.values()}
+        palette = {name: color for name, color in project['class_colors'].items() if name not in renames and name not in renames.values() and name not in deleted}
         for old, new in renames.items():
             if old in project['class_colors']:
                 palette[new] = project['class_colors'][old]
@@ -204,29 +232,41 @@ def update_settings(pid, settings: ProjectSettings):
         revision = project['revision'] + 1
         connection.execute('UPDATE projects SET name=?,classes=?,class_colors=?,revision=? WHERE id=?', (settings.name, json.dumps(classes), json.dumps(palette), revision, pid))
         for collection, values in state.items():
+            for ident in project['state'][collection].keys() - values.keys():
+                connection.execute('DELETE FROM entities WHERE project_id=? AND collection=? AND id=?', (pid, collection, ident))
             for ident, value in values.items():
                 if value != project['state'][collection][ident]:
                     connection.execute('UPDATE entities SET data=? WHERE project_id=? AND collection=? AND id=?', (json.dumps(value), pid, collection, ident))
-        if renames:
+        if renames or deletion:
             for ident, operation in operations:
-                changed = _rename_operation(operation, renames, used_keys)
+                changed = _rename_operation(deletion.operation(operation) if deletion else operation, renames, rename_keys)
                 if changed != operation:
                     connection.execute('UPDATE operations SET data=? WHERE id=?', (json.dumps(changed), ident))
             if restored_row:
-                connection.execute('UPDATE restored_history SET data=? WHERE project_id=?', (json.dumps(_rename_restored(restored, renames, used_keys)), pid))
+                connection.execute('UPDATE restored_history SET data=? WHERE project_id=?', (json.dumps(_rename_restored(deletion.restored(restored) if deletion else restored, renames, rename_keys)), pid))
             # Proposals are inactive suggestions, but their labels still belong
             # to the project if a historical proposal appears in JSON exports.
             for row in connection.execute('SELECT id,data FROM proposals WHERE video_id IN (SELECT id FROM videos WHERE project_id=?)', (pid,)).fetchall():
+                if row['id'] in removed_proposals:
+                    connection.execute('DELETE FROM proposals WHERE id=?', (row['id'],))
+                    continue
                 value = json.loads(row['data'])
                 if value.get('class_name') in renames:
                     value['class_name'] = renames[value['class_name']]
                 if value.get('geometry'):
                     value['geometry'] = renamed_key(value['geometry'], renames)
                 connection.execute('UPDATE proposals SET data=? WHERE id=?', (json.dumps(value), row['id']))
+        if deletion:
+            from .multicam import prune_assignments
+            prune_assignments(connection, pid, state)
+            # Class removal is permanent; annotation undo cannot restore these
+            # tracks, so their detached camera mappings must not revive later.
+            for ident in deletion.removed:
+                connection.execute('DELETE FROM camera_session_detached_assignments WHERE identity_uuid=? AND session_id IN (SELECT id FROM camera_sessions WHERE project_id=?)', (ident, pid))
         for vid, video in project['videos'].items():
             for key in ('finished_revision', 'finished_at', 'validation_id', 'review_job_id', 'coverage', 'finish_confirmation'):
                 video.pop(key, None)
             connection.execute('UPDATE videos SET data=? WHERE id=?', (json.dumps(video), vid))
-        event = {'revision': revision, 'previous_revision': project['revision'], 'name_before': project['name'], 'name_after': settings.name, 'class_renames': renames, 'new_classes': settings.new_classes, 'created_at': db.now()}
+        event = {'revision': revision, 'previous_revision': project['revision'], 'name_before': project['name'], 'name_after': settings.name, 'class_renames': renames, 'new_classes': settings.new_classes, 'deleted_classes': settings.deleted_classes, 'created_at': db.now()}
         connection.execute('INSERT INTO project_settings_events VALUES(?,?,?,?,?,?)', (settings.request_id or str(uuid.uuid4()), pid, revision, request_json, json.dumps(event), event['created_at']))
         return db.get_state(connection, pid)

@@ -31,7 +31,7 @@ import {CanvasSettings} from './CanvasSettings';
 import {useCanvasPreferences} from './canvas-preferences';
 import {annotationColor,type ColorMode} from './display-colors';
 import {api,post} from './api';
-import {useStore} from './store';
+import {markProjectDeleted,useStore} from './store';
 import {isGeometryInterpolated,annotationKeyframes} from './interpolation';
 import {VISIBLE_ONLY,trackIdConflict,boxStyle,geometryLabel,legacyExtended,classColor,geometries,getBox,boxKeys,orderedGeometryKeys,geometryForClass} from './types';
 import {timelineBins as buildTimelineBins} from './timeline';
@@ -52,6 +52,7 @@ export default function App(){
  const [libraryProject,setLibraryProject]=useState<string|null>(null),[libraryRevision,setLibraryRevision]=useState(0);
  const [screen,setScreen]=useState<'home'|'editor'|'finish'|'trim'|'multicam'|'multicamFinish'>('home'),[uploadBusy,setUploadBusy]=useState(false);
  const [cameraSession,setCameraSession]=useState<CameraSession|null>(null);
+ const [deletedProject,setDeletedProject]=useState<{id:string;name:string}|null>(null);
  const multi=useRef<MultiCameraWorkspaceHandle>(null);
  const [colorMode,setColorMode]=useState<'class'|'track'>(()=>localStorage.getItem('frameinsight:colorMode')==='track'?'track':'class');
  const [canvasPreferences,updateCanvasPreferences]=useCanvasPreferences();
@@ -82,8 +83,40 @@ export default function App(){
  useEffect(()=>{if(!restoreJob?.id||['completed','failed'].includes(restoreJob.status))return;const timer=setInterval(()=>void api('/jobs/'+restoreJob.id).then(j=>{setRestoreJob(j);if(j.status==='completed')void refreshProjects()}),1500);return()=>clearInterval(timer)},[restoreJob?.id,restoreJob?.status]);
  async function refreshProjects(){setProjects(await api('/projects'))}
 
- useEffect(()=>{if(!project)return;let gone=false;let socket:WebSocket|null=null;let retry=0;
- const connect=()=>{socket=new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/api/projects/${project.id}/events`);socket.onmessage=e=>{if(gone)return;const data=JSON.parse(e.data);if(data.heartbeat)return;setJobs(data.jobs);setWorkerStatus(data.worker.running);const current=useStore.getState();if(current.project?.id===project.id&&!current.settingsSaving){useStore.setState({project:{...current.project,videos:data.videos}});if(!current.pending.length&&data.revision>current.project.revision)void api<Project>('/projects/'+project.id).then(remote=>{const live=useStore.getState();if(live.project?.id===remote.id&&!live.settingsSaving&&!live.pending.length&&remote.revision>live.project.revision){useStore.setState({project:remote,history:[],redoStack:[]});live.toast('Project refreshed from server; operation history remains saved.')}}).catch(()=>{});}};socket.onclose=()=>{if(!gone)retry=window.setTimeout(connect,2500)};};connect();return()=>{gone=true;clearTimeout(retry);socket?.close()};},[project?.id]);
+ async function leaveDeletedProject(id:string){
+  await useStore.getState().forgetProject(id);setDeletedProject(null);setCameraSession(null);setLibraryProject(null);setScreen('home');setModal('');setLibraryRevision(value=>value+1);useStore.getState().toast('Project deleted. Your original source videos are still on your computer.');
+ }
+ useEffect(()=>{
+  if(!project)return;let gone=false;let socket:WebSocket|null=null;let retry=0;
+  const removed=()=>{
+   if(gone)return;gone=true;clearTimeout(retry);socket?.close();
+   const current=useStore.getState();markProjectDeleted(project.id);
+   if(current.project?.id!==project.id||current.deletingProjectId===project.id)return;
+   multi.current?.pause();setPlaying(false);setModal('');
+   if(current.pending.length)setDeletedProject({id:project.id,name:project.name});
+   else void leaveDeletedProject(project.id).catch(error=>setError(String(error)));
+  };
+  const connect=()=>{
+   socket=new WebSocket(`${location.protocol==='https:'?'wss':'ws'}://${location.host}/api/projects/${project.id}/events`);
+   socket.onmessage=e=>{
+    if(gone)return;const data=JSON.parse(e.data);if(data.project_deleted){removed();return;}if(data.heartbeat)return;
+    setJobs(data.jobs);setWorkerStatus(data.worker.running);const current=useStore.getState();
+    if(current.project?.id===project.id&&!current.settingsSaving){
+     useStore.setState({project:{...current.project,videos:data.videos}});
+     if(!current.pending.length&&data.revision>current.project.revision)void api<Project>('/projects/'+project.id).then(remote=>{
+      const live=useStore.getState();if(gone||live.project?.id!==remote.id||live.settingsSaving||live.pending.length||remote.revision<=live.project.revision)return;
+      const oldName=boxStyle(live.project.state.identities[live.activeId],live.geometry).class_name;
+      const name=remote.classes?.includes(oldName)?oldName:remote.classes?.[0]||'Person';
+      useStore.setState({project:remote,geometry:geometryForClass(remote.state.identities[live.activeId],name),activeId:remote.state.identities[live.activeId]?live.activeId:'',history:[],redoStack:[]});
+      setHiddenClasses(current=>Object.fromEntries(Object.entries(current).filter(([name])=>remote.classes?.includes(name))));
+      live.toast('Project refreshed from server; operation history remains saved.');
+     }).catch(error=>{if(error?.status===404)removed();});
+    }
+   };
+   socket.onclose=()=>{if(!gone)void api<Project>('/projects/'+project.id).then(()=>{if(!gone)retry=window.setTimeout(connect,2500);}).catch(error=>{if(error?.status===404)removed();else if(!gone)retry=window.setTimeout(connect,2500);});};
+  };
+  connect();return()=>{gone=true;clearTimeout(retry);socket?.close();};
+ },[project?.id]);
  useEffect(()=>{if(!videoId)return;let gone=false;void api<FrameInfo[]>('/videos/'+videoId+'/ledger').then(x=>{if(!gone){setLedger(x);useStore.setState({frameTimes:{...useStore.getState().frameTimes,[videoId]:x.map(f=>f.seconds)}})}});return()=>{gone=true}},[videoId,video?.frame_count]);
  useEffect(()=>{if(VISIBLE_ONLY||!videoId)return;let gone=false;setProposals([]);const fetch=()=>void api<Proposal[]>(`/videos/${videoId}/proposals?start=${frame}&end=${frame}`).then(x=>{if(!gone)setProposals(x)});fetch();const timer=setInterval(fetch,2000);return()=>{gone=true;clearInterval(timer)}},[videoId,frame]);
  useEffect(()=>{if(VISIBLE_ONLY)return;const j=jobs.find(j=>j.kind==='proposals'&&j.video_id===videoId&&j.status==='running');if(j)void post(`/jobs/${j.id}/priority/${frame}`)},[videoId,frame]);
@@ -253,18 +286,23 @@ export default function App(){
   </main>
   <FrameTimeline keyframes={keyframes} controls={playbackControls} bins={timelineBins} active={!!identity} label={identity?`Track ${identity.person_id??identity.name} · ${geometryLabel(geometry,identity)}`:'Select a track to see its frames'} color={annotationColor(project,identity,geometry,colorMode)} frame={frame} count={video?.frame_count||0} onSeek={target=>{canvas.current?.finish();setPlaying(false);s.navigate(target)}}/>
  </>}
+ {deletedProject&&<Modal title="Project deleted" onClose={()=>{}}>
+  <p><strong>{deletedProject.name}</strong> was deleted in another tab. This tab cannot save more changes to that project.</p>
+  <p className="text-sm text-muted-foreground">You have {s.pending.length} unsaved edits in this browser. Download a recovery copy before leaving if you need to keep them. Returning to projects discards this tab’s local copy.</p>
+  <div className="flex flex-wrap justify-end gap-2"><Button variant="outline" onClick={()=>{const current=useStore.getState();const blob=new Blob([JSON.stringify({project:current.project,pending:current.pending,camera_session:cameraSession},null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const link=document.createElement('a');link.href=url;link.download='frameinsight-deleted-project-recovery.json';link.click();setTimeout(()=>URL.revokeObjectURL(url),1000);}}>Download recovery</Button><Button variant="destructive" onClick={()=>void task(()=>leaveDeletedProject(deletedProject.id))}>Discard local edits and return to projects</Button></div>
+ </Modal>}
  {error&&!modal&&<div role="alert" className="save-error">{error}</div>}
  {notice&&<div className="toast" role="status">{notice}</div>}
  {modal&&<Modal title={modal==='id'&&screen==='multicam'?'Local track ID, class & color':{workflowChoice:'Start annotation',newCameraSession:'New camera session',interpolateRange:'Interpolate between frames',canvasSettings:'Canvas settings',projectSettings:'Project settings',annotationImport:'Import annotations',finishPrompt:'Review before finishing',restoreRange:'Restore deleted range',guide:'Learn Frameinsight',about:'About Frameinsight',backup:'Back up your project',addClass:'Add class',hiddenRange:'Delete boxes in range',newVideo:'New video',finishVideo:'Finish video',newProject:'Create project',projects:'Your projects',import:'Add a video',id:'Track ID, class & color',copyClass:'Copy boxes to another class',deletePerson:'Delete track',unknown:'Full extent unknown',gap:'Start an invisible interval',resume:'Resume at this visible frame',identity:'Identity & segment decisions',complete:'Whole-frame completeness check',help:'Shortcuts & commands',export:'Export your annotations',detector:'Detector proposals',issues:'Review issues',diagnostics:'Local system diagnostics',suggestions:'Inspect detector suggestions'}[modal]||modal} onClose={()=>{if(!uploadBusy&&!loading)setModal(modal==='projectSettings'?form.returnTo||'':'')}} busy={uploadBusy||loading} wide={['import','help','export','issues'].includes(modal)}>
   {error&&<div className="error" role="alert">{error}</div>}
   {modal==='hiddenRange'&&<form onSubmit={e=>{e.preventDefault();if(s.markHiddenRange(Number(form.start),Number(form.end)))setModal('')}}><p>Delete <strong>{geometryLabel(geometry,identity)}</strong> boxes for <strong>{identity?.person_id?'Track '+identity.person_id:identity?.name}</strong>. Only this class is removed. Other classes stay unchanged. Both frame numbers are included. Drawing two new boxes inside this deleted range will refill only the frames between them.</p><label>First frame to delete<Input aria-label="First frame to delete" type="number" required min="0" max={(video?.frame_count||1)-1} step="1" value={form.start??''} onChange={e=>setForm({...form,start:e.target.value})}/></label><label>Last frame to delete<Input aria-label="Last frame to delete" type="number" required min={Math.max(0,Number(form.start)||0)} max={(video?.frame_count||1)-1} step="1" value={form.end??''} onChange={e=>setForm({...form,end:e.target.value})}/></label><p><strong>{Object.values(project!.state.observations).filter(o=>o.video_id===videoId&&o.identity_uuid===activeId&&o.frame_index>=Number(form.start)&&o.frame_index<=Number(form.end)&&getBox(o,geometry)).length} boxes</strong> will be removed for this track, including any drawn or adjusted boxes in the range. Boxes outside the range and other people are kept. One replacement box restores only its frame. Draw a second box inside this range to fill between them, or press Shift+K to fill between existing boxes. Use Restore deleted range to recover original boxes.</p><p>Example: keep boxes at 39 and 60; delete frames 40–59. Ctrl+Z restores this entire change.</p><div className="button-row"><Button variant="outline" size="sm" type="button" onClick={()=>setModal('')}>Cancel</Button><Button variant="destructive" size="sm" type="submit">Delete boxes</Button></div></form>}
   {modal==='finishPrompt'&&<><p>Play through the video and check your boxes, class names and track IDs. If you see a mistake, fix it in the editor before continuing.</p><p className="muted">Review uses the video already on the canvas. The next page checks annotation data and JSON structure.</p><div className="flex flex-wrap justify-end gap-2"><Button variant="ghost" onClick={()=>setModal('')}>Back to editing</Button><Button variant="outline" onClick={()=>{setModal('');s.showAllPeople();setHiddenClasses({});useStore.setState({activeId:''});s.navigate(0);setPlaybackRate(.5);setPlaying(true);s.toast('Review all tracks with playback. Correct any mistakes, then click Finish.')}}><Play/>Review in editor</Button><Button disabled={loading} onClick={()=>void task(async()=>{await s.saveNow();setFinishConfirmed(true);setModal('');setScreen('finish')})}>I reviewed — continue</Button></div></> }
-  {modal==='projectSettings'&&<ProjectSettings projectId={form.projectId||project!.id} onBusy={setUploadBusy} onCancel={()=>setModal(form.returnTo||'')} onSaved={(updated,renames)=>{
+  {modal==='projectSettings'&&<ProjectSettings projectId={form.projectId||project!.id} onBusy={setUploadBusy} onCancel={()=>setModal(form.returnTo||'')} onSaved={(updated,renames,deletedClasses)=>{
    const visibilityKey='frameinsight:classVisibility:'+updated.id;
-   const renameVisibility=(current:Record<string,boolean>)=>Object.fromEntries(Object.entries(current).map(([name,hidden])=>[renames[name]||name,hidden]));
+   const renameVisibility=(current:Record<string,boolean>)=>Object.fromEntries(Object.entries(current).filter(([name])=>!deletedClasses.includes(name)).map(([name,hidden])=>[renames[name]||name,hidden]).filter(([name])=>updated.classes?.includes(String(name))));
    if(updated.id===project?.id)setHiddenClasses(current=>{const next=renameVisibility(current);try{localStorage.setItem(visibilityKey,JSON.stringify(next))}catch{}return next;});
    else try{localStorage.setItem(visibilityKey,JSON.stringify(renameVisibility(JSON.parse(localStorage.getItem(visibilityKey)||'{}'))))}catch{}
-   setLibraryRevision(n=>n+1);setModal(form.returnTo||'');s.toast('Project settings saved. Existing annotations use the updated class names.');
+   setLibraryRevision(n=>n+1);setModal(form.returnTo||'');s.toast('Project settings saved. Review and validate again before exporting.');
   }}/>}
   {modal==='interpolateRange'&&<InterpolateRange initialStart={Number(form.start)} initialEnd={Number(form.end)} onClose={()=>setModal('')}/>}
   {modal==='restoreRange'&&<RestoreRange initialStart={Number(form.start)} initialEnd={Number(form.end)} onClose={()=>setModal('')}/>}

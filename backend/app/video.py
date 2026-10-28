@@ -18,7 +18,10 @@ def sha256(path):
 
 def new_job(project_id, kind, **extra):
     data = {'id': str(uuid.uuid4()), 'project_id': project_id, 'kind': kind, 'status': 'queued', 'progress': 0, 'error': None, 'created_at': now(), **extra}
-    with transaction() as c: c.execute('INSERT INTO jobs VALUES(?,?,?)', (data['id'], project_id, json.dumps(data)))
+    with transaction() as c:
+        if project_id not in ('native-import', 'video-preparation') and not c.execute('SELECT 1 FROM projects WHERE id=?', (project_id,)).fetchone():
+            raise KeyError('Project not found')
+        c.execute('INSERT INTO jobs VALUES(?,?,?)', (data['id'], project_id, json.dumps(data)))
     return data
 
 def import_video(pid, source, name=None):

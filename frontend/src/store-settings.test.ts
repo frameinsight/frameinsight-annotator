@@ -43,8 +43,9 @@ afterAll(() => vi.unstubAllGlobals());
 beforeEach(async () => {
   if (useStore.getState().pending.length) await useStore.getState().saveNow();
   vi.clearAllMocks(); mocks.api.mockReset(); mocks.get.mockReset();
+  vi.mocked(localStorage.getItem).mockReset().mockReturnValue(null);
   const {project, operation} = fixture();
-  useStore.setState({project, videoId: 'v', activeId: 'p', frame: 3, geometry: classKey('Person'), pending: [], history: [operation], redoStack: [], hiddenIds: {}, settingsSaving: false, saveStatus: 'Saved', saveError: '', frameTimes: {}});
+  useStore.setState({project, videoId: 'v', activeId: 'p', frame: 3, geometry: classKey('Person'), pending: [], history: [operation], redoStack: [], hiddenIds: {}, settingsSaving: false, deletingProjectId: null, saveStatus: 'Saved', saveError: '', frameTimes: {}});
 });
 
 describe('atomic project settings in the annotation store', () => {
@@ -133,5 +134,83 @@ describe('atomic project settings in the annotation store', () => {
     await useStore.getState().saveProjectSettings('project', settings());
     expect(mocks.api.mock.calls.map(([, options]) => JSON.parse(options.body).request_id)).toEqual(['settings-request', 'settings-request']);
     expect(useStore.getState().project!.state.observations.o.boxes![classKey('Pedestrian')]).toEqual([10, 20, 100, 200]);
+  });
+
+  it('clears a deleted class selection and its visibility state without keeping removed tracks or undo', async () => {
+    const before = clone(useStore.getState().project!);
+    before.classes = ['Person', 'Extended'];
+    useStore.setState({project: before, hiddenIds: {p: true}, unregisteredTracks: {p: true}});
+    const saved = clone(before);
+    saved.revision++; saved.classes = ['Extended']; saved.class_colors = {Extended: '#facc15'};
+    saved.state.identities = {}; saved.state.observations = {}; saved.state.segments = {};
+    vi.mocked(localStorage.getItem).mockImplementation(key => key === 'frameinsight:classVisibility:project' ? JSON.stringify({Person: true, Extended: true}) : null);
+    mocks.api.mockResolvedValueOnce(saved);
+    await useStore.getState().saveProjectSettings('project', {base_revision: 2, name: before.name, class_renames: {}, deleted_classes: ['Person'], deletion_confirmed: true, request_id: 'delete-class'});
+    expect(useStore.getState()).toMatchObject({project: saved, activeId: '', geometry: classKey('Extended'), hiddenIds: {}, unregisteredTracks: {}, history: [], redoStack: []});
+    expect(localStorage.setItem).toHaveBeenCalledWith('frameinsight:classVisibility:project', JSON.stringify({Extended: true}));
+    expect(mocks.set).toHaveBeenCalledWith('frameinsight:journal:project', expect.objectContaining({project: saved, activeId: '', geometry: classKey('Extended'), history: []}));
+  });
+});
+
+describe('project deletion and stale tabs', () => {
+  it('saves pending annotations first, locks editing, then clears browser recovery only after confirmed deletion', async () => {
+    const {project} = fixture('delete-with-flush'); useStore.setState({project});
+    vi.mocked(localStorage.getItem).mockReturnValue(project.id);
+    useStore.getState().setBox(classKey('Person'), [20, 25, 110, 210]);
+    let complete!: (result: unknown) => void;
+    mocks.api.mockImplementationOnce(async (url, options) => {
+      expect(url).toBe('/projects/delete-with-flush?confirmed=true&base_revision=3');
+      expect(options.method).toBe('DELETE'); expect(useStore.getState().pending).toEqual([]);
+      expect(mocks.post).toHaveBeenCalledTimes(1);
+      return new Promise(resolve => {complete = resolve;});
+    });
+    const deleting = useStore.getState().deleteProject(project.id, 3);
+    await vi.waitFor(() => expect(mocks.api).toHaveBeenCalled());
+    expect(useStore.getState().commit('Change while deleting', domain => {domain.observations = {};})).toBe(false);
+    expect(mocks.del).not.toHaveBeenCalled();
+    complete({deleted: true, project_id: project.id}); await deleting;
+    expect(useStore.getState()).toMatchObject({project: null, videoId: '', activeId: '', pending: [], history: [], hiddenIds: {}, settingsSaving: false, deletingProjectId: null});
+    expect(mocks.del).toHaveBeenCalledWith('frameinsight:journal:' + project.id);
+    for (const key of ['frameinsight:lastProject', 'frameinsight:position:' + project.id, 'frameinsight:visibility:' + project.id, 'frameinsight:classVisibility:' + project.id]) expect(localStorage.removeItem).toHaveBeenCalledWith(key);
+  });
+
+  it('retains project data and browser recovery on a stale or busy deletion response', async () => {
+    const before = clone(useStore.getState().project!);
+    mocks.api.mockRejectedValueOnce(Object.assign(new Error('Project changed'), {status: 409}));
+    await expect(useStore.getState().deleteProject(before.id, before.revision)).rejects.toThrow('Project changed');
+    expect(useStore.getState()).toMatchObject({project: before, activeId: 'p', settingsSaving: false, deletingProjectId: null});
+    expect(mocks.del).not.toHaveBeenCalled(); expect(localStorage.removeItem).not.toHaveBeenCalled();
+  });
+
+  it('reports successful server deletion with a warning if browser recovery cleanup fails', async () => {
+    const {project} = fixture('delete-cleanup-failure'); useStore.setState({project});
+    mocks.api.mockResolvedValueOnce({deleted: true, project_id: project.id});
+    mocks.del.mockRejectedValueOnce(new Error('Storage unavailable'));
+    const result = await useStore.getState().deleteProject(project.id, project.revision);
+    expect(result.deleted).toBe(true); expect(result.cleanup_warning).toContain('local recovery copy');
+    expect(useStore.getState().project).toBeNull();
+    expect(localStorage.removeItem).toHaveBeenCalledWith('frameinsight:classVisibility:' + project.id);
+    await expect(useStore.getState().load(project.id)).rejects.toThrow('deleted');
+  });
+
+  it('refuses deletion when another project has unsaved local recovery edits', async () => {
+    const {project, operation} = fixture('inactive-delete');
+    mocks.get.mockResolvedValueOnce({project, pending: [operation]});
+    await expect(useStore.getState().deleteProject(project.id, 2)).rejects.toThrow('pending edits');
+    expect(mocks.api).not.toHaveBeenCalled(); expect(mocks.del).not.toHaveBeenCalled();
+  });
+
+  it('prevents a deleted tab from editing, undoing, saving or reopening while keeping pending recovery', async () => {
+    const {markProjectDeleted} = await import('./store');
+    const {project, operation} = fixture('deleted-elsewhere');
+    useStore.setState({project, pending: [operation], history: [operation]});
+    markProjectDeleted(project.id);
+    expect(useStore.getState().commit('Stale change', domain => {domain.observations = {};})).toBe(false);
+    useStore.getState().undo();
+    await expect(useStore.getState().saveNow()).rejects.toThrow('deleted');
+    await expect(useStore.getState().load(project.id)).rejects.toThrow('deleted');
+    expect(useStore.getState()).toMatchObject({project, pending: [operation], history: [operation]});
+    expect(mocks.api).not.toHaveBeenCalled(); expect(mocks.post).not.toHaveBeenCalled(); expect(mocks.del).not.toHaveBeenCalled();
+    useStore.setState({pending: []});
   });
 });

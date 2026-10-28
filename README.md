@@ -39,6 +39,13 @@ Open **Project settings** from a project card or the project's video library. In
 
 Names update across all videos, saved boxes and future exports in that project; track IDs, coordinates, colors and hidden ranges stay intact. On **Validate & export**, choose **Edit project & classes** to make the same changes. Run validation again after renaming; you do not need to watch the video again just because a name changed. Already downloaded files are not rewritten.
 
+### Delete a class or project
+
+- **Class:** open **Project settings** or **Edit classes**, click the trash icon beside the unwanted class, then **Save changes**. Review the affected box and video counts and choose **Delete classes and save**. This removes that class and its boxes across the project's videos, including its deleted-range recovery history. Other classes remain. Tracks that have no remaining classes are removed. Keep at least one class; add a replacement before deleting the last class.
+- **Project:** click the trash icon on its project card, or **Delete project** inside the project's library. Enter the project name and confirm. Its imported videos, annotations, camera sessions and app-owned caches are removed. Original video files outside Frameinsight and previously downloaded exports stay on disk.
+
+These deletions are permanent and cannot be undone with Ctrl+Z. Use **Help → Back up project** first if you may need the work again. Canceling either confirmation leaves the saved project unchanged. Deleting a track or a frame range remains a separate action in the editor.
+
 A settings change resets the current Undo/Redo stacks, while saved edit history remains available through **Restore range**. Saving unchanged settings does not reset them.
 
 ## What is included
