@@ -34,7 +34,7 @@ export class FrameImageCache<T extends DecodedImage>{
   const entry:Entry<T>={bytes:0,promise:undefined!};
   // Register before invoking the loader, including when it throws synchronously.
   entry.promise=Promise.resolve().then(()=>this.loadImage(url)).then(image=>{
-   this.pending.delete(key);
+   if(this.pending.get(key)===entry)this.pending.delete(key);
    if(this.entries.get(key)===entry){
     const bytes=image.naturalWidth*image.naturalHeight*4;
     if(Number.isFinite(bytes)&&bytes>0&&bytes<=this.maxBytes){
@@ -43,12 +43,19 @@ export class FrameImageCache<T extends DecodedImage>{
    }
    return image;
   },error=>{
-   this.pending.delete(key);
+   if(this.pending.get(key)===entry)this.pending.delete(key);
    if(this.entries.get(key)===entry)this.remove(key);
    throw error;
   });
   this.pending.set(key,entry);this.entries.set(key,entry);this.trim();
   return entry.promise;
+ }
+
+ invalidatePrefix(prefix:string){
+  for(const key of this.entries.keys())if(key.startsWith(prefix))this.remove(key);
+  // Late results from discarded requests must not fill the cache or detach a
+  // newer request for the same key after its frames have been regenerated.
+  for(const key of this.pending.keys())if(key.startsWith(prefix))this.pending.delete(key);
  }
 
  private remove(key:string){
@@ -61,11 +68,15 @@ export class FrameImageCache<T extends DecodedImage>{
  }
 }
 
-export const frameImageCache=new FrameImageCache<HTMLImageElement>(url=>new Promise((resolve,reject)=>{
+export function loadDecodedImage(url:string):Promise<HTMLImageElement>{return new Promise((resolve,reject)=>{
  const image=new Image();
  image.decoding='async';
  const clear=()=>{image.onload=null;image.onerror=null;};
- image.onload=()=>{clear();resolve(image);};
+ // onload can fire before async decoding finishes. Publish only pixels that
+ // are ready for the canvas so image and annotation swap in one render.
+ image.onload=()=>{clear();void image.decode().then(()=>resolve(image),()=>reject(new Error('Exact frame unavailable. Retry this frame.')));};
  image.onerror=()=>{clear();reject(new Error('Exact frame unavailable. Retry this frame.'));};
  image.src=url;
-}));
+});}
+
+export const frameImageCache=new FrameImageCache<HTMLImageElement>(loadDecodedImage);

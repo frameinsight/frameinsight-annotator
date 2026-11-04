@@ -1,3 +1,4 @@
+import {editTrack,canEditTrack} from './track-edit';
 import {repairMarker,repairBetweenNewBoxes} from './gap-repair';
 import {unusedBoxColor,trackColor} from './colors';
 import {create} from 'zustand';
@@ -9,10 +10,10 @@ import {copyVisibleToExtended,copyClassTrack as copyClassInDomain} from './copy-
 import {previewRestoreRange as previewRecovery,restoreRange as restoreRecovery,type RestoreMode,type RestorePreview} from './restore-range';
 import {get,set as dbSet,del as dbDelete} from 'idb-keyval';
 import {api,post} from './api';
-import {type Domain,type Project,type Operation,type Change,type Geometry,type Observation,type Proposal,uuid,currentObservation,emptyObservation,observationIssues,validateDomain} from './types';
+import {type Domain,type Project,type Operation,type Change,type Geometry,type Observation,type Proposal,uuid,currentObservation,inheritFrameIndex,emptyObservation,observationIssues,validateDomain} from './types';
 export type ProjectSettingsUpdate={base_revision:number;name:string;class_renames:Record<string,string>;new_classes?:string[];deleted_classes?:string[];deletion_confirmed?:boolean;request_id:string};
 export type ProjectDeletionResult={deleted:boolean;project_id:string;cleanup_warning?:string|null};
-type Store={deletingProjectId:string|null;deleteProject:(id:string,revision:number)=>Promise<ProjectDeletionResult>;unregisteredTracks:Record<string,boolean>;settingsSaving:boolean;saveProjectSettings:(id:string,update:ProjectSettingsUpdate)=>Promise<Project>;selectClass:(name:string)=>void;copyClassTrack:(source:Geometry,targetClass:string)=>boolean;previewRestoreRange:(start:number,end:number,mode:RestoreMode,operations?:Operation[])=>RestorePreview;restoreRange:(start:number,end:number,mode:RestoreMode,operations?:Operation[])=>boolean;copyVisibleToExtended:()=>void;forgetProject:(id:string)=>Promise<void>;markHiddenRange:(start:number,end:number)=>boolean;saveNow:()=>Promise<void>;hiddenIds:Record<string,boolean>;togglePersonVisibility:(id:string)=>void;focusPerson:(id:string)=>void;showAllPeople:()=>void;selectPerson:(id:string)=>void;deletePerson:(id:string)=>boolean;assignPerson:(target:string,personId:number|null,className:string,color:string,geometry?:Geometry)=>boolean;frameTimes:Record<string,(number|null)[]>;fillInterpolation:()=>void;project:Project|null;videoId:string;frame:number;activeId:string;geometry:Geometry;saveStatus:string;saveError:string;notice:string;pending:Operation[];history:Operation[];redoStack:Operation[];ready:boolean;load:(id:string)=>Promise<void>;commit:(label:string,fn:(d:Domain)=>void)=>boolean;navigate:(n:number)=>void;undo:()=>void;redo:()=>void;retry:()=>void;newPerson:()=>void;editObservation:(label:string,fn:(o:Observation)=>void,propagate?:boolean)=>void;setBox:(geometry:Geometry,box:Box|null,proposal?:Proposal,context?:{videoId:string;frame:number;activeId:string})=>void;equal:()=>void;copyPrevious:()=>void;approve:()=>boolean;rename:(id:string,n:number|null)=>void;toast:(message:string)=>void;};
+type Store={deletingProjectId:string|null;deleteProject:(id:string,revision:number)=>Promise<ProjectDeletionResult>;unregisteredTracks:Record<string,boolean>;settingsSaving:boolean;saveProjectSettings:(id:string,update:ProjectSettingsUpdate)=>Promise<Project>;selectClass:(name:string)=>void;copyClassTrack:(source:Geometry,targetClass:string)=>boolean;previewRestoreRange:(start:number,end:number,mode:RestoreMode,operations?:Operation[])=>RestorePreview;restoreRange:(start:number,end:number,mode:RestoreMode,operations?:Operation[])=>boolean;copyVisibleToExtended:()=>void;forgetProject:(id:string)=>Promise<void>;markHiddenRange:(start:number,end:number)=>boolean;saveNow:()=>Promise<void>;hiddenIds:Record<string,boolean>;togglePersonVisibility:(id:string)=>void;focusPerson:(id:string)=>void;showAllPeople:()=>void;selectPerson:(id:string)=>void;deletePerson:(id:string)=>boolean;assignPerson:(target:string,personId:number|null,className:string,color:string,geometry?:Geometry)=>boolean;frameTimes:Record<string,(number|null)[]>;fillInterpolation:()=>void;project:Project|null;videoId:string;frame:number;activeId:string;geometry:Geometry;saveStatus:string;saveError:string;notice:string;pending:Operation[];history:Operation[];redoStack:Operation[];ready:boolean;load:(id:string)=>Promise<void>;commit:(label:string,fn:(d:Domain)=>void,trackOnly?:boolean)=>boolean;navigate:(n:number)=>void;undo:()=>void;redo:()=>void;retry:()=>void;newPerson:()=>void;editObservation:(label:string,fn:(o:Observation)=>void,propagate?:boolean)=>void;setBox:(geometry:Geometry,box:Box|null,proposal?:Proposal,context?:{videoId:string;frame:number;activeId:string})=>void;equal:()=>void;copyPrevious:()=>void;approve:()=>boolean;rename:(id:string,n:number|null)=>void;toast:(message:string)=>void;};
 let pumpRunning=false;let persistChain=Promise.resolve();
 const deletedProjects=new Set<string>();
 export function markProjectDeleted(id:string){
@@ -26,7 +27,10 @@ const journalKey=(id:string)=>'frameinsight:journal:'+id;
 const positionKey=(id:string)=>'frameinsight:position:'+id;
 function persist(){
  const s=useStore.getState();if(!s.project)return Promise.resolve();
- const record=clone({project:s.project,pending:s.pending,history:s.history,redoStack:s.redoStack,videoId:s.videoId,frame:s.frame,activeId:s.activeId,geometry:s.geometry});
+ // Store transactions replace their changed records; this snapshot is immutable.
+ // IndexedDB performs its own structured clone. Cloning it here again stalls
+ // every mouse release, twice per acknowledgement, for large projects.
+ const record={project:s.project,pending:s.pending,history:s.history,redoStack:s.redoStack,videoId:s.videoId,frame:s.frame,activeId:s.activeId,geometry:s.geometry};
  const task=persistChain.then(()=>dbSet(journalKey(record.project.id),record));
  persistChain=task.catch(()=>{});return task;
 }
@@ -45,7 +49,7 @@ async function pump(){
  }catch(e){useStore.setState({saveStatus:'Save failed',saveError:String(e)});}finally{pumpRunning=false;}
 }
 function queue(op:Operation,state:Domain,history:Operation[],redoStack:Operation[]){
- const s=useStore.getState();useStore.setState({project:{...s.project!,state,revision:s.project!.revision+1},pending:[...s.pending,op],history,redoStack,saveStatus:'Saving',saveError:''});void durableAndPump();
+ const s=useStore.getState();inheritFrameIndex(s.project!.state.observations,state.observations,op.changes);useStore.setState({project:{...s.project!,state,revision:s.project!.revision+1},pending:[...s.pending,op],history,redoStack,saveStatus:'Saving',saveError:''});void durableAndPump();
 }
 function invalidate(before:Domain,after:Domain){
  const frames=new Set<string>(),identities=new Set<string>();
@@ -165,12 +169,16 @@ export const useStore=create<Store>((set,get)=>({
 
   localStorage.setItem('frameinsight:lastProject',id);
  },
- commit:(label,fn)=>{
+ commit:(label,fn,trackOnly=false)=>{
   const s=get();if(!s.project)return false;if(deletedProjects.has(s.project.id)){s.toast('This project was deleted. Return to your projects.');return false;}if(s.settingsSaving){s.toast('Wait for project settings to finish saving.');return false;}
-  const before=s.project.state,after=clone(before);
-  try{fn(after);invalidate(before,after);validateDomain(after,s.project.videos);}catch(e){s.toast(String(e));return false;}
-  const changes:Change[]=[];
-  for(const col of Object.keys(before) as (keyof Domain)[])for(const id of new Set([...Object.keys(before[col]),...Object.keys(after[col])]))if(!same(before[col][id],after[col][id]))changes.push({collection:col,id,before:before[col][id]??null,after:after[col][id]??null});
+  const before=s.project.state;let after:Domain,changes:Change[]=[];
+  try{
+   if(trackOnly&&canEditTrack(s.project,s.videoId,s.activeId)){const result=editTrack(s.project,s.videoId,s.activeId,fn,{frame:s.frame,geometry:s.geometry});after=result.state;changes=result.changes;}
+   else{
+    after=clone(before);fn(after);invalidate(before,after);validateDomain(after,s.project.videos);
+    for(const col of Object.keys(before) as (keyof Domain)[])for(const id of new Set([...Object.keys(before[col]),...Object.keys(after[col])]))if(!same(before[col][id],after[col][id]))changes.push({collection:col,id,before:before[col][id]??null,after:after[col][id]??null});
+   }
+  }catch(e){s.toast(String(e));return false;}
   if(!changes.length)return true;
   if(changes.length>50000){s.toast('This action changes more than 50,000 items. Choose a smaller frame range. Nothing was changed.');return false;}
   const op:Operation={id:uuid(),label,base_revision:s.project.revision,video_id:s.videoId||null,frame_index:s.frame,changes,compensates:null};
@@ -198,7 +206,7 @@ export const useStore=create<Store>((set,get)=>({
     if(marker&&getBox(o,s.geometry)&&!isGeometryGenerated(o,s.geometry)){o.provenance[s.geometry]={origin:'manual',proposal_id:null,human_corrected:false,...o.provenance[s.geometry],repair_id:marker};repaired=repairBetweenNewBoxes(d,s.videoId,s.activeId,s.geometry,s.frame,s.project!.videos[s.videoId].frame_count,s.frameTimes[s.videoId]);}
     interpolatePerson(d,s.videoId,s.activeId,s.frameTimes[s.videoId],s.frame,s.geometry);
    }
-  });
+  },true);
   if(ok&&repaired)s.toast(`${repaired} frames filled between your replacement boxes. Deleted frames outside them stay hidden. Ctrl+Z undoes this edit.`);
  },
  setBox:(geometry,box,proposal,context)=>{
@@ -237,8 +245,8 @@ async function getJournal(id:string){return get<any>(journalKey(id));}
 function compensate(redo:boolean){
  const s=useStore.getState(),stack=redo?s.redoStack:s.history,original=stack.at(-1);if(!original||!s.project)return;if(deletedProjects.has(s.project.id)){s.toast('This project was deleted. Return to your projects.');return;}if(s.settingsSaving){s.toast('Wait for project settings to finish saving.');return;}
  const changes=original.changes.map(c=>({...c,before:c.after,after:c.before}));
- const state=clone(s.project.state);
- for(const c of changes){if(!same(state[c.collection][c.id]??null,c.before)){s.toast('Undo history does not match current data. Reload to review server changes.');return;}if(c.after===null)delete state[c.collection][c.id];else (state[c.collection] as any)[c.id]=clone(c.after);}
+ const state:Domain={...s.project.state};const copied=new Set<keyof Domain>();
+ for(const c of changes){if(!same(state[c.collection][c.id]??null,c.before)){s.toast('Undo history does not match current data. Reload to review server changes.');return;}if(!copied.has(c.collection)){(state as any)[c.collection]={...state[c.collection]};copied.add(c.collection);}if(c.after===null)delete state[c.collection][c.id];else (state[c.collection] as any)[c.id]=clone(c.after);}
  const op:Operation={...original,id:uuid(),base_revision:s.project.revision,label:(redo?'Redo ':'Undo ')+original.label,compensates:original.id,changes};
  queue(op,state,redo?[...s.history,op]:s.history.slice(0,-1),redo?s.redoStack.slice(0,-1):[...s.redoStack,op]);
  if(original.video_id)useStore.setState({videoId:original.video_id,frame:original.frame_index||0});

@@ -3,7 +3,7 @@ import {defaultCanvasPreferences,type CanvasPreferences} from './canvas-preferen
 import {CopyToClassIcon,CopyPreviousBoxIcon,DeleteRangeIcon,RestoreRangeIcon} from './components/AnnotationIcons';
 import {CanvasLabels,measureLabelText} from './CanvasLabels';
 import {LABEL_HEIGHT,layoutLabels,hitLabel,type CanvasBadge} from './canvas-labels';
-import {forwardRef,useEffect,useImperativeHandle,useLayoutEffect,useRef,useState} from 'react';
+import {forwardRef,useEffect,useImperativeHandle,useLayoutEffect,useRef,useState,type ReactNode} from 'react';
 import {Stage,Layer,Image as KImage,Rect,Text,Group} from 'react-konva';
 import {ContextMenu} from 'radix-ui';
 import {MousePointer2,SquareDashed,Hand,Plus,Maximize,Undo2,Redo2,EyeOff,Focus,Trash2,Tags,Settings2,ChevronRight,Check,WandSparkles} from 'lucide-react';
@@ -13,6 +13,7 @@ import {frameImageCache} from './frame-image-cache';
 import {Button} from './components/ui/button';
 import './canvas-controls.css';
 import {useStore} from './store';
+import {useShallow} from 'zustand/react/shallow';
 import {VISIBLE_ONLY,boxStyle,geometryLabel,getBox,boxKeys} from './types';
 import {type Box,type Geometry,type Proposal,geometries,currentObservation,frameObservations} from './types';
 import {type View,toSource,normalized,edgeHit,contains,resizeBox,moveBox,clamp} from './geometry';
@@ -28,7 +29,7 @@ function resizeHandles([x1,y1,x2,y2]:Box){return [
 const resizeCursor=(edge:string)=>edge.length===2?(edge==='nw'||edge==='se'?'nwse-resize':'nesw-resize'):(edge==='n'||edge==='s'?'ns-resize':'ew-resize');
 
 export const EditorCanvas=forwardRef<CanvasHandle,{proposals:Proposal[];showProposals:boolean;hiddenClasses:Record<string,boolean>;dimOutside:boolean;preferences?:CanvasPreferences;colorMode?:'class'|'track';expectedContext?:{videoId:string;frame:number};displayLabels?:Record<string,{label:string;color:string}>;focusedIdentityIds?:string[]|null;onNewTrack?:()=>void;onSelectTrack?:(id:string)=>void;onAssignPerson?:()=>void;onColorModeChange?:(mode:'class'|'track')=>void;onAction?:(action:string)=>void;onControlsChange?:(state:CanvasControlsState)=>void}>(({proposals,showProposals,hiddenClasses,dimOutside,preferences=defaultCanvasPreferences,colorMode='class',expectedContext,displayLabels={},focusedIdentityIds=null,onNewTrack,onSelectTrack,onAssignPerson,onColorModeChange,onAction,onControlsChange},ref)=>{
- const {project,videoId,frame,activeId,geometry,hiddenIds}=useStore();const video=project?.videos[videoId];
+ const {project,videoId,frame,activeId,geometry,hiddenIds}=useStore(useShallow(state=>({project:state.project,videoId:state.videoId,frame:state.frame,activeId:state.activeId,geometry:state.geometry,hiddenIds:state.hiddenIds})));const video=project?.videos[videoId];
  const displayColor=(person:import('./types').Identity|undefined,g:Geometry)=>colorMode==='track'&&person&&displayLabels[person.id]?displayLabels[person.id].color:annotationColor(project,person,g,colorMode);
  const menuDialog=useRef(false),menuOpen=useRef(false);
  const [tool,setTool]=useState<CanvasTool>('select'),[menuTarget,setMenuTarget]=useState<{identity:string;geometry:Geometry}|null>(null);
@@ -36,7 +37,11 @@ export const EditorCanvas=forwardRef<CanvasHandle,{proposals:Proposal[];showProp
  const host=useRef<HTMLDivElement>(null),gesture=useRef<Gesture|null>(null),spaceDown=useRef(false),panned=useRef(false),cycle=useRef(0);
  const [size,setSize]=useState({w:800,h:600}),[view,setView]=useState<View>({x:0,y:0,scale:1}),[image,setImage]=useState<{key:string;image:HTMLImageElement}|null>(null),[frameError,setFrameError]=useState<{key:string;message:string}|null>(null),[retryFrame,setRetryFrame]=useState(0),[preview,setPreview]=useState<Box|null>(null),[cursor,setCursor]=useState('crosshair');
 
+ const lastComplete=useRef<{videoId:string;frame:number;scene:ReactNode;badges:CanvasBadge[];width:number;height:number}|null>(null);
  const requestedKey=videoId+':'+frame;const displayedImage=frameImageCache.peek(requestedKey)||(image?.key===requestedKey?image.image:undefined);const ready=!!displayedImage&&!!video&&(!expectedContext||expectedContext.videoId===videoId&&expectedContext.frame===frame);
+ // Read the store as well as this render: navigation updates synchronously,
+ // before React commits the next frame. No action may edit a retained preview.
+ const editable=()=>{const current=useStore.getState();return ready&&current.videoId===videoId&&current.frame===frame;};
  const error=frameError?.key===requestedKey?frameError.message:'';
  const controlsCallback=useRef(onControlsChange);controlsCallback.current=onControlsChange;
  useEffect(()=>{controlsCallback.current?.({tool,scale:view.scale,ready});},[tool,view.scale,ready]);
@@ -50,6 +55,13 @@ export const EditorCanvas=forwardRef<CanvasHandle,{proposals:Proposal[];showProp
  },[videoId,video?.width,size.w,size.h]);
  useEffect(()=>{let cancelled=false;setFrameError(null);if(!videoId||!video?.frame_count)return;const key=requestedKey;
  frameImageCache.load(key,`/api/videos/${videoId}/frames/${frame}`).then(img=>{if(cancelled)return;setImage({key,image:img});for(const delta of [1,-1]){const f=frame+delta;if(f>=0&&f<video.frame_count)void frameImageCache.load(videoId+':'+f,`/api/videos/${videoId}/frames/${f}`).catch(()=>{});}}).catch(e=>{if(!cancelled)setFrameError({key,message:e instanceof Error?e.message:String(e)})});return()=>{cancelled=true};},[requestedKey,video?.frame_count,retryFrame]);
+ const preparing=useRef(false);
+ useEffect(()=>{
+  const finished=preparing.current&&video?.status==='ready';preparing.current=video?.status==='indexing';
+  if(!error||(!preparing.current&&!finished))return;
+  const timer=window.setTimeout(()=>setRetryFrame(value=>value+1),finished?0:1000);
+  return()=>window.clearTimeout(timer);
+ },[error,video?.status,requestedKey]);
  const observations=frameObservations(project,videoId,frame).filter(o=>!hiddenIds[o.identity_uuid]&&(focusedIdentityIds===null||focusedIdentityIds.includes(o.identity_uuid)));
  const active=currentObservation(project,videoId,frame,activeId);
  const className=boxStyle(project?.state.identities[activeId],geometry).class_name;
@@ -85,6 +97,7 @@ export const EditorCanvas=forwardRef<CanvasHandle,{proposals:Proposal[];showProp
  const point=(e:{clientX:number;clientY:number}):[number,number]=>{const r=host.current!.getBoundingClientRect();return [e.clientX-r.left,e.clientY-r.top]};
  function finish(){
   const g=gesture.current;if(!g)return;gesture.current=null;setPreview(null);
+  if(!editable()||g.videoId!==videoId||g.frame!==frame)return;
   const s=useStore.getState();
   if(g.kind==='pan'){setCursor(spaceDown.current||tool==='hand'?'grab':'default');return;}
   if(g.moved&&g.box&&g.box[2]>g.box[0]&&g.box[3]>g.box[1]){
@@ -98,11 +111,11 @@ export const EditorCanvas=forwardRef<CanvasHandle,{proposals:Proposal[];showProp
   if(hit){selectHit(hit);return;}
   if(candidates.length){if(!activeId){s.toast('Press N or select a track before accepting a suggestion');return;}const p=candidates[cycle.current%candidates.length];s.setBox(p.geometry,p.box,p);cycle.current=0;return;}
  }
- function chooseTool(value:CanvasTool){finish();spaceDown.current=false;setTool(value);setCursor(value==='hand'?'grab':value==='draw'?'crosshair':'default');host.current?.focus();}
+ function chooseTool(value:CanvasTool){if(!editable())return;finish();spaceDown.current=false;setTool(value);setCursor(value==='hand'?'grab':value==='draw'?'crosshair':'default');host.current?.focus();}
  useEffect(()=>{const key=(e:KeyboardEvent)=>{if(e.defaultPrevented||e.ctrlKey||e.metaKey||e.altKey||e.shiftKey||e.repeat||!ready||menuOpen.current||hasOpenOverlay())return;const target=e.target as HTMLElement;if(target.closest('input,textarea,select,[role=combobox],[role=slider],[contenteditable=true]'))return;const next=({v:'select',b:'draw',h:'hand'} as Record<string,CanvasTool>)[e.key.toLowerCase()];if(next){e.preventDefault();chooseTool(next);}};window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key)},[tool,ready,view,activeId,geometry]);
- useImperativeHandle(ref,()=>({tool:chooseTool,finish,cancel:()=>{gesture.current=null;setPreview(null)},fit,zoom,space:(down)=>{spaceDown.current=down;if(down){panned.current=false;setCursor('grab');return false;}setCursor(tool==='hand'?'grab':tool==='draw'?'crosshair':'default');return panned.current;},isReady:()=>ready}));
+ useImperativeHandle(ref,()=>({tool:chooseTool,finish,cancel:()=>{gesture.current=null;setPreview(null)},fit,zoom,space:(down)=>{spaceDown.current=down;if(down){panned.current=false;setCursor('grab');return false;}setCursor(tool==='hand'?'grab':tool==='draw'?'crosshair':'default');return panned.current;},isReady:editable}));
  function down(e:React.PointerEvent){
-  if((e.target as HTMLElement).closest('[data-canvas-ui]')||e.button!==0||!ready||!video)return;
+  if((e.target as HTMLElement).closest('[data-canvas-ui]')||e.button!==0||!editable()||!video)return;
   const screen=point(e),pan=spaceDown.current||tool==='hand',handle=!pan&&!e.altKey?hitSelectedHandle(screen):undefined,badge=handle?undefined:editBadge(screen);
   if(badge&&!pan){onAction?.('pause');gesture.current=null;setPreview(null);selectLabel(badge);host.current?.focus();return;}
   const p=toSource(...screen,view),hit=hitBox(p);
@@ -118,7 +131,8 @@ export const EditorCanvas=forwardRef<CanvasHandle,{proposals:Proposal[];showProp
   gesture.current={kind,start:p,screen,box,original:box,edge,videoId,frame,activeId:who,geometry:g,moved:false,alt:e.altKey,view};
  }
  function move(e:React.PointerEvent){
-  if(!ready||!video)return;const screen=point(e),g=gesture.current,p=toSource(...screen,g?.view||view);
+  if(!editable()||!video)return;const screen=point(e),g=gesture.current,p=toSource(...screen,g?.view||view);
+  if(g&&(g.videoId!==videoId||g.frame!==frame)){gesture.current=null;setPreview(null);return;}
   if(!g){if(spaceDown.current||tool==='hand'){setCursor('grab');return;}const handle=!e.altKey&&hitSelectedHandle(screen);if(handle){setCursor(resizeCursor(handle.edge));return;}if(editBadge(screen)){setCursor('pointer');return;}if(tool==='draw'){setCursor('crosshair');return;}const hit=hitBox(p);if(hit){const edge=edgeHit(hit.box,p,7/view.scale);setCursor(!edge?'move':resizeCursor(edge));}else setCursor(activeId&&!getBox(active,geometry)?'crosshair':'default');return;}
   if(Math.hypot(screen[0]-g.screen[0],screen[1]-g.screen[1])>3)g.moved=true;
   if(!g.moved)return;
@@ -130,7 +144,7 @@ export const EditorCanvas=forwardRef<CanvasHandle,{proposals:Proposal[];showProp
  }
  function zoom(factor:number){finish();if(!ready)return;autoFit.current=false;const screen:[number,number]=[size.w/2,size.h/2],p=toSource(...screen,view),scale=clamp(view.scale*factor,.04,20);setView({scale,x:screen[0]-p[0]*scale,y:screen[1]-p[1]*scale});}
  function context(e:React.MouseEvent){
-  if((e.target as HTMLElement).closest('[data-canvas-ui]')){e.preventDefault();return;}
+  if(!editable()||(e.target as HTMLElement).closest('[data-canvas-ui]')){e.preventDefault();return;}
   onAction?.('pause');gesture.current=null;setPreview(null);spaceDown.current=false;
   const screen=point(e),p=toSource(...screen,view),badge=hitBadge(screen),hit=badge?undefined:hitBox(p);
   const target=badge?{identity:badge.identity,geometry:badge.geometry}:hit?{identity:hit.o.identity_uuid,geometry:hit.g}:null;
@@ -138,22 +152,23 @@ export const EditorCanvas=forwardRef<CanvasHandle,{proposals:Proposal[];showProp
   if(target&&!hits.some(h=>h.identity===target.identity&&h.geometry===target.geometry))hits.unshift(target);
   setMenuHits(hits);setMenuTarget(target);if(badge)selectLabel(badge);else if(hit)selectHit(hit);menuDialog.current=false;
  }
- function menuAction(action:string){finish();if(['id','copyClass','hiddenRange','restoreRange','canvasSettings','interpolateRange'].includes(action)){menuDialog.current=true;onAction?.(action);return;}const s=useStore.getState();if(action==='new'){if(onNewTrack)onNewTrack();else s.newPerson();setTool('draw');}else if(action==='copy')s.copyPrevious();else if(action==='hide')s.togglePersonVisibility(s.activeId);else if(action==='focus')s.focusPerson(s.activeId);else if(action==='delete')s.setBox(s.geometry,null);else if(action==='undo')s.undo();else if(action==='redo')s.redo();}
+ function menuAction(action:string){if(!editable())return;finish();if(['id','copyClass','hiddenRange','restoreRange','canvasSettings','interpolateRange'].includes(action)){menuDialog.current=true;onAction?.(action);return;}const s=useStore.getState();if(action==='new'){if(onNewTrack)onNewTrack();else s.newPerson();setTool('draw');}else if(action==='copy')s.copyPrevious();else if(action==='hide')s.togglePersonVisibility(s.activeId);else if(action==='focus')s.focusPerson(s.activeId);else if(action==='delete')s.setBox(s.geometry,null);else if(action==='undo')s.undo();else if(action==='redo')s.redo();}
  const menuPerson=project?.state.identities[menuTarget?.identity||''];
  const menuIdentity=menuTarget?.identity||activeId,menuGeometry=menuTarget?.geometry||geometry;
  const previous=menuIdentity&&currentObservation(project,videoId,frame-1,menuIdentity);
  const canCopyPrevious=!!getBox(previous||undefined,menuGeometry)&&!getBox(currentObservation(project,videoId,frame,menuIdentity),menuGeometry);
  const item=(label:string,icon:React.ReactNode,action:()=>void,disabled=false,key?:string,danger=false)=><ContextMenu.Item className={danger?'canvas-menu-danger':''} disabled={disabled} onSelect={action}>{icon}<span>{label}</span>{key&&<kbd>{key}</kbd>}</ContextMenu.Item>;
- function wheel(e:React.WheelEvent){e.preventDefault();if(gesture.current)return;autoFit.current=false;const screen=point(e),p=toSource(...screen,view),scale=clamp(view.scale*Math.exp(-e.deltaY*.0015),.04,20);setView({scale,x:screen[0]-p[0]*scale,y:screen[1]-p[1]*scale});}
+ function wheel(e:React.WheelEvent){e.preventDefault();if(!editable()||gesture.current)return;autoFit.current=false;const screen=point(e),p=toSource(...screen,view),scale=clamp(view.scale*Math.exp(-e.deltaY*.0015),.04,20);setView({scale,x:screen[0]-p[0]*scale,y:screen[1]-p[1]*scale});}
+ const currentGesture=gesture.current?.videoId===videoId&&gesture.current.frame===frame?gesture.current:null;
  const renderBoxes=boxEntries.map(({o,g,box})=>{
   const selected=o.identity_uuid===activeId&&g===geometry;
-  const editing=gesture.current?.activeId===o.identity_uuid&&gesture.current.geometry===g;
-  const linkedPreview=preview&&o.geometry_link==='equal'&&gesture.current?.geometry==='person_ext'&&gesture.current.activeId===o.identity_uuid;
+  const editing=currentGesture?.activeId===o.identity_uuid&&currentGesture.geometry===g;
+  const linkedPreview=preview&&o.geometry_link==='equal'&&currentGesture?.geometry==='person_ext'&&currentGesture.activeId===o.identity_uuid;
   return {key:o.id+g,g,box:editing&&preview?preview:linkedPreview?preview:box,person:project!.state.identities[o.identity_uuid],selected};
  });
- if(preview&&gesture.current?.kind==='draw'&&!getBox(active,gesture.current.geometry))renderBoxes.unshift({key:'drawing',g:gesture.current.geometry,box:preview,person:project!.state.identities[activeId],selected:true});
+ if(preview&&currentGesture?.kind==='draw'&&!getBox(active,currentGesture.geometry))renderBoxes.unshift({key:'drawing',g:currentGesture.geometry,box:preview,person:project!.state.identities[activeId],selected:true});
  const labels=renderBoxes.filter(({box})=>box[2]*view.scale+view.x>=0&&box[0]*view.scale+view.x<size.w&&box[3]*view.scale+view.y>=0&&box[1]*view.scale+view.y<size.h).map(({key,g,box,person,selected})=>({key,x:box[0]*view.scale+view.x,y:box[1]*view.scale+view.y,className:boxStyle(person,g).class_name,id:displayLabels[person?.id||'']?.label||(person?.person_id!=null?'#'+person.person_id:person?.name||'Draft'),color:displayColor(person,g),selected,identity:person?.id||'',geometry:g,interactive:key!=='drawing'&&!!person}));
- const editingBox=!!preview&&gesture.current?.moved&&gesture.current.kind!=='pan';
+ const editingBox=!!preview&&currentGesture?.moved&&currentGesture.kind!=='pan';
  const obstacles=renderBoxes.map(({box})=>({x:box[0]*view.scale+view.x,y:box[1]*view.scale+view.y,width:(box[2]-box[0])*view.scale,height:(box[3]-box[1])*view.scale}));
  const badges=layoutLabels(editingBox||preferences.labels==='hidden'?[]:preferences.labels==='selected'?labels.filter(label=>label.selected):labels,{width:size.w,height:size.h},measureLabelText,preferences.labels==='smart'?'unselected':preferences.labels==='ids',obstacles);
  const measured=ready&&renderBoxes.find(entry=>entry.selected);
@@ -164,8 +179,9 @@ export const EditorCanvas=forwardRef<CanvasHandle,{proposals:Proposal[];showProp
    <Rect x={x1} y={y1} width={x2-x1} height={y2-y1} stroke={color} strokeWidth={(selected?2:1.3)/view.scale} dash={!VISIBLE_ONLY&&g==='person_visible'?[6/view.scale,4/view.scale]:undefined}/>
   </Group>;
  };
- return <ContextMenu.Root onOpenChange={open=>{menuOpen.current=open}}><ContextMenu.Trigger asChild disabled={!ready}><div className="canvas-host" ref={host} tabIndex={0} role="application" aria-label="Video annotation canvas" data-testid="canvas" data-frame={ready?frame:'loading'} data-scale={view.scale} data-tool={tool} data-offset-x={view.x} data-offset-y={view.y} data-labels={JSON.stringify(ready?badges.map(({key,x,y,width,identity,geometry,className,interactive,color,name})=>({key,x,y,width,height:LABEL_HEIGHT,identity,geometry,className,interactive,color,name})):[])} onContextMenu={context} onPointerDown={down} onPointerMove={move} onPointerUp={finish} onPointerCancel={()=>{gesture.current=null;setPreview(null)}} onWheel={wheel} style={{cursor}}>
-  {ready?<Stage width={size.w} height={size.h} listening={false}><Layer listening={false}><Group x={view.x} y={view.y} scaleX={view.scale} scaleY={view.scale}><KImage image={displayedImage} width={video.width} height={video.height}/></Group></Layer>{focusBoxes.length>0&&<Layer listening={false}><Group x={view.x} y={view.y} scaleX={view.scale} scaleY={view.scale}>
+ // Retain the last committed scene as one immutable image/overlay pair. Rendering
+ // requested-frame boxes over the previous image would look smooth but be wrong.
+ const scene=ready?<Stage width={size.w} height={size.h} listening={false}><Layer listening={false}><Group x={view.x} y={view.y} scaleX={view.scale} scaleY={view.scale}><KImage image={displayedImage} width={video.width} height={video.height}/></Group></Layer>{focusBoxes.length>0&&<Layer listening={false}><Group x={view.x} y={view.y} scaleX={view.scale} scaleY={view.scale}>
    <Rect width={video.width} height={video.height} fill="black" opacity={.38}/>
    {focusBoxes.map(([x1,y1,x2,y2],i)=><Rect key={i} x={x1} y={y1} width={x2-x1} height={y2-y1} fill="black" globalCompositeOperation="destination-out"/>)}
   </Group></Layer>}<Layer listening={false}><Group x={view.x} y={view.y} scaleX={view.scale} scaleY={view.scale}>
@@ -173,7 +189,15 @@ export const EditorCanvas=forwardRef<CanvasHandle,{proposals:Proposal[];showProp
    {renderBoxes.slice().reverse().map(({key,g,box,person,selected})=>drawBox(box,g,key,selected,displayColor(person,g)))}
   </Group><CanvasLabels badges={badges}/><Group x={view.x} y={view.y} scaleX={view.scale} scaleY={view.scale}>
    {renderBoxes.filter(({selected})=>selected).flatMap(({key,box,person,g})=>resizeHandles(box).map(({x,y,edge})=><Rect key={key+edge} x={x-3/view.scale} y={y-3/view.scale} width={6/view.scale} height={6/view.scale} fill="#10161b" stroke={displayColor(person,g)} strokeWidth={1/view.scale}/>))}
-  </Group></Layer></Stage>:<div className="canvas-loading">{error?<div data-canvas-ui className="grid justify-items-center gap-3"><span role="alert">{error}</span><Button variant="outline" size="sm" onClick={()=>{setFrameError(null);setRetryFrame(value=>value+1);}}>Retry frame</Button></div>:(video?'Loading exact source frame…':'Import a video to begin')}</div>}
+  </Group></Layer></Stage>:null;
+ useLayoutEffect(()=>{
+  if(scene&&video)lastComplete.current={videoId,frame,scene,badges,width:video.width,height:video.height};
+  else if(lastComplete.current?.videoId!==videoId)lastComplete.current=null;
+ });
+ const presented=scene&&video?{videoId,frame,scene,badges,width:video.width,height:video.height}:lastComplete.current?.videoId===videoId?lastComplete.current:null;
+ return <ContextMenu.Root onOpenChange={open=>{menuOpen.current=open}}><ContextMenu.Trigger asChild disabled={!ready}><div className="canvas-host" ref={host} tabIndex={0} role="application" aria-label="Video annotation canvas" data-testid="canvas" data-frame={ready?frame:'loading'} data-displayed-frame={presented?.frame??''} data-buffering={!!presented&&!ready} aria-busy={!ready&&!!video} data-scale={view.scale} data-tool={tool} data-offset-x={view.x} data-offset-y={view.y} data-labels={JSON.stringify(presented?presented.badges.map(({key,x,y,width,identity,geometry,className,interactive,color,name})=>({key,x,y,width,height:LABEL_HEIGHT,identity,geometry,className,interactive,color,name})):[])} onContextMenu={context} onPointerDown={down} onPointerMove={move} onPointerUp={finish} onPointerCancel={()=>{gesture.current=null;setPreview(null)}} onWheel={wheel} style={{cursor:ready?cursor:'progress'}}>
+  {presented?.scene}
+  {!ready&&<div className={presented?'canvas-buffering':'canvas-loading'} data-canvas-ui role="status">{error?<><span>{error}{presented&&` Showing frame ${presented.frame}.`}</span><Button variant="outline" size="sm" onClick={()=>{setFrameError(null);setRetryFrame(value=>value+1);}}>Retry frame</Button></>:<span>{video?`Loading frame ${frame}…${presented?` Showing frame ${presented.frame}.`:''}`:'Import a video to begin'}</span>}</div>}
   {ready&&<div className="canvas-corner">{video.width} × {video.height}<span>{Math.round(view.scale*100)}%</span><span>Source pixels</span></div>}
   {measured&&<output className="canvas-dimensions" aria-label="Box dimensions" data-testid="box-dimensions" data-width={measured.box[2]-measured.box[0]} data-height={measured.box[3]-measured.box[1]}><span>{dimension(measured.box[2]-measured.box[0])} × {dimension(measured.box[3]-measured.box[1])}</span> source px</output>}
   {ready&&!activeId&&<div className="canvas-hint">Press <kbd>N</kbd> to start a track · Drag to draw</div>}

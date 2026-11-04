@@ -1,5 +1,5 @@
-import {describe,expect,it,vi} from 'vitest';
-import {FrameImageCache} from './frame-image-cache';
+import {afterEach,describe,expect,it,vi} from 'vitest';
+import {FrameImageCache,loadDecodedImage} from './frame-image-cache';
 
 type TestImage={naturalWidth:number;naturalHeight:number;id:string};
 const image=(id:string,width=10,height=10):TestImage=>({id,naturalWidth:width,naturalHeight:height});
@@ -75,9 +75,53 @@ describe('decoded frame image cache',()=>{
   expect((await cache.load('frame','/frame')).id).toBe('recovered');expect(load).toHaveBeenCalledTimes(2);expect(cache.peek('frame')?.id).toBe('recovered');
  });
 
+ it('invalidates one video and ignores its old in-flight results without disturbing a fresh request',async()=>{
+  const old=deferred<TestImage>(),fresh=deferred<TestImage>();
+  const load=vi.fn().mockResolvedValueOnce(image('other')).mockResolvedValueOnce(image('old ready')).mockReturnValueOnce(old.promise).mockReturnValueOnce(fresh.promise);
+  const cache=new FrameImageCache<TestImage>(load);
+  await cache.load('other:0','/other');await cache.load('video:0','/old-ready');
+  const first=cache.load('video:1','/old-pending');await Promise.resolve();
+  cache.invalidatePrefix('video:');expect(cache.peek('video:0')).toBeUndefined();expect(cache.peek('other:0')?.id).toBe('other');
+  const second=cache.load('video:1','/new-pending');await Promise.resolve();
+  old.resolve(image('obsolete'));await first;
+  expect(cache.peek('video:1')).toBeUndefined();expect(cache.load('video:1','/new-pending')).toBe(second);
+  fresh.resolve(image('fresh'));await second;expect(cache.peek('video:1')?.id).toBe('fresh');expect(load).toHaveBeenCalledTimes(4);
+ });
+
  it('cleans up synchronous loader failures and can retry them',async()=>{
   let attempts=0;const cache=new FrameImageCache<TestImage>(()=>{if(!attempts++)throw new Error('loader unavailable');return Promise.resolve(image('ok'));});
   await expect(cache.load('frame','/frame')).rejects.toThrow('loader unavailable');expect(cache.size).toBe(0);
   expect((await cache.load('frame','/frame')).id).toBe('ok');
+ });
+});
+
+
+describe('image decode publication',()=>{
+ afterEach(()=>vi.unstubAllGlobals());
+ it('keeps a loaded JPEG pending until its pixels finish decoding',async()=>{
+  const decoding=deferred<void>();let instance!:FakeImage;
+  class FakeImage {
+   onload:(()=>void)|null=null;onerror:(()=>void)|null=null;decoding='';src='';
+   decode=vi.fn(()=>decoding.promise);
+   constructor(){instance=this;}
+  }
+  vi.stubGlobal('Image',FakeImage);
+  let published=false;const result=loadDecodedImage('/frame').then(value=>{published=true;return value;});
+  instance.onload!();await Promise.resolve();expect(published).toBe(false);
+  expect(instance.decode).toHaveBeenCalledTimes(1);
+  decoding.resolve();expect(await result).toBe(instance);expect(published).toBe(true);
+ });
+ it('rejects undecodable pixels so the frame is never cached as ready',async()=>{
+  let instance!:FakeImage;
+  class FakeImage {
+   onload:(()=>void)|null=null;onerror:(()=>void)|null=null;decoding='';src='';
+   decode=vi.fn(()=>Promise.reject(new Error('decode failure')));
+   constructor(){instance=this;}
+  }
+  vi.stubGlobal('Image',FakeImage);
+  const cache=new FrameImageCache(loadDecodedImage);
+  const result=cache.load('frame','/frame');await Promise.resolve();instance.onload!();
+  await expect(result).rejects.toThrow('Exact frame unavailable');
+  expect(cache.peek('frame')).toBeUndefined();expect(cache.size).toBe(0);
  });
 });

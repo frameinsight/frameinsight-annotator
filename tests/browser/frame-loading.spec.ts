@@ -24,7 +24,7 @@ async function openSession(page:Page, fixture:Cameras, waitForPreviews=true){
   await page.getByTestId('open-session-'+fixture.session.id).click();
   await expect(page.getByTestId('multicamera-workspace')).toBeVisible();
   await expect(page.getByTestId('canvas')).toHaveAttribute('data-frame','0');
-  if(waitForPreviews)for(const camera of fixture.cameras.slice(1))await expect(page.getByTestId('camera-tile-'+camera.id).locator('.mc-preview img')).toBeVisible();
+  if(waitForPreviews)for(const camera of fixture.cameras.slice(1))await expect(page.getByTestId('camera-tile-'+camera.id).locator('.mc-preview .mc-frame-layer:not([hidden]) img')).toBeVisible();
 }
 
 async function slowFrames(page:Page, milliseconds=150){
@@ -49,7 +49,7 @@ test('four camera playback displays every source frame despite slow frame respon
         const canvas=tile.querySelector<HTMLElement>('[data-testid="canvas"]');
         if(canvas){const value=canvas.dataset.frame;if(value!==undefined&&value!=='loading')frame=Number(value);}
         else {
-          const image=tile.querySelector<HTMLImageElement>('.mc-preview img');
+          const image=tile.querySelector<HTMLImageElement>('.mc-preview .mc-frame-layer:not([hidden]) img');
           if(image?.complete&&image.naturalWidth>0&&getComputedStyle(image).visibility!=='hidden'){
             const match=new URL(image.src).pathname.match(/\/frames\/(\d+)$/);
             if(match)frame=Number(match[1]);
@@ -66,7 +66,7 @@ test('four camera playback displays every source frame despite slow frame respon
   await expect(page.getByRole('button',{name:'Play all cameras',exact:true})).toBeVisible({timeout:20000});
   await expect(page.getByTestId('canvas')).toHaveAttribute('data-frame','23');
   for(const camera of fixture.cameras.slice(1)){
-    const image=page.getByTestId('camera-tile-'+camera.id).locator('.mc-preview img');
+    const image=page.getByTestId('camera-tile-'+camera.id).locator('.mc-preview .mc-frame-layer:not([hidden]) img');
     await expect(image).toBeVisible();
     await expect(image).toHaveAttribute('src',new RegExp(`/frames/23(?:\\?.*)?$`));
   }
@@ -87,9 +87,9 @@ test('failed passive camera frame can retry without switching the editing camera
   const passive=page.getByTestId('camera-tile-'+fixture.cameras[1].id);
   const retry=passive.getByRole('button',{name:'Retry frame',exact:true});
   await expect(retry).toBeVisible();
-  await expect(passive.locator('.mc-preview img')).not.toBeVisible();
+  await expect(passive.locator('.mc-preview .mc-frame-layer:not([hidden]) img')).not.toBeVisible();
   await retry.click();
-  await expect(passive.locator('.mc-preview img')).toBeVisible();
+  await expect(passive.locator('.mc-preview .mc-frame-layer:not([hidden]) img')).toBeVisible();
   await expect(passive.locator('svg[aria-label="Annotations in Camera 2"]')).toBeVisible();
   await expect(retry).toHaveCount(0);
   await expect(page.getByTestId('camera-tile-'+fixture.cameras[0].id)).toHaveClass(/is-active/);
@@ -97,7 +97,7 @@ test('failed passive camera frame can retry without switching the editing camera
   expect(attempts).toBe(2);
 });
 
-test('returning to a previously loaded passive frame still exposes a new failure and retry',async({page,request})=>{
+test('a failed passive frame retains the previous image and returning to it clears the error',async({page,request})=>{
   const fixture=await setup(request,2);
   await page.addInitScript(({video})=>{
     // Chromium may reuse decoded image resources even when HTTP caching is off.
@@ -128,19 +128,16 @@ test('returning to a previously loaded passive frame still exposes a new failure
   const retry=passive.getByRole('button',{name:'Retry frame',exact:true});
   await page.getByLabel('Active camera frame',{exact:true}).fill('12');
   await expect(retry).toBeVisible();
+  await expect(passive.locator('.mc-preview')).toHaveAttribute('data-displayed-frame','0');
+  await expect(passive.locator('.mc-frame-layer:not([hidden]) img')).toBeVisible();
+  await expect(passive.locator('svg[aria-label="Annotations in Camera 2"]')).toBeVisible();
   await page.getByLabel('Active camera frame',{exact:true}).fill('0');
-  await expect.poll(()=>attempts['0']).toBe(2);
-  // The earlier successful frame 0 must not mark this failed request as loaded.
-  await expect(retry).toBeVisible();
-  await expect(passive.locator('.mc-preview img')).not.toBeVisible();
-  await expect(passive.locator('svg[aria-label="Annotations in Camera 2"]')).toHaveCount(0);
-  await retry.click();
-  await expect(passive.locator('.mc-preview img')).toBeVisible();
   await expect(passive.locator('.mc-preview')).toHaveAttribute('data-frame','0');
-  expect(await passive.locator('.mc-preview img').evaluate((element:HTMLImageElement)=>element.complete&&element.naturalWidth>0)).toBe(true);
   await expect(retry).toHaveCount(0);
-  await expect(page.getByTestId('canvas')).toHaveAttribute('data-frame','0');
-  expect(attempts['0']).toBe(3);
+  // The still-mounted decoded frame is reused, so it cannot acquire a second
+  // network failure merely by returning from an unavailable frame.
+  expect(attempts['0']).toBe(1);
+
 });
 
 test('active frame retry recovers and navigation clears an older frame error',async({page,request})=>{
@@ -180,7 +177,7 @@ test('three browser pages keep their four-camera previews independent under slow
     const ready=async(current:Page,frame:number)=>{
       await expect(current.getByTestId('canvas')).toHaveAttribute('data-frame',String(frame));
       for(const camera of fixture.cameras.slice(1)){
-        const image=current.getByTestId('camera-tile-'+camera.id).locator('.mc-preview img');
+        const image=current.getByTestId('camera-tile-'+camera.id).locator('.mc-preview .mc-frame-layer:not([hidden]) img');
         await expect(image).toBeVisible();
         await expect(image).toHaveAttribute('src',new RegExp(`/frames/${frame}(?:\\?.*)?$`));
         expect(await image.evaluate((element:HTMLImageElement)=>element.complete&&element.naturalWidth>0)).toBe(true);

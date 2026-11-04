@@ -1,8 +1,9 @@
 import {Textarea} from './components/ui/textarea';
 import {Card, CardHeader, CardTitle, CardDescription, CardContent, CardFooter} from './components/ui/card';
 import {useEffect, useMemo, useRef, useState} from 'react';
-import {Settings2, Scissors, ArrowLeft, FolderOpen, ArrowRight, BookOpen, Check, CheckCircle2, ChevronRight, FileVideo2, FolderArchive, LayoutGrid, LoaderCircle, LockKeyhole, Play, Plus, Search, Trash2, Upload} from 'lucide-react';
+import {Settings2, Scissors, ArrowLeft, FolderOpen, ArrowRight, BookOpen, Check, CheckCircle2, ChevronRight, FileVideo2, FolderArchive, HardDrive, LayoutGrid, LoaderCircle, LockKeyhole, Play, Plus, Search, Trash2, Upload} from 'lucide-react';
 import {api, post} from './api';
+import {frameImageCache} from './frame-image-cache';
 import {boxKeys, type Project, type Video} from './types';
 import {useStore} from './store';
 import {Button} from './components/ui/button';
@@ -16,6 +17,8 @@ import {APP_VERSION} from './release';
 import type {CameraSession} from './multicam';
 
 export type LibraryVideo = Video & {project_id: string; project_name: string; finished: boolean; created_at?: string | null; updated_at?: string | null};
+type FrameCache = {video_id:string;bytes:number;cached_frames:number;state:string;active:boolean;can_clear:boolean};
+function storageSize(bytes:number){return bytes < 1024 ? `${bytes} B` : bytes < 1024**2 ? `${(bytes/1024).toFixed(1)} KB` : bytes < 1024**3 ? `${(bytes/1024**2).toFixed(1)} MB` : `${(bytes/1024**3).toFixed(2)} GB`;}
 type RestoreJob = {id: string; status: string; error?: string; restored_project_id?: string};
 type DeletingProject = {id: string; name: string; project?: Project; loading: boolean; error: string; conflict: boolean};
 const message = (error: unknown) => error instanceof Error ? error.message : String(error);
@@ -43,6 +46,11 @@ function lastPosition(videos: LibraryVideo[]) {
 
 export function VideoLibrary({onOpen, onNew, selectedProject, onSelectProject, onNewProject, onSettings, onTrim, onOpenSession}: {onOpen: (p: string, v: string) => Promise<void>; onNew: () => void; selectedProject:string|null; onSelectProject:(id:string|null)=>void; onNewProject:()=>void;onSettings:(id:string)=>void;onTrim:()=>void;onOpenSession?:(session:CameraSession)=>Promise<void>}) {
   const [projects,setProjects]=useState<{id:string;name:string;classes:string[]|string}[]>([]);
+  const [frameCaches,setFrameCaches]=useState<Record<string,FrameCache>>({});
+  const [cacheSelection,setCacheSelection]=useState<string[]>([]);
+  const [clearingCache,setClearingCache]=useState(false);
+  const [cacheNotice,setCacheNotice]=useState('');
+  const [cacheRefresh,setCacheRefresh]=useState(0);
   const [deleting, setDeleting] = useState<LibraryVideo | null>(null);
   const [deletingProject, setDeletingProject] = useState<DeletingProject | null>(null);
   const [confirmProjectName, setConfirmProjectName] = useState('');
@@ -83,6 +91,31 @@ export function VideoLibrary({onOpen, onNew, selectedProject, onSelectProject, o
     }), 1000);
     return () => { gone = true; clearInterval(timer); };
   }, [restore?.id, restore?.status]);
+  useEffect(()=>{
+    setCacheSelection([]);setFrameCaches({});
+    if(!selectedProject)return;
+    let gone=false;
+    void Promise.all(videos.filter(video=>video.project_id===selectedProject).map(async video=>{
+      try{return await api<FrameCache>(`/videos/${video.id}/frame-cache`);}catch{return null;}
+    })).then(rows=>{if(!gone)setFrameCaches(Object.fromEntries(rows.filter((row):row is FrameCache=>!!row).map(row=>[row.video_id,row])));});
+    return()=>{gone=true};
+  },[selectedProject,videos,cacheRefresh]);
+  async function clearSelectedCache(){
+    if(busy)return;setBusy('frame-cache');setError('');setCacheNotice('');
+    let bytes=0,cleared=0;const warnings:string[]=[];
+    try{
+      for(const id of cacheSelection){
+        const result=await api<FrameCache&{bytes_freed:number;cleanup_warning?:string}>(`/videos/${id}/frame-cache?confirmed=true`,{method:'DELETE'});
+        frameImageCache.invalidatePrefix(`${id}:`);
+        bytes+=result.bytes_freed;cleared++;setFrameCaches(current=>({...current,[id]:result}));
+        setCacheSelection(current=>current.filter(videoId=>videoId!==id));
+        if(result.cleanup_warning)warnings.push(result.cleanup_warning);
+      }
+      setCacheNotice(`${storageSize(bytes)} freed from ${cleared} ${cleared===1?'video':'videos'}. Videos and annotations are kept. Exact frames will be prepared again when you open them.${warnings.length?' '+warnings.join(' '):''}`);
+      setClearingCache(false);
+    }catch(error){setError(message(error));}
+    finally{setBusy('');}
+  }
   const resume = useMemo(() => lastPosition(videos), [videos]);
   const projectVideos=videos.filter(v=>v.project_id===selectedProject);
   const selected=projects.find(p=>p.id===selectedProject);
@@ -141,7 +174,7 @@ export function VideoLibrary({onOpen, onNew, selectedProject, onSelectProject, o
         <div className="library-actions"><Button variant="outline" size="sm" onClick={onTrim}><Scissors size={16}/>Trim sections</Button>{selectedProject&&<><Button variant="outline" disabled={!!busy} onClick={()=>onSettings(selectedProject)}><Settings2 size={16}/>Project settings</Button>{selected&&<Button variant="ghost" size="icon-sm" aria-label={'Delete project '+selected.name} title="Delete project" disabled={!!busy} onClick={()=>void prepareProjectDeletion(selected)}><Trash2 size={16}/></Button>}</>}<Button variant="outline" size="sm" onClick={() => setGuide(true)}><BookOpen size={16}/>Start guide</Button><Button size="sm" onClick={selectedProject?onNew:onNewProject}><Plus size={17}/>{selectedProject?'New video':'New project'}</Button></div>
       </div>
       <div className="library-body">
-        {error && !deleting && !deletingProject && <p role="alert" className="error">{error}</p>}
+        {error && !deleting && !deletingProject && !clearingCache && <p role="alert" className="error">{error}</p>}
         {loading&&!selectedProject&&<p role="status">Loading your projects…</p>}
         {selectedProject&&<Button variant="ghost" size="sm" className="project-back" onClick={()=>{setQuery('');onSelectProject(null)}}><ArrowLeft size={15}/>All projects</Button>}
         {!selectedProject&&<><label className="video-search"><Search size={17}/><Input aria-label="Search projects" placeholder="Search projects…" value={query} onChange={e=>setQuery(e.target.value)}/></label><div className="project-folders">{projects.filter(p=>p.name.toLowerCase().includes(query.toLowerCase())).map(p=>{const classes:string[]=typeof p.classes==='string'?JSON.parse(p.classes):p.classes||[];return <Card className="project-folder gap-4 py-4 shadow-none" key={p.id}>
@@ -150,6 +183,7 @@ export function VideoLibrary({onOpen, onNew, selectedProject, onSelectProject, o
           <CardFooter className="mt-auto px-4"><Button variant="outline" size="sm" data-testid={'open-project-'+p.id} onClick={()=>{setQuery('');onSelectProject(p.id)}}>Open project<ChevronRight size={14}/></Button><Button variant="ghost" size="icon-sm" className="ml-auto" aria-label={'Edit project '+p.name} title="Project settings" onClick={()=>onSettings(p.id)}><Settings2 size={16}/></Button><Button variant="ghost" size="icon-sm" aria-label={'Delete project '+p.name} title="Delete project" disabled={!!busy} onClick={()=>void prepareProjectDeletion(p)}><Trash2 size={16}/></Button></CardFooter>
         </Card>})}</div>{!loading&&projects.length>0&&!projects.some(p=>p.name.toLowerCase().includes(query.toLowerCase()))&&<p className="library-no-results">No projects match this search.</p>}{!loading&&!projects.length&&<div className="library-empty"><FolderOpen size={35}/><h2>Create your first project</h2><p>For example, Person detection or Mobile detection. Add videos inside it.</p><Button onClick={onNewProject}><Plus size={16}/>New project</Button></div>}</>}
         {selectedProject&&<>
+        {cacheNotice&&<p role="status" className="mb-4 text-sm text-muted-foreground">{cacheNotice}</p>}
         {onOpenSession && <section aria-labelledby="camera-sessions-heading" className="mb-7">
           <div className="mb-3 flex items-center justify-between gap-3"><h2 id="camera-sessions-heading" className="text-sm font-medium">Camera sessions</h2><span className="text-xs text-muted-foreground">Linked recordings with shared identities</span></div>
           {sessionsLoading ? <p role="status" className="flex items-center gap-2 text-sm text-muted-foreground"><LoaderCircle size={16} className="animate-spin"/>Loading camera sessions…</p> : sessionsError ? <p role="alert" className="error">{sessionsError} <Button variant="ghost" size="sm" onClick={() => setSessionsRefresh(value => value + 1)}>Retry</Button></p> : <div className="video-table-panel">
@@ -168,11 +202,13 @@ export function VideoLibrary({onOpen, onNew, selectedProject, onSelectProject, o
           </div>}
         </section>}
         {(loading || projectVideos.length > 0) && <><div className="library-controls"><label className="video-search"><Search size={17}/><Input aria-label="Search videos" placeholder="Search your videos…" value={query} onChange={e => setQuery(e.target.value)}/></label><div className="library-filters" aria-label="Filter videos">{([['all', 'All videos'], ['progress', 'In progress'], ['finished', 'Finished']] as const).map(([value, label]) => <Button variant="ghost" size="sm" className="aria-pressed:bg-accent" key={value} type="button" aria-pressed={filter === value} onClick={() => setFilter(value)}>{label}</Button>)}</div></div><p className="library-count">{projectVideos.length} {projectVideos.length === 1 ? 'video' : 'videos'}{finished > 0 && ` · ${finished} finished`}</p></>}
+        {!!projectVideos.length&&<div className="mb-3 flex flex-wrap items-center justify-between gap-2"><p className="text-xs text-muted-foreground">Frame storage contains temporary decoded images. Clearing it keeps your videos and annotations.</p><div className="flex gap-2"><Button variant="ghost" size="sm" disabled={!!busy} onClick={()=>setCacheRefresh(value=>value+1)}>Refresh storage</Button><Button variant="outline" size="sm" disabled={!cacheSelection.length||!!busy} onClick={()=>{setError('');setClearingCache(true)}}><HardDrive size={14}/>Clear selected frame storage{cacheSelection.length?` (${cacheSelection.length})`:''}</Button></div></div>}
         {loading ? <p role="status" className="flex items-center gap-2"><LoaderCircle size={16} className="animate-spin"/>Loading your videos…</p> : projectVideos.length > 0 && <div className="video-table-panel">
           <Table className="video-library-table" aria-label="Project videos">
             <TableHeader><TableRow>
               <TableHead scope="col" className="h-10 video-table-name-heading">Video</TableHead>
               <TableHead scope="col" className="h-10">Status</TableHead>
+              <TableHead scope="col" className="h-10">Frame storage</TableHead>
               <TableHead scope="col" className="h-10">Created</TableHead>
               <TableHead scope="col" className="h-10">Last updated</TableHead>
               <TableHead scope="col" className="h-10 text-right">Actions</TableHead>
@@ -187,6 +223,7 @@ export function VideoLibrary({onOpen, onNew, selectedProject, onSelectProject, o
                   <div><strong title={video.name}>{video.name}</strong><small>{video.frame_count.toLocaleString()} frames{isResume && <span className="video-table-saved-position"> · Saved at frame {resume.frame}</span>}</small></div>
                 </div></TableCell>
                 <TableCell className="py-2.5"><Badge variant={video.status === 'failed' ? 'destructive' : video.finished ? 'secondary' : 'outline'} className="video-table-status">{preparing ? <LoaderCircle className="animate-spin"/> : video.finished ? <CheckCircle2/> : null}{status}</Badge></TableCell>
+                <TableCell className="py-2.5"><div className="flex items-center gap-2"><input type="checkbox" className="size-4 accent-primary" aria-label={'Select frame storage for '+video.name} disabled={!!busy||!frameCaches[video.id]?.can_clear} checked={cacheSelection.includes(video.id)} onChange={event=>setCacheSelection(current=>event.target.checked?[...current,video.id]:current.filter(id=>id!==video.id))}/><div className="text-sm tabular-nums">{frameCaches[video.id]?storageSize(frameCaches[video.id].bytes):'—'}<small className="block text-xs text-muted-foreground">{frameCaches[video.id]?.active?'Open in workspace':frameCaches[video.id]?.state==='cleared'?'Prepared on next open':frameCaches[video.id]?.state==='rebuilding'?'Preparing frames…':''}</small></div></div></TableCell>
                 <TableCell className="py-2.5"><VideoTimestamp value={video.created_at}/></TableCell>
                 <TableCell className="py-2.5"><VideoTimestamp value={video.updated_at}/></TableCell>
                 <TableCell className="py-2.5"><div className="video-table-actions">
@@ -197,7 +234,7 @@ export function VideoLibrary({onOpen, onNew, selectedProject, onSelectProject, o
                 </div></TableCell>
               </TableRow>;
             })}
-            {!shown.length && <TableRow className="hover:bg-transparent"><TableCell colSpan={5} className="py-9 text-center"><p className="mb-3 text-muted-foreground">No videos match this search.</p><Button variant="outline" size="sm" onClick={() => {setQuery(''); setFilter('all');}}>Clear filters</Button></TableCell></TableRow>}
+            {!shown.length && <TableRow className="hover:bg-transparent"><TableCell colSpan={6} className="py-9 text-center"><p className="mb-3 text-muted-foreground">No videos match this search.</p><Button variant="outline" size="sm" onClick={() => {setQuery(''); setFilter('all');}}>Clear filters</Button></TableCell></TableRow>}
             </TableBody>
           </Table>
         </div>}
@@ -210,6 +247,13 @@ export function VideoLibrary({onOpen, onNew, selectedProject, onSelectProject, o
         }}/>{restore && <p role="status">{restore.status === 'completed' ? 'Backup restored. Your video is ready to open.' : restore.status === 'failed' ? restore.error || 'The backup could not be restored.' : 'Restoring your backup…'}</p>}{restore?.restored_project_id && <Button variant="outline" onClick={() => void api('/projects/' + restore.restored_project_id).then(project => {setProjects(rows=>[...rows.filter(p=>p.id!==project.id),project]);onSelectProject(project.id);return api<LibraryVideo[]>('/video-library').then(setVideos)}).catch(e => setError(message(e)))}>Open restored project<ArrowRight size={14}/></Button>}</details>
         <div className="library-note"><span><LockKeyhole size={12}/>Your videos and annotations stay on this computer.</span><span>Frameinsight {APP_VERSION}</span></div>
       </div>
+      {clearingCache&&<Modal title="Clear frame storage" busy={!!busy} onClose={()=>{if(!busy){setClearingCache(false);setError('')}}}>
+        <p>Free up <strong>{storageSize(cacheSelection.reduce((bytes,id)=>bytes+(frameCaches[id]?.bytes||0),0))}</strong> from {cacheSelection.length} selected {cacheSelection.length===1?'video':'videos'}?</p>
+        <p className="text-sm text-muted-foreground">Only temporary decoded frame images are removed. Source videos, tracks, boxes, IDs and editing history are kept. Opening these videos again will take time while their exact frames are prepared.</p>
+        <p className="text-sm text-muted-foreground">Close these videos in every annotation tab first. Videos that are open or being processed cannot be cleared.</p>
+        {error&&<p role="alert" className="error">{error}</p>}
+        <div className="flex justify-end gap-2"><Button variant="outline" disabled={!!busy} onClick={()=>{setClearingCache(false);setError('')}}>Cancel</Button><Button disabled={!!busy||!cacheSelection.length} onClick={()=>void clearSelectedCache()}>{busy&&<LoaderCircle size={14} className="animate-spin"/>}Clear frame storage</Button></div>
+      </Modal>}
       {deleting && <Modal title="Delete video" onClose={() => { if (!busy) { setDeleting(null); setError(''); } }} busy={!!busy}>
         <p><strong>{deleting.name}</strong></p><p>This removes the video, its annotations, and cached frames from this app. Your original video file and downloaded exports stay on your computer.</p><p>This cannot be undone. Keep a project backup if you need to edit this work later.</p>{error && <p role="alert" className="error">{error}</p>}<div className="button-row"><Button variant="outline" disabled={!!busy} onClick={() => { setDeleting(null); setError(''); }}>Cancel</Button><Button variant="destructive" disabled={!!busy} onClick={deleteVideo}>{busy && <LoaderCircle size={14} className="animate-spin"/>}Delete video and annotations</Button></div>
       </Modal>}

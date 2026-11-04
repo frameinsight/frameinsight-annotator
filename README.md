@@ -81,6 +81,10 @@ Use the **eye** beside a local track to hide its boxes and labels without changi
 
 Playback waits for all visible camera frames to load. On slower computers it may run below the selected speed rather than skip pending previews. If a frame fails to load, choose **Retry frame** in that view.
 
+While the next frame loads, the last complete image and its matching boxes stay visible together. Editing waits for the requested frame to be ready, so corrections cannot land on the wrong frame.
+
+Use the trash icon beside a person in **People across cameras** to remove an accidental shared identity. The confirmation lists its linked tracks and cameras. Those local tracks, their IDs, and all boxes remain saved; only their shared-person assignment is removed. Session **Undo** restores the person and assignments.
+
 Local track numbers remain unique **within a video**. The shared person number is unique **within the session**: Camera 1's Track 1 and Camera 2's Track 4 can both be Person 7. Matching local numbers alone never create a link. A person may be visible in several cameras at once; an uncertain track can remain unassigned.
 
 To reopen a session elsewhere, upload its original videos, open **Multiple cameras → Import a multi-camera annotation JSON**, select the file and explicitly match each camera to its video. Indexed source hashes, dimensions and frame timing must match. Import creates a new session and adds tracks, retaining existing annotations; use unannotated videos to avoid duplicate copies. For full recovery and audit history, use a native project backup after every project video has finished processing.
@@ -88,6 +92,8 @@ To reopen a session elsewhere, upload its original videos, open **Multiple camer
 This release uses manual identity association and a constant time offset per camera. It does not infer matches, calibrate camera clocks, correct clock drift, or copy geometry between viewpoints. See the [multi-camera JSON reference](docs/multicam-json.md) for identity keys, timing and import limits.
 
 ## Team annotation tools
+
+- To reclaim disk space, open the project's video table and check **Frame storage**. Select inactive videos and choose **Clear selected frame storage**. This removes only temporary decoded images after checking that the original recording is available and unchanged. Originals, frame numbers, annotations, edit history and IDs stay saved. Reopening rebuilds the exact frames from the original; large recordings may take time. Close the video in other annotation tabs before clearing it.
 
 - Open **Canvas settings** beside the zoom tools (or from right-click). By default, the selected box has a full label and other boxes show compact IDs. Choose full labels, selected-only labels, compact IDs or hidden labels, or turn off first-box confirmation. The selected box’s width × height stays visible at the bottom of the canvas automatically. Labels avoid box interiors when space allows and temporarily disappear during drawing, moving and resizing. Existing label preferences stay in this browser.
 - **View by class** uses the project palette consistently across tracks. **View by track** gives each track one color across its classes. Both are display preferences; saved annotation styles and export colors stay unchanged.

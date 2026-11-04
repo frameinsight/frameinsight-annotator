@@ -47,6 +47,20 @@ export function frameObservations(p:Project|null,vid:string,frame:number):Observ
  if(!index){index=new Map();for(const o of Object.values(rows)){const key=o.video_id+':'+o.frame_index;const list=index.get(key);if(list)list.push(o);else index.set(key,[o]);}frameIndexes.set(rows,index);}
  return index.get(vid+':'+frame)||noObservations;
 }
+// Carry the existing frame lookup across a transaction using its actual changes.
+// This avoids rebuilding a 40,000-row index after every small adjustment.
+export function inheritFrameIndex(before:Domain['observations'],after:Domain['observations'],changes:Change[]){
+ if(before===after)return;const prior=frameIndexes.get(before);if(!prior)return;
+ const next=new Map(prior),copied=new Set<string>();
+ const rows=(key:string)=>{if(!copied.has(key)){next.set(key,[...(next.get(key)||[])]);copied.add(key);}return next.get(key)!;};
+ for(const change of changes)if(change.collection==='observations'){
+  const old=change.before as Observation|null,value=change.after as Observation|null;
+  const oldKey=old&&old.video_id+':'+old.frame_index,newKey=value&&value.video_id+':'+value.frame_index;
+  if(oldKey){const list=rows(oldKey),i=list.findIndex(o=>o.id===change.id);if(i>=0){if(value&&oldKey===newKey){list[i]=value;continue;}list.splice(i,1);}}
+  if(value&&newKey)rows(newKey).push(value);
+ }
+ frameIndexes.set(after,next);
+}
 export function currentObservation(p:Project|null,vid:string,frame:number,identity:string){return frameObservations(p,vid,frame).find(o=>o.identity_uuid===identity);}
 export function identityVideoScopes(d:Domain){
  const scopes=new Map(Object.keys(d.identities).map(id=>[id,new Set<string>()]));

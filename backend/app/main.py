@@ -10,7 +10,7 @@ from contextlib import asynccontextmanager
 from pathlib import Path
 from concurrent.futures import ThreadPoolExecutor
 from fastapi import FastAPI, UploadFile, File, Form, HTTPException, WebSocket, WebSocketDisconnect, Request, Query
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field, field_validator
 from . import db
@@ -23,6 +23,7 @@ from .worker import Worker
 from .formats import export_project, parse_cvat
 from .delete_video import delete_video
 from .delete_project import delete_project
+from .frame_cache import cache_info, clear_cache, prepare_cache, activity as cache_activity
 from .review_delivery import create_review, get_review, review_metadata, validate_review, validate_annotations, validation_proof
 from .project_settings import ProjectSettings, update_settings
 from .library_metadata import video_dates
@@ -239,6 +240,25 @@ def upload(pid:str,file:UploadFile=File(...)):
     result=import_video(pid,tmp,name)
     # Originals stay available if decoding fails; no source deletion races.
     return result
+class FrameCacheActivity(BaseModel):
+    client_id:str=Field(min_length=1,max_length=100)
+    video_ids:list[str]=Field(default_factory=list,max_length=100)
+
+@app.post('/api/frame-cache/activity')
+def frame_cache_activity(body:FrameCacheActivity):
+    return cache_activity(body.client_id,body.video_ids)
+
+@app.get('/api/videos/{vid}/frame-cache')
+def frame_cache_info(vid:str): return cache_info(vid,DATA)
+
+@app.delete('/api/videos/{vid}/frame-cache')
+def frame_cache_clear(vid:str,confirmed:bool=False):
+    if not confirmed:raise ValueError('Confirm clearing decoded frames; your video and annotations will be kept')
+    return clear_cache(vid,DATA)
+
+@app.post('/api/videos/{vid}/frame-cache/prepare')
+def frame_cache_prepare(vid:str): return prepare_cache(vid,DATA)
+
 @app.get('/api/videos/{vid}/metadata')
 def metadata(vid:str): return video_get(vid)
 @app.post('/api/videos/{vid}/retry-index')
@@ -246,6 +266,7 @@ def retry_index(vid:str):
     from .video import index_video
     v=video_get(vid)
     if v['status']=='indexing':raise ValueError('Indexing is already running')
+    if v.get('frame_cache_status') in ('cleared','rebuilding','failed'):return prepare_cache(vid,DATA)
     source=Path(v['source'])
     if not source.exists():raise ValueError('Original copy is missing. Reimport the source video.')
     backup=source.with_suffix(source.suffix+'.retry');shutil.copyfile(source,backup)
@@ -259,11 +280,25 @@ def ledger(vid:str):
     with db.connect() as c:return [json.loads(r['data']) for r in c.execute('SELECT data FROM frames WHERE video_id=? ORDER BY frame_index',(vid,))]
 @app.get('/api/videos/{vid}/frames/{frame}')
 def frame_image(vid:str,frame:int):
-    video=video_get(vid)
-    if not 0<=frame<video['frame_count']:raise HTTPException(404,'Exact frame is not decoded yet')
-    path=DATA/'frames'/vid/f'{frame:08d}.png'
-    if not path.exists():raise HTTPException(404,'Decoded cache file is missing; retry indexing')
-    return FileResponse(path,media_type='image/png',headers={'Cache-Control':'private, max-age=86400, immutable','X-Frame-Key':f'{vid}:{frame}'})
+    # Copy one PNG while holding the clear/delete transaction lock. FileResponse
+    # opens later, which could race with a directory being removed on Windows.
+    with db.LOCK:
+        video=video_get(vid)
+        if not 0<=frame<video['frame_count']:raise HTTPException(404,'Exact frame is not decoded yet')
+        path=DATA/'frames'/vid/f'{frame:08d}.png'
+        if not path.exists():
+            if video.get('frame_cache_status')=='cleared' or (video.get('status')=='ready' and not path.parent.exists()):
+                # This also recovers a crash between cache-directory rename and
+                # the SQLite clear commit, which leaves old ready metadata.
+                content=None
+            elif video.get('frame_cache_status')=='rebuilding':
+                raise HTTPException(409,'Exact frames are being rebuilt. Please wait.',headers={'Retry-After':'1'})
+            else:raise HTTPException(404,'Decoded cache file is missing; retry indexing')
+        else:content=path.read_bytes()
+    if content is None:
+        prepare_cache(vid,DATA)
+        raise HTTPException(409,'Exact frames are being rebuilt. Please wait.',headers={'Retry-After':'1'})
+    return Response(content,media_type='image/png',headers={'Cache-Control':'private, max-age=86400, immutable','X-Frame-Key':f'{vid}:{frame}'})
 @app.get('/api/videos/{vid}/annotations')
 def annotations(vid:str,start:int=0,end:int=100):
     v=video_get(vid);s=db.snapshot(v['project_id'])['state']

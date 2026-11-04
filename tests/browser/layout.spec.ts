@@ -26,7 +26,7 @@ for(const width of [1440,1366])test(`compact library, class capsules and centere
  await page.route('**/api/updates/check*',route=>route.fulfill({json:{status:'current',current_version:'test',can_install:false}}));
  await page.goto('/');await page.getByTestId('open-project-'+pid).click();
  const table=page.getByRole('table',{name:'Project videos',exact:true});await expect(table).toBeVisible();
- await expect(table.getByRole('columnheader')).toHaveText(['Video','Status','Created','Last updated','Actions']);
+ await expect(table.getByRole('columnheader')).toHaveText(['Video','Status','Frame storage','Created','Last updated','Actions']);
  await expect(table.locator('tbody tr')).toHaveCount(2);await expect(page.locator('.video-library img,.video-thumbnail,.resume-video')).toHaveCount(0);
  const apiRows=await(await request.get('/api/video-library')).json();
  for(const id of videos){

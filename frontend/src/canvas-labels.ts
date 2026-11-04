@@ -7,6 +7,16 @@ export type LabelObstacle = {x:number;y:number;width:number;height:number};
 export type BoxLabel = {key:string;x:number;y:number;className:string;id:string;color:string;selected:boolean;identity:string;geometry:string;interactive:boolean};
 export type CanvasBadge = BoxLabel & LabelPlacement & {name:string;nameWidth:number;idWidth:number};
 
+// Badge fields are scalar screen-space values. Save acknowledgements may create
+// new arrays without changing anything on the canvas; avoid redrawing every
+// label (including its shadow) for those unrelated store updates.
+export function sameCanvasBadges(a:CanvasBadge[],b:CanvasBadge[]):boolean {
+ return a===b||(a.length===b.length&&a.every((badge,index)=>{
+  const other=b[index];
+  return Object.keys(badge).every(key=>badge[key as keyof CanvasBadge]===other[key as keyof CanvasBadge]);
+ }));
+}
+
 // Screen coordinates keep badges readable at every zoom level. Priority order
 // comes from the canvas, so the selected box gets the closest available spot.
 export function placeLabels<T extends LabelAnchor>(labels:T[], viewport:{width:number;height:number}, left=GAP, obstacles:LabelObstacle[]=[]):(T & LabelPlacement)[] {

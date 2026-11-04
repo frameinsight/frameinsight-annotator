@@ -103,6 +103,8 @@ def export_project(pid, settings, jid):
             native = native_manifest(project)
         eid = str(uuid.uuid4()); path = DATA / 'exports' / f'{eid}.zip'
         profile = settings['format']; exclusions = []; included = 0
+        if profile in ('dual_class', 'full_only', 'visible_only', 'mot') and any(v.get('frame_cache_status') in ('cleared','rebuilding','failed') for v in project['videos'].values()):
+            raise ValueError('Open videos whose frame storage was cleared and wait for exact frames to finish preparing before exporting a dataset with images.')
         if profile != 'native': reject_dynamic(project['state']['observations'].values())
         with zipfile.ZipFile(path, 'w', zipfile.ZIP_DEFLATED) as z:
             # Stream serialization into ZIP, avoiding an additional huge formatted

@@ -1,5 +1,5 @@
 import {describe,expect,it} from 'vitest';
-import {LABEL_HEIGHT,placeLabels,layoutLabels,hitLabel,type BoxLabel} from './canvas-labels';
+import {LABEL_HEIGHT,placeLabels,layoutLabels,hitLabel,sameCanvasBadges,type BoxLabel} from './canvas-labels';
 
 describe('canvas label placement',()=>{
   it('keeps overlapping class labels separate and gives the selected label the closest slot',()=>{
@@ -76,4 +76,17 @@ describe('canvas badge targets',()=>{
     expect(badges[1].width).toBeLessThan(badges[0].width);
     expect(hitLabel(badges,[badges[1].x+2,badges[1].y+2])?.key).toBe('two');
   });
+});
+
+
+describe('canvas badge redraws',()=>{
+ it('reuses unchanged badges while detecting every visual or hit-target change',()=>{
+  const [badge]=layoutLabels([{key:'one',x:100,y:100,className:'Person',id:'#1',color:'#00aaaa',selected:true,identity:'one',geometry:'class:Person',interactive:true}],{width:800,height:600},text=>text.length*7);
+  expect(sameCanvasBadges([badge],[{...badge}])).toBe(true);
+  expect(sameCanvasBadges([badge],[])).toBe(false);
+  for(const key of Object.keys(badge) as (keyof typeof badge)[]){
+   const value=badge[key],changed={...badge,[key]:typeof value==='number'?value+1:typeof value==='boolean'?!value:value+'!'};
+   expect(sameCanvasBadges([badge],[changed]),key).toBe(false);
+  }
+ });
 });

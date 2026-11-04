@@ -54,6 +54,7 @@ def index_video(vid, source, target, jid):
             width, height = stream.codec_context.width, stream.codec_context.height
             update_video(vid, width=width, height=height, nominal_fps=float(stream.average_rate or 0), stream_index=stream.index, source_hash=digest)
             count = 0
+            cache_bytes = 0
             pending = []
             last_flush = time.monotonic()
             def flush():
@@ -78,6 +79,7 @@ def index_video(vid, source, target, jid):
                 tmp = path.with_suffix('.tmp')
                 frame.to_image().save(tmp, format='PNG', compress_level=1)
                 os.replace(tmp, path)
+                cache_bytes += path.stat().st_size
                 tb = frame.time_base or stream.time_base
                 data = {'frame_index': i, 'pts': frame.pts, 'time_base_num': tb.numerator, 'time_base_den': tb.denominator, 'seconds': float(frame.pts * tb) if frame.pts is not None else None, 'key_frame': frame.key_frame, 'decode_state': 'ready'}
                 pending.append((vid, i, json.dumps(data)))
@@ -85,7 +87,7 @@ def index_video(vid, source, target, jid):
                 if len(pending) >= 32 or time.monotonic() - last_flush >= .5: flush()
             flush()
             if not count: raise ValueError('The selected stream contains no decodable frames')
-            update_video(vid, status='ready', frame_count=count)
+            update_video(vid, status='ready', frame_count=count, source=str(target), frame_cache_status='ready', frame_cache_bytes=cache_bytes)
             job_update(jid, status='completed', progress=count, total=count)
     except Exception as e:
         update_video(vid, status='failed', error=str(e))

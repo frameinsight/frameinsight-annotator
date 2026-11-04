@@ -35,6 +35,7 @@ import {markProjectDeleted,useStore} from './store';
 import {isGeometryInterpolated,annotationKeyframes} from './interpolation';
 import {VISIBLE_ONLY,trackIdConflict,boxStyle,geometryLabel,legacyExtended,classColor,geometries,getBox,boxKeys,orderedGeometryKeys,geometryForClass} from './types';
 import {timelineBins as buildTimelineBins} from './timeline';
+import {trackClassCatalog} from './track-class-catalog';
 import {currentObservation,frameObservations,observationIssues,type Project,type Job,type Proposal,type FrameInfo,type Geometry,type Domain,uuid} from './types';
 import {hasOpenOverlay} from './shortcut-guards';
 const defaultKeys:Record<string,string>={interpolateRange:'shift+k',previousKeyframe:'[',nextKeyframe:']',hiddenRange:'shift+delete',save:'ctrl+s',next:'f',previous:'d',ahead:'shift+f',back:'shift+d',a:'1',b:'2',swap:'tab',new:'n',id:'i',equal:'e',occluded:'o',estimated:'r',unknown:'u',copy:'c',approve:'enter',approveStay:'shift+enter',complete:'ctrl+enter',gap:'g',resume:'h',finish:'t',remove:'delete',undo:'ctrl+z',redo:'ctrl+shift+z',fit:'0',help:'?',issues:']',interpolate:'k'};
@@ -53,6 +54,17 @@ export default function App(){
  const [screen,setScreen]=useState<'home'|'editor'|'finish'|'trim'|'multicam'|'multicamFinish'>('home'),[uploadBusy,setUploadBusy]=useState(false);
  const [cameraSession,setCameraSession]=useState<CameraSession|null>(null);
  const [deletedProject,setDeletedProject]=useState<{id:string;name:string}|null>(null);
+ const cacheClient=useRef(crypto.randomUUID());
+ const cacheActiveVideos=screen==='multicam'||screen==='multicamFinish'?cameraSession?.cameras.map(camera=>camera.video_id).join(',')||'':screen==='editor'||screen==='finish'?videoId:'';
+ useEffect(()=>{
+  const body={client_id:cacheClient.current,video_ids:cacheActiveVideos?cacheActiveVideos.split(','):[]};
+  const pulse=()=>void post('/frame-cache/activity',body).catch(()=>{});
+  pulse();const timer=window.setInterval(pulse,15000);
+  const release=()=>void fetch('/api/frame-cache/activity',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({client_id:cacheClient.current,video_ids:[]}),keepalive:true}).catch(()=>{});
+  window.addEventListener('pagehide',release);
+  return()=>{clearInterval(timer);window.removeEventListener('pagehide',release);};
+ },[cacheActiveVideos]);
+
  const multi=useRef<MultiCameraWorkspaceHandle>(null);
  const [colorMode,setColorMode]=useState<'class'|'track'>(()=>localStorage.getItem('frameinsight:colorMode')==='track'?'track':'class');
  const [canvasPreferences,updateCanvasPreferences]=useCanvasPreferences();
@@ -207,13 +219,13 @@ export default function App(){
  const timelineBins=useMemo(()=>buildTimelineBins(project?.state||null,videoId,video?.frame_count||0,activeId,geometry),[project?.state,videoId,activeId,video?.frame_count,geometry]);
  const keyframes=useMemo(()=>annotationKeyframes(project?.state||null,videoId,activeId,geometry),[project?.state.observations,videoId,activeId,geometry]);
  const completeCount=project?Object.values(project.state.reviews).filter(r=>r.video_id===videoId&&r.complete).length:0;
- async function openVideo(pid:string,vid:string){multi.current?.pause();setCameraSession(null);await s.saveNow();await s.load(pid);const current=useStore.getState();if(current.videoId!==vid)useStore.setState({videoId:vid,frame:0,activeId:''});setJobs([]);setLibraryProject(pid);setScreen('editor');setModal('');}
+ async function openVideo(pid:string,vid:string){multi.current?.pause();setCameraSession(null);await s.saveNow();await post(`/videos/${vid}/frame-cache/prepare`);await s.load(pid);const current=useStore.getState();if(current.videoId!==vid)useStore.setState({videoId:vid,frame:0,activeId:''});setJobs([]);setLibraryProject(pid);setScreen('editor');setModal('');}
  async function startVideo(){multi.current?.pause();canvas.current?.finish();await multi.current?.flush();await s.saveNow();open(libraryProject||project?'workflowChoice':'newProject');}
  async function home(){multi.current?.pause();canvas.current?.finish();setPlaying(false);await multi.current?.flush();await s.saveNow();setScreen('home');setModal('');}
 
  async function openCameraSession(session:CameraSession){
   canvas.current?.finish();setPlaying(false);await multi.current?.flush();await useStore.getState().saveNow();await useStore.getState().load(session.project_id);
-  const latest=await api<CameraSession>('/camera-sessions/'+session.id);setCameraSession(latest);setLibraryProject(latest.project_id);useStore.setState({activeId:''});setModal('');setScreen('multicam');
+  const latest=await api<CameraSession>('/camera-sessions/'+session.id);await Promise.all(latest.cameras.map(camera=>post(`/videos/${camera.video_id}/frame-cache/prepare`)));setCameraSession(latest);setLibraryProject(latest.project_id);useStore.setState({activeId:''});setModal('');setScreen('multicam');
  }
  function activateCamera(camera:SessionCamera,target:number|null,person:SessionPerson|null){
   const current=useStore.getState();const cameraTracks=new Set(Object.values(current.project?.state.segments||{}).filter(seg=>seg.video_id===camera.video_id).map(seg=>seg.identity_uuid));const links=person?cameraSession?.assignments.filter(a=>a.video_id===camera.video_id&&a.person_uuid===person.id&&current.project?.state.identities[a.identity_uuid]&&cameraTracks.has(a.identity_uuid)&&!current.hiddenIds[a.identity_uuid])||[]:[];const linked=links.find(a=>a.identity_uuid===current.activeId)?.identity_uuid||links[0]?.identity_uuid;
@@ -224,15 +236,11 @@ export default function App(){
  }
  async function newCameraTrack(camera:SessionCamera,_person:SessionPerson|null){
   canvas.current?.finish();const current=useStore.getState();if(current.videoId!==camera.video_id||!canvas.current?.isReady())return null;
-  current.newPerson();const id=useStore.getState().activeId;useStore.setState({unregisteredTracks:{...useStore.getState().unregisteredTracks,[id]:false}});await useStore.getState().saveNow();canvas.current?.tool('draw');return id;
+  current.newPerson();const id=useStore.getState().activeId;useStore.setState({unregisteredTracks:{...useStore.getState().unregisteredTracks,[id]:false}});canvas.current?.tool('draw');await useStore.getState().saveNow();return id;
  }
  async function finishCameras(){multi.current?.pause();canvas.current?.finish();await multi.current?.flush();await useStore.getState().saveNow();if(cameraSession)setCameraSession(await api('/camera-sessions/'+cameraSession.id));setScreen('multicamFinish');}
 
- const personClasses=useMemo(()=>{
-  const result:Record<string,{geometry:Geometry;class_name:string;color:string}[]>={};
-  if(project)for(const p of Object.values(project.state.identities))result[p.id]=orderedGeometryKeys(project,p.id,videoId).map(g=>({geometry:g,...boxStyle(p,g)}));
-  return result;
- },[project?.state,project?.classes,videoId]);
+ const personClasses=useMemo(()=>trackClassCatalog(project,videoId),[project?.state.identities,project?.state.observations,project?.state.intervals,project?.classes,videoId]);
  function chooseClass(name:string){canvas.current?.finish();setClassVisibility(name,false);s.selectClass(name);}
  function toggleClass(name:string){canvas.current?.finish();setClassVisibility(name,!hiddenClasses[name]);}
  const videoTrackIds=useMemo(()=>new Set([...Object.values(project?.state.segments||{}),...Object.values(project?.state.observations||{}),...Object.values(project?.state.intervals||{})].filter(e=>e.video_id===videoId).map(e=>e.identity_uuid)),[project?.state,videoId]);
@@ -270,7 +278,7 @@ export default function App(){
    {s.saveError&&<div role="alert" className="save-error">{s.saveError}<Button onClick={s.retry}>Retry save</Button></div>}
    <MultiCameraWorkspace key={cameraSession.id} ref={multi} session={cameraSession} onSessionChange={updated=>setCameraSession(current=>current?.id===updated.id?updated:current)} onBack={()=>void task(home)} toolbar={annotationControls} hiddenClasses={hiddenClasses} colorMode={colorMode} onBeforeNavigate={()=>canvas.current?.finish()} onCanvasSpace={down=>canvas.current?.space(down)||false} onActiveFrame={activateCamera} isActiveFrameReady={()=>canvas.current?.isReady()??false} onNewLocalTrack={newCameraTrack} onSelectLocalTrack={(_camera,id)=>{canvas.current?.finish();useStore.getState().selectPerson(id)}} onExport={()=>void task(finishCameras)} onImport={()=>open('annotationImport')} renderEditor={ctx=><EditorCanvas key={ctx.camera.id} expectedContext={{videoId:ctx.camera.video_id,frame:ctx.frame}} ref={canvas} preferences={canvasPreferences} colorMode={colorMode} onColorModeChange={changeColorMode} onControlsChange={setCanvasControls} onAction={action=>{ctx.onPause();act(action)}} dimOutside={true} hiddenClasses={hiddenClasses} proposals={[]} showProposals={false} displayLabels={ctx.personLabels} focusedIdentityIds={ctx.focusedIdentityIds} onNewTrack={()=>multi.current?.newTrack()} onSelectTrack={id=>multi.current?.selectTrack(id)} onAssignPerson={()=>multi.current?.assignTrack()}/>}/>
   </>:screen==='home'||!project?<VideoLibrary onOpenSession={openCameraSession} onTrim={()=>setScreen('trim')} key={libraryRevision} selectedProject={libraryProject} onSelectProject={setLibraryProject} onNewProject={()=>open('newProject')} onSettings={id=>open('projectSettings',{projectId:id})} onOpen={openVideo} onNew={()=>void task(startVideo)}/>:<>
-  {video?.status==='indexing'&&<div className="processing-status" role="status"><Activity size={16}/><span>{jobs.find(j=>j.video_id===videoId&&j.kind==='index'&&['queued','running'].includes(j.status))?.phase||'Preparing video'} · {video.frame_count.toLocaleString()} exact frames ready. You can annotate prepared frames while the rest loads.</span></div>}
+  {video?.status==='indexing'&&<div className="processing-status" role="status"><Activity size={16}/><span>{jobs.find(j=>j.video_id===videoId&&['index','frame-cache'].includes(j.kind)&&['queued','running'].includes(j.status))?.phase||'Preparing video'} · {(jobs.find(j=>j.video_id===videoId&&j.kind==='frame-cache'&&['queued','running'].includes(j.status))?.progress??video.frame_count).toLocaleString()} exact frames ready. You can annotate prepared frames while the rest loads.</span></div>}
   {video?.status==='failed'&&<div className="save-error"><span>{video.error||'Preparing this video was interrupted.'}</span><Button variant="outline" size="sm" onClick={()=>void task(async()=>{await post(`/videos/${videoId}/retry-index`);s.toast('Preparing the video again…')})}>Retry loading video</Button></div>}
   {s.saveError&&<div className="save-error"><AlertTriangle size={16}/><span>{s.saveError} · Your pending edits are retained.</span><Button variant="outline" size="sm" onClick={s.retry}>Retry save</Button><Button variant="outline" size="sm" onClick={()=>{const blob=new Blob([JSON.stringify({project,pending:s.pending},null,2)],{type:'application/json'});const url=URL.createObjectURL(blob);const a=document.createElement('a');a.href=url;a.download='frameinsight-recovery.json';a.click();setTimeout(()=>URL.revokeObjectURL(url),1000)}}>Download recovery</Button></div>}
   <main className="workspace">

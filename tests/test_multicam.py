@@ -254,3 +254,29 @@ def test_session_api_modes_invalid_fields_and_conflicts(cameras):
         assert client.patch(f'/api/camera-sessions/{session["id"]}', json=incomplete).status_code == 422
         assert client.post(f'/api/projects/{pid}/camera-sessions', json={**body, 'mode': 'single'}).status_code == 422
         assert client.get('/api/camera-sessions/missing').status_code == 404
+
+
+@pytest.mark.parametrize('linked', [False, True])
+def test_delete_shared_person_preserves_local_annotations_other_people_and_sessions(cameras, linked):
+    session = shared(cameras)
+    other = shared(cameras)
+    survivor = {'id': uid(), 'person_id': 9, 'name': 'Keep me', 'color': '#a3e635'}
+    session = update_session(session['id'], writable(
+        session, people=[*session['people'], survivor],
+        assignments=session['assignments'] if linked else []))
+    before = db.snapshot(cameras[0])
+    removed = update_session(session['id'], writable(session, people=[survivor], assignments=[]))
+    assert removed['people'] == [survivor]
+    assert removed['assignments'] == []
+    assert removed['revision'] == session['revision'] + 1
+    assert db.snapshot(cameras[0]) == before
+    assert get_session(other['id']) == other
+    assert validate_session_snapshot(removed, before) == removed
+    # The same snapshot is a no-op, and an old revision cannot erase newer links.
+    assert update_session(session['id'], writable(removed)) == removed
+    with pytest.raises(db.Conflict):
+        update_session(session['id'], writable(session, people=[survivor], assignments=[]))
+    undone = update_session(session['id'], writable(session, revision=removed['revision']))
+    assert undone['people'] == session['people']
+    assert undone['assignments'] == session['assignments']
+    assert db.snapshot(cameras[0]) == before
