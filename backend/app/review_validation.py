@@ -35,13 +35,14 @@ def group_warnings(warnings):
     return sorted(result, key=lambda row: (row.get('frame_index', -1), row.get('person_id') or 0, row['code']))
 
 
-def validate_document(document):
+def validate_document(document, *, check_serialization=True):
     errors, warnings, checks = [], [], []
     def error(code, message, **location): errors.append({'code': code, 'message': message, **location})
     def check(name, before): checks.append({'name': name, 'passed': len(errors) == before})
     before = len(errors)
-    try: json.loads(json.dumps(document, allow_nan=False, ensure_ascii=False))
-    except (ValueError, TypeError) as e: error('json_serialization', f'The annotation document cannot be serialized as JSON: {e}')
+    if check_serialization:
+        try: json.loads(json.dumps(document, allow_nan=False, ensure_ascii=False))
+        except (ValueError, TypeError) as e: error('json_serialization', f'The annotation document cannot be serialized as JSON: {e}')
     check('JSON serialization', before)
     before = len(errors)
     if document.get('format') != 'frameinsight.annotations' or document.get('schema_version') != 3:

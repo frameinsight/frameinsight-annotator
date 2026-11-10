@@ -4,27 +4,24 @@ Shared people belong to a camera session. Equal local track numbers never imply
 an association, and importing a session never overwrites existing video tracks.
 """
 import copy
-import gzip
 import hashlib
-import io
 import json
 import re
 import uuid
+from itertools import chain, zip_longest
 from pathlib import Path
 
-import ijson
 from fastapi import APIRouter, File, Form, UploadFile
 from fastapi.responses import FileResponse
-from ijson.common import ObjectBuilder
 from pydantic import BaseModel, Field
 
 from . import db
 from .annotation_export import annotation_document
 from .config import DATA, safe_path
 from .export_names import json_filename
-from .json_stream import JSON_STATE_LIMIT, JSON_UPLOAD_LIMIT, LimitedReader, UniqueKeys
 from .multicam import get_session, insert_session, validate_session_snapshot
-from .native_annotations import preview_native
+from .native_annotations import preview_native_document
+from .session_json import SessionDocument, read_session_json
 from .review_validation import LIMITATION, validate_document
 from .schema import Operation, validate_state
 from .version import APP_VERSION
@@ -32,6 +29,7 @@ from .video import sha256
 
 router = APIRouter()
 FORMAT = 'frameinsight.multicam.annotations'
+IMPORT_BATCH_SIZE = 49000
 
 
 class SessionValidation(BaseModel):
@@ -108,7 +106,10 @@ def _fingerprint(document):
 
 def structural_report(document):
     annotation = document['annotations']
-    report = validate_document(annotation)
+    # read_session_json has already parsed every byte and checked duplicate keys,
+    # numeric validity and nesting. Re-serializing its disk-backed row arrays
+    # would create the full large document in memory again.
+    report = validate_document(annotation, check_serialization=not isinstance(document, SessionDocument))
     session = document['session']
     project = {**annotation['project'], 'videos': annotation['videos'], 'state': annotation['state']}
     before = len(report['errors'])
@@ -124,7 +125,7 @@ def structural_report(document):
         visible = {}
         unassigned = set()
         before = len(report['errors'])
-        for row in annotation['annotation_index'] + annotation['frame_annotations']:
+        for row in chain(annotation['annotation_index'], annotation['frame_annotations']):
             vid, identity = row['video_id'], row['identity_uuid']
             shared = assignments.get((vid, identity))
             ledger = annotation['frames'].get(vid, [])
@@ -231,46 +232,18 @@ def download_session_export(eid: str, filename: str | None = None):
     return FileResponse(path, filename=json_filename(filename or data['filename']), media_type='application/json', headers={'X-Content-Type-Options': 'nosniff'})
 
 
-def read_session_json(source):
-    """Bound decoded input and retained state; accept JSON.gz without extracting files."""
-    if isinstance(source, (bytes, bytearray)):
-        source = io.BytesIO(source)
-    source.seek(0, 2)
-    if source.tell() > JSON_UPLOAD_LIMIT:
-        raise ValueError('Camera session JSON upload limit is 1 GiB')
-    source.seek(0)
-    magic = source.read(3)
-    source.seek(0)
-    compressed = magic[:2] == b'\x1f\x8b'
-    decoded = gzip.GzipFile(fileobj=source) if compressed else source
-    try:
-        if compressed:
-            if decoded.peek(3)[:3] == b'\xef\xbb\xbf': decoded.read(3)
-        elif magic == b'\xef\xbb\xbf': source.read(3)
-        builder = ObjectBuilder(map_type=UniqueKeys)
-        depth = retained = 0
-        for event, value in ijson.basic_parse(LimitedReader(decoded), use_float=True):
-            retained += len(value.encode('utf-8')) if isinstance(value, str) else 16
-            if retained > JSON_STATE_LIMIT:
-                raise ValueError('Camera session state exceeds 128 MiB. Import a smaller session.')
-            if event in ('start_map', 'start_array'): depth += 1
-            elif event in ('end_map', 'end_array'): depth -= 1
-            if depth > 64: raise ValueError('Camera session JSON is nested too deeply')
-            builder.event(event, value)
-        document = builder.value
-        if not isinstance(document, dict) or document.get('format') != FORMAT or document.get('schema_version') != 1:
-            raise ValueError('Choose a Frameinsight multi-camera annotation JSON version 1.')
-        def plain(value):
-            if isinstance(value, dict): return {key: plain(item) for key, item in value.items()}
-            if isinstance(value, list): return [plain(item) for item in value]
-            return value
-        # Duplicate-key guards are parser-only. The importer scopes and remaps
-        # its private copy, so existing fields must be writable after parsing.
-        return plain(document)
-    except (ijson.JSONError, UnicodeError, EOFError, OSError, OverflowError) as error:
-        raise ValueError('Choose a complete, valid camera session JSON or JSON.gz file.') from error
-    finally:
-        if compressed: decoded.close()
+def _scope_import_state(source, video_id):
+    """A camera's editable records, without copying all cameras and indexes."""
+    state = source['state']
+    people = {row['identity_uuid'] for col in ('segments', 'observations', 'intervals')
+              for row in state[col].values() if row['video_id'] == video_id}
+    selected = {col: {key: row for key, row in state[col].items() if row['video_id'] == video_id}
+                for col in ('segments', 'observations', 'intervals', 'reviews', 'proposal_reviews')}
+    selected['identities'] = {key: row for key, row in state['identities'].items() if key in people}
+    selected['links'] = {key: row for key, row in state['links'].items()
+                         if row['source'] in people and row['target'] in people}
+    return {'format': source['format'], 'schema_version': source['schema_version'],
+            'videos': {video_id: source['videos'][video_id]}, 'state': selected}
 
 
 def import_session_document(pid, document, video_mapping, project_revision):
@@ -290,7 +263,9 @@ def import_session_document(pid, document, video_mapping, project_revision):
         if project['revision'] != project_revision:
             raise db.Conflict(project['revision'])
         changes, identity_map, warnings = [], {}, []
-        working = copy.deepcopy(project)
+        # Imported rows are newly allocated. Keep existing records read-only and
+        # copy only collection maps instead of every existing box for each camera.
+        working = {**project, 'state': {key: dict(rows) for key, rows in project['state'].items()}}
         working['classes'] = list(dict.fromkeys(project['classes'] + source['classes']))
         if len(working['classes']) > 100:
             raise ValueError('Import would exceed the project limit of 100 classes')
@@ -303,17 +278,18 @@ def import_session_document(pid, document, video_mapping, project_revision):
                 raise ValueError('Every mapped target video must belong to this project and finish indexing.')
             if not original.get('source_hash') or original['source_hash'] != target.get('source_hash'):
                 raise ValueError('The mapped video SHA-256 must match the original recording exactly.')
-            ledger = [json.loads(r['data']) for r in c.execute('SELECT data FROM frames WHERE video_id=? ORDER BY frame_index', (new_vid,))]
-            signature = lambda frames: [(f['frame_index'], f['pts'], f['time_base_num'], f['time_base_den']) for f in frames]
-            if signature(ledger) != signature(source['frames'][old_vid]):
+            ledger = (json.loads(r['data']) for r in c.execute('SELECT data FROM frames WHERE video_id=? ORDER BY frame_index', (new_vid,)))
+            signature = lambda f: tuple(f[k] for k in ('frame_index', 'pts', 'time_base_num', 'time_base_den'))
+            if any(a is None or b is None or signature(a) != signature(b)
+                   for a, b in zip_longest(ledger, source['frames'][old_vid])):
                 raise ValueError('The mapped source frame ledger differs from the exported recording.')
-            scoped = scope_document(source, [old_vid])
+            scoped = _scope_import_state(source, old_vid)
             if not scoped['state']['identities']:
                 if any(original.get(k) != target.get(k) for k in ('width', 'height', 'frame_count')):
                     raise ValueError('Video dimensions or frame count do not match the exported video')
                 continue
-            minimal = {key: scoped[key] for key in ('format', 'schema_version', 'videos', 'state')}
-            preview = preview_native(json.dumps(minimal, allow_nan=False).encode(), working, new_vid, 'add')
+            preview = preview_native_document(scoped, working, new_vid, 'add',
+                                              max_entities=None, max_boxes=None, validate_merged=False)
             new_identities = [ch['id'] for ch in preview['changes'] if ch['collection'] == 'identities']
             for old, new in zip(scoped['state']['identities'], new_identities, strict=True):
                 identity_map[(old_vid, old)] = new
@@ -323,8 +299,6 @@ def import_session_document(pid, document, video_mapping, project_revision):
                 working['state'][change['collection']][change['id']] = change['after']
             for name in preview['classes']:
                 if name not in working['classes']: working['classes'].append(name)
-        if len(changes) > 49000:
-            raise ValueError('Import at most 49,000 annotation entities in one camera session.')
         people_map = {p['id']: str(uuid.uuid4()) for p in document['session']['people']}
         body = {'name': document['session']['name'],
                 'cameras': [{**cam, 'id': str(uuid.uuid4()), 'video_id': video_mapping[cam['video_id']]} for cam in document['session']['cameras']],
@@ -332,7 +306,6 @@ def import_session_document(pid, document, video_mapping, project_revision):
                 'assignments': [{**a, 'video_id': video_mapping[a['video_id']], 'identity_uuid': identity_map[(a['video_id'], a['identity_uuid'])],
                                  'person_uuid': people_map[a['person_uuid']]} for a in document['session']['assignments']]}
         validate_state(working['state'], working['videos'], visible_only=True, structural_only=True)
-        operation = Operation(id=str(uuid.uuid4()), base_revision=project_revision, label='Import multi-camera annotations', changes=changes)
         for change in changes:
             c.execute('INSERT INTO entities VALUES(?,?,?,?)', (pid, change['collection'], change['id'], json.dumps(change['after'])))
         palette = dict(project['class_colors'])
@@ -340,11 +313,18 @@ def import_session_document(pid, document, video_mapping, project_revision):
             if name in source_palette: palette.setdefault(name, source_palette[name])
         for person in working['state']['identities'].values():
             for style in person.get('box_styles', {}).values(): palette.setdefault(style['class_name'], style['color'])
+        # Large session imports are one atomic transaction containing bounded
+        # history records. No partial camera import can escape a failed commit.
+        revision = project_revision
+        for offset in range(0, max(len(changes), 1), IMPORT_BATCH_SIZE):
+            operation = Operation(id=str(uuid.uuid4()), base_revision=revision,
+                                  label='Import multi-camera annotations', changes=changes[offset:offset+IMPORT_BATCH_SIZE])
+            revision += 1
+            c.execute('INSERT INTO operations VALUES(?,?,?,?,?)', (operation.id, pid, revision, operation.model_dump_json(), db.now()))
         c.execute('UPDATE projects SET revision=?,classes=?,class_colors=? WHERE id=?',
-                  (project_revision+1, json.dumps(working['classes']), json.dumps(palette), pid))
-        c.execute('INSERT INTO operations VALUES(?,?,?,?,?)', (operation.id, pid, project_revision+1, operation.model_dump_json(), db.now()))
+                  (revision, json.dumps(working['classes']), json.dumps(palette), pid))
         session = insert_session(c, pid, body)
-        return {'session': session, 'project_revision': project_revision+1,
+        return {'session': session, 'project_revision': revision,
                 'mapping': [{'source_video_id': vid, 'source_identity_uuid': old, 'video_id': video_mapping[vid], 'identity_uuid': new} for (vid, old), new in identity_map.items()],
                 'warnings': list(dict.fromkeys(warnings)), 'summary': {'cameras': len(body['cameras']), 'tracks': len(identity_map), 'shared_people': len(people_map)}}
 
@@ -355,13 +335,18 @@ def import_session(pid: str, file: UploadFile = File(...), video_mapping: str = 
         mapping = json.loads(video_mapping)
     except (ValueError, TypeError) as error:
         raise ValueError('Provide an explicit source-to-target video mapping as JSON.') from error
-    return import_session_document(pid, read_session_json(file.file), mapping, project_revision)
+    with read_session_json(file.file) as document:
+        return import_session_document(pid, document, mapping, project_revision)
 
 
 @router.post('/api/projects/{pid}/camera-sessions/import/preview')
 def preview_session_import(pid: str, file: UploadFile = File(...)):
     db.snapshot(pid)
-    document = read_session_json(file.file)
+    with read_session_json(file.file) as document:
+        return _preview_session_import(document)
+
+
+def _preview_session_import(document):
     try:
         report = structural_report(document)
     except (KeyError, TypeError, AttributeError, IndexError) as error:

@@ -218,11 +218,138 @@ def test_unassigned_and_same_camera_overlap_are_review_warnings(camera_project):
 def test_gzip_and_duplicate_json_key_rejection(camera_project):
     pid, _, _, session = camera_project
     document = doc(session, pid)
-    assert delivery.read_session_json(gzip.compress(json.dumps(document).encode())) == document
+    with delivery.read_session_json(gzip.compress(json.dumps(document).encode())) as parsed:
+        assert parsed['session'] == document['session']
+        assert parsed['annotations']['state'] == document['annotations']['state']
+        assert delivery.structural_report(parsed)['passed']
     with pytest.raises(ValueError, match='Duplicate'):
         delivery.read_session_json(b'{"format":1,"format":2}')
     with pytest.raises(ValueError):
         delivery.read_session_json(b'{"format":')
+
+
+def test_import_reader_spools_redundant_rows_and_skips_history(camera_project, monkeypatch):
+    from backend.app import session_json
+    pid, _, _, session = camera_project
+    document = doc(session, pid)
+    rows = document['annotations']['annotation_index'] * 500
+    document['annotations']['annotation_index'] = rows
+    document['annotations']['operations'] = [{'old_edit': 'x' * 200000}]
+    document['validation'] = {'old_proof': 'x' * 200000}
+    monkeypatch.setattr(session_json, 'JSON_STATE_LIMIT', 50000)
+    with delivery.read_session_json(json.dumps(document).encode()) as parsed:
+        spool = parsed['annotations']['annotation_index']
+        assert isinstance(spool, session_json.DiskRows)
+        assert len(spool) == len(rows)
+        assert spool[0] == rows[0] and spool[-1] == rows[-1]
+        assert 'operations' not in parsed['annotations'] and 'validation' not in parsed
+        assert parsed['annotations']['state'] == document['annotations']['state']
+    assert spool.file.closed
+
+
+@pytest.mark.parametrize('compressed', [False, True])
+def test_streamed_import_checks_every_projection_and_preserves_state(camera_project, compressed):
+    pid, videos, _, session = camera_project
+    document = doc(session, pid)
+    document['annotations']['annotation_index'][-1]['shared_person_id'] = 999
+    raw = json.dumps(document).encode()
+    if compressed:
+        raw = gzip.compress(raw)
+    before = db.snapshot(pid)
+    with delivery.read_session_json(raw) as parsed:
+        with pytest.raises(ValueError, match='Shared identity'):
+            delivery.import_session_document(pid, parsed, {v: v for v in videos[:2]}, 0)
+        handles = [rows.file for rows in parsed.rows]
+    assert all(handle.closed for handle in handles)
+    assert db.snapshot(pid) == before
+
+
+def test_session_parser_enforces_editable_state_row_and_input_limits(camera_project, monkeypatch):
+    from backend.app import session_json
+    pid, _, _, session = camera_project
+    raw = json.dumps(doc(session, pid)).encode()
+    with monkeypatch.context() as patch:
+        patch.setattr(session_json, 'JSON_STATE_LIMIT', 100)
+        with pytest.raises(ValueError, match='Editable camera annotations'):
+            delivery.read_session_json(raw)
+    with monkeypatch.context() as patch:
+        patch.setattr(session_json, 'ROW_LIMIT', 100)
+        with pytest.raises(ValueError, match='JSON row'):
+            delivery.read_session_json(raw)
+    with monkeypatch.context() as patch:
+        compressed = gzip.compress(raw)
+        patch.setattr(session_json, 'JSON_UPLOAD_LIMIT', len(compressed)+1)
+        with pytest.raises(ValueError, match='after decompression'):
+            delivery.read_session_json(compressed)
+
+
+@pytest.mark.parametrize('suffix', [
+    ',"operations":[{"same":1,"same":2}]}',
+    ',"operations":[{"broken":]}',
+])
+def test_session_parser_validates_skipped_history(suffix):
+    raw = ('{"format":"frameinsight.multicam.annotations","schema_version":1' + suffix).encode()
+    with pytest.raises(ValueError):
+        delivery.read_session_json(raw)
+
+
+def test_session_parser_closes_temporary_rows_after_truncated_input(camera_project, monkeypatch):
+    from backend.app import session_json
+    pid, _, _, session = camera_project
+    handles = []
+    original = session_json.TemporaryFile
+    def tracked_file(*args, **kwargs):
+        handle = original(*args, **kwargs)
+        handles.append(handle)
+        return handle
+    monkeypatch.setattr(session_json, 'TemporaryFile', tracked_file)
+    raw = json.dumps(doc(session, pid)).encode()
+    with pytest.raises(ValueError, match='complete, valid'):
+        delivery.read_session_json(raw[:-1])
+    assert handles and all(handle.closed for handle in handles)
+
+
+@pytest.mark.parametrize('compressed', [False, True])
+def test_session_parser_keeps_bom_support(camera_project, compressed):
+    pid, _, _, session = camera_project
+    raw = b'\xef\xbb\xbf' + json.dumps(doc(session, pid)).encode()
+    if compressed:
+        raw = gzip.compress(raw)
+    with delivery.read_session_json(raw) as document:
+        assert delivery.structural_report(document)['passed']
+
+
+def test_session_import_records_bounded_batches_atomically(camera_project, monkeypatch):
+    pid, videos, _, session = camera_project
+    document = doc(session, pid)
+    original = copy.deepcopy(document)
+    monkeypatch.setattr(delivery, 'IMPORT_BATCH_SIZE', 3)
+    result = delivery.import_session_document(pid, document, {v: v for v in videos[:2]}, 0)
+    with db.connect() as connection:
+        records = list(connection.execute('SELECT revision,data FROM operations WHERE project_id=? ORDER BY revision', (pid,)))
+    assert len(records) > 1
+    assert [r['revision'] for r in records] == list(range(1, len(records)+1))
+    assert result['project_revision'] == db.snapshot(pid)['revision'] == len(records)
+    assert all(len(Operation.model_validate_json(row['data']).changes) <= 3 for row in records)
+    assert all(json.loads(row['data'])['base_revision'] == row['revision'] - 1 for row in records)
+    assert document == original
+    assert checked(result['session'], result['project_revision'])['passed']
+
+
+def test_session_import_rolls_back_all_batches_on_session_failure(camera_project, monkeypatch):
+    pid, videos, _, session = camera_project
+    document = doc(session, pid)
+    before = db.snapshot(pid)
+    monkeypatch.setattr(delivery, 'IMPORT_BATCH_SIZE', 3)
+    def fail_after_operations(*_):
+        raise ValueError('Simulated final session write failure')
+    monkeypatch.setattr(delivery, 'insert_session', fail_after_operations)
+    with pytest.raises(ValueError, match='Simulated'):
+        delivery.import_session_document(pid, document, {v: v for v in videos[:2]}, 0)
+    assert db.snapshot(pid) == before
+    with db.connect() as connection:
+        assert connection.execute('SELECT COUNT(*) FROM operations WHERE project_id=?', (pid,)).fetchone()[0] == 0
+    assert len(list_sessions(pid)) == 1
 
 
 def test_native_backup_and_restore_preserve_sessions_without_touching_single_video(camera_project):

@@ -136,7 +136,7 @@ New exports use `format: "frameinsight.annotations"`, `schema_version: 3`.
 
 ### Large files and backups
 
-Frameinsight JSON imports accept `.json` and `.json.gz` up to **1 GiB** (compressed input and decoded content). The importer streams older history-heavy files and retains only the current annotation state. No manual editing of the JSON is needed. Import limits are 49,000 entities, 45,000 boxes, and 128 MiB of retained state; YOLO/MOT uploads retain their separate 50 MiB limit. The preview changes nothing until you choose Add or confirm Replace.
+Frameinsight JSON imports accept `.json` and `.json.gz` up to **1 GiB** (compressed input and decoded content). The importer streams older history-heavy files and retains only the current annotation state. No manual editing of the JSON is needed. Single-video import limits are 49,000 entities, 45,000 boxes, and 128 MiB of retained state; YOLO/MOT uploads retain their separate 50 MiB limit. The preview changes nothing until you choose Add or confirm Replace. [Multi-camera session imports](docs/multicam-json.md#validation-and-import) keep large frame ledgers and repeated box listings in temporary disk storage, with a separate 128 MiB budget for editable state and session metadata. Larger session imports save bounded operation batches atomically.
 
 Project backups preserve complete editing history in a compressed ZIP. Their native JSON metadata can be up to 1 GiB uncompressed; keep the original videos separately. Gzip makes a large legacy file easier to transfer but does not change its decoded-content limit.
 

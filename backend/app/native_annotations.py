@@ -23,9 +23,17 @@ def replacement_changes(project, video_id):
 
 
 def preview_native(raw, project, video_id, mode='add'):
+    return preview_native_document(read_annotation_json(raw), project, video_id, mode)
+
+
+def preview_native_document(doc, project, video_id, mode='add', *, max_entities=49000, max_boxes=45000, validate_merged=True):
+    """Remap already parsed state; session imports are bounded before this call.
+
+    Regular single-video uploads retain their operation-size limits. The session
+    importer writes multiple bounded operations in one SQLite transaction.
+    """
     if mode not in ('add', 'replace'):
         raise ValueError('Choose Add or Replace annotations')
-    doc = read_annotation_json(raw)
     if not isinstance(doc, dict) or doc.get('format') != 'frameinsight.annotations' or doc.get('schema_version') not in (2, 3):
         raise ValueError('Expected Frameinsight annotation JSON version 2 or 3')
     videos, state = doc.get('videos'), doc.get('state')
@@ -44,7 +52,7 @@ def preview_native(raw, project, video_id, mode='add'):
         values = state.get(collection, {})
         if not isinstance(values, dict):
             raise ValueError('Invalid annotation state collection')
-        if sum(len(v) for v in normalized.values()) + len(values) > 49000:
+        if max_entities is not None and sum(len(v) for v in normalized.values()) + len(values) > max_entities:
             raise ValueError('Import at most 49,000 entities at a time')
         normalized[collection] = {}
         for key, value in values.items():
@@ -55,7 +63,7 @@ def preview_native(raw, project, video_id, mode='add'):
     if any(p['person_id'] is None for p in normalized['identities'].values()):
         raise ValueError('Every imported track needs a numeric ID')
     boxes = sum(len(list(box_items(o))) for o in normalized['observations'].values())
-    if boxes > 45000:
+    if max_boxes is not None and boxes > max_boxes:
         raise ValueError('Import at most 45,000 boxes at a time')
     if not normalized['identities']:
         raise ValueError('No tracks found in this export')
@@ -66,7 +74,7 @@ def preview_native(raw, project, video_id, mode='add'):
     # Never trust exported identity UUIDs to join current tracks implicitly.
     ids = {collection: {key: str(uuid.uuid4()) for key in values} for collection, values in normalized.items()}
     removals = replacement_changes(project, video_id) if mode == 'replace' else []
-    retained = copy.deepcopy(project['state'])
+    retained = {collection: dict(values) for collection, values in project['state'].items()}
     for change in removals:
         del retained[change['collection']][change['id']]
     used = {retained['identities'][ident]['person_id'] for ident in video_identity_ids(retained, video_id)}
@@ -103,15 +111,16 @@ def preview_native(raw, project, video_id, mode='add'):
                 for provenance in row['provenance'].values():
                     provenance['proposal_id'] = None
             changes.append({'collection': collection, 'id': row['id'], 'before': None, 'after': row})
-    if len(changes) > 49000:
+    if max_entities is not None and len(changes) > max_entities:
         raise ValueError('This replacement exceeds the 49,000-entity import limit. Use a separate video or a smaller annotation file.')
-    merged = copy.deepcopy(project['state'])
-    for change in changes:
-        if change['after'] is None:
-            del merged[change['collection']][change['id']]
-        else:
-            merged[change['collection']][change['id']] = change['after']
-    validate_state(merged, project['videos'], visible_only=True, structural_only=True)
+    if validate_merged:
+        merged = {collection: dict(values) for collection, values in project['state'].items()}
+        for change in changes:
+            if change['after'] is None:
+                del merged[change['collection']][change['id']]
+            else:
+                merged[change['collection']][change['id']] = change['after']
+        validate_state(merged, project['videos'], visible_only=True, structural_only=True)
     warnings = ['Imported annotations need a fresh visual review and validation. Exported validation and edit history are not restored; use a project backup for full history.']
     if not source.get('source_hash') or not target.get('source_hash'):
         warnings.append('A video fingerprint is unavailable. Dimensions and frame count match; confirm visually that this is the correct video.')
