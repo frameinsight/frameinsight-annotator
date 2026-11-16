@@ -42,3 +42,7 @@ it('project cleanup removes its checkpoints and operations without deleting anot
  expect(await readRecovery(a.after.id)).toBeUndefined();expect((await readRecovery(b.after.id)).project).toEqual(b.after);
  expect([...disk.values.keys()].some(key=>key.includes(a.after.id))).toBe(false);
 });
+
+it('reads a complete settings snapshot even if it carries stale compact-journal markers',async()=>{
+ const project=fixture();const full={...record(project,[]),journalVersion:3,checkpointKey:'obsolete',operations:['obsolete']};disk.values.set(journalKey(project.id),full);expect((await readRecovery(project.id)).project).toEqual(project);
+});

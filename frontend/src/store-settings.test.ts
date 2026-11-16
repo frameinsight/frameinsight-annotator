@@ -117,6 +117,16 @@ describe('atomic project settings in the annotation store', () => {
     expect(mocks.set).toHaveBeenCalledWith('frameinsight:journal:inactive', expect.objectContaining({project: expected, pending: [], history: [], redoStack: [], geometry: classKey('Pedestrian'), frame: 3, activeId: 'p'}));
   });
 
+  it('rewrites inactive compact recovery as a complete snapshot after changing its classes', async () => {
+    const {project, operation} = fixture('inactive-compact');
+    // readRecovery materializes a compact journal before settings are changed.
+    mocks.get.mockResolvedValueOnce({project, pending: [], history: [operation], redoStack: [], videoId: 'v', frame: 3, activeId: 'p', geometry: classKey('Person'),journalVersion:3,checkpointKey:'previous',operations:[operation]});
+    const saved=renamed(project);mocks.api.mockResolvedValueOnce(saved);
+    await useStore.getState().saveProjectSettings(project.id, settings());
+    const write=(mocks.set.mock.calls as any[][]).find((args:any[])=>args[0]==='frameinsight:journal:'+project.id)!;
+    expect(write[1].project).toEqual(saved);expect(write[1].journalVersion).toBeUndefined();expect(write[1].checkpointKey).toBeUndefined();expect(write[1].operations).toBeUndefined();
+  });
+
   it('does not revive old class keys from stale local undo history on project load', async () => {
     const {project, operation} = fixture();
     const remote = renamed(project);

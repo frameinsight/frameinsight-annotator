@@ -138,3 +138,14 @@ test('project settings rejects duplicate class names and reloads stale settings 
   expect(after.name).toBe(name + ' final');
   expect(after.state).toEqual(before.state);
 });
+
+test('editing an inactive project with compact recovery reopens its renamed classes without losing annotations',async({page,request})=>{
+ const {pid,vid,name,identity}=await fixture(request);
+ await page.route('**/api/updates/check*',route=>route.fulfill({json:{status:'current',current_version:'test',can_install:false}}));
+ await page.goto('/');await page.getByTestId('open-project-'+pid).click();await page.getByTestId('open-video-'+vid).click();await expect(page.getByTestId('canvas')).toHaveAttribute('data-frame','0');
+ await page.getByRole('button',{name:'Save',exact:true}).click();await expect(page.locator('.save-status')).toHaveText('Saved');
+ await page.reload();await page.getByRole('button',{name:'Edit project '+name,exact:true}).click();await page.getByLabel('Class name 1',{exact:true}).fill('Pedestrian');await saveSettings(page);
+ await page.getByTestId('open-project-'+pid).click();await page.getByTestId('open-video-'+vid).click();await expect(page.getByTestId('canvas')).toHaveAttribute('data-frame','0');await expect(page.getByRole('button',{name:'Select Track 7',exact:true}).locator('small')).toHaveText(['Pedestrian','Extended']);
+ await page.reload();await page.getByTestId('open-project-'+pid).click();await page.getByTestId('open-video-'+vid).click();await expect(page.getByTestId('canvas')).toHaveAttribute('data-frame','0');
+ const saved=await(await request.get('/api/projects/'+pid)).json();expect(saved.state.identities[identity.id].person_id).toBe(7);expect(Object.keys(saved.state.observations)).toHaveLength(11);await expect(page.getByRole('alert')).toHaveCount(0);
+});

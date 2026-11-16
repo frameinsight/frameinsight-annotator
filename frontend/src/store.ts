@@ -100,7 +100,8 @@ export const useStore=create<Store>((set,get)=>({
     // Local undo stacks are cleared because older implicit class slots may
     // acquire explicit styles and no longer match compensation snapshots.
     const changed=saved.revision!==local.project?.revision||!same(saved.classes,local.project?.classes)||saved.name!==local.project?.name;
-    const record={...local,project:saved,geometry:mappedGeometry(local.geometry||classKey(saved.classes?.[0]||'Person'),local.activeId),activeId:saved.state.identities[local.activeId]?local.activeId:'',pending:[],history:changed?[]:local.history||[],redoStack:changed?[]:local.redoStack||[]};
+    const {journalVersion:_version,checkpointKey:_checkpoint,operations:_operations,...snapshot}=local;
+    const record={...snapshot,project:saved,geometry:mappedGeometry(local.geometry||classKey(saved.classes?.[0]||'Person'),local.activeId),activeId:saved.state.identities[local.activeId]?local.activeId:'',pending:[],history:changed?[]:local.history||[],redoStack:changed?[]:local.redoStack||[]};
     const task=persistChain.then(()=>dbSet(journalKey(id),record));persistChain=task.catch(()=>{});
     try{await task;}catch{await dbDelete(journalKey(id));}
    }

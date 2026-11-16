@@ -33,7 +33,7 @@ export async function writeRecovery(record:any){
 }
 export async function readRecovery(id:string){
  const record=await get<any>(journalKey(id));
- if(record?.journalVersion!==2&&record?.journalVersion!==3)return record; // Older installations keep full snapshots.
+ if(record?.project?.state||record?.journalVersion!==2&&record?.journalVersion!==3)return record; // Older installations keep full snapshots.
  if(record.journalVersion===3){
   const ids=new Set<string>([...record.operations,...record.pending,...record.history,...record.redoStack]);
   const values=new Map<string,Operation>();
