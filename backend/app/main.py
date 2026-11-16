@@ -415,7 +415,7 @@ async def events(ws:WebSocket,pid:str):
     await ws.accept();seq=0;last=None
     try:
         while True:
-            state=await asyncio.to_thread(db.snapshot,pid)
+            state=await asyncio.to_thread(db.event_snapshot,pid)
             job_list=await asyncio.to_thread(jobs,pid)
             payload={'revision':state['revision'],'videos':state['videos'],'jobs':job_list,'worker':worker.status()}
             signature=json.dumps(payload,sort_keys=True)

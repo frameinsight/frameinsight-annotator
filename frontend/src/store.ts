@@ -1,3 +1,4 @@
+import {extendRecovery,writeRecovery,readRecovery,deleteRecovery,journalKey} from './recovery-journal';
 import {editTrack,canEditTrack} from './track-edit';
 import {repairMarker,repairBetweenNewBoxes} from './gap-repair';
 import {unusedBoxColor,trackColor} from './colors';
@@ -8,13 +9,14 @@ import {VISIBLE_ONLY,videoIdentityIds,trackIdConflict,legacyExtended,boxStyle,cl
 import {deleteGeometryRange,prepareGeometryFrame} from './hidden-range';
 import {copyVisibleToExtended,copyClassTrack as copyClassInDomain} from './copy-visible';
 import {previewRestoreRange as previewRecovery,restoreRange as restoreRecovery,type RestoreMode,type RestorePreview} from './restore-range';
-import {get,set as dbSet,del as dbDelete} from 'idb-keyval';
+import {set as dbSet,del as dbDelete} from 'idb-keyval';
 import {api,post} from './api';
 import {type Domain,type Project,type Operation,type Change,type Geometry,type Observation,type Proposal,uuid,currentObservation,inheritFrameIndex,emptyObservation,observationIssues,validateDomain} from './types';
 export type ProjectSettingsUpdate={base_revision:number;name:string;class_renames:Record<string,string>;new_classes?:string[];deleted_classes?:string[];deletion_confirmed?:boolean;request_id:string};
 export type ProjectDeletionResult={deleted:boolean;project_id:string;cleanup_warning?:string|null};
 type Store={deletingProjectId:string|null;deleteProject:(id:string,revision:number)=>Promise<ProjectDeletionResult>;unregisteredTracks:Record<string,boolean>;settingsSaving:boolean;saveProjectSettings:(id:string,update:ProjectSettingsUpdate)=>Promise<Project>;selectClass:(name:string)=>void;copyClassTrack:(source:Geometry,targetClass:string)=>boolean;previewRestoreRange:(start:number,end:number,mode:RestoreMode,operations?:Operation[])=>RestorePreview;restoreRange:(start:number,end:number,mode:RestoreMode,operations?:Operation[])=>boolean;copyVisibleToExtended:()=>void;forgetProject:(id:string)=>Promise<void>;markHiddenRange:(start:number,end:number)=>boolean;saveNow:()=>Promise<void>;hiddenIds:Record<string,boolean>;togglePersonVisibility:(id:string)=>void;focusPerson:(id:string)=>void;showAllPeople:()=>void;selectPerson:(id:string)=>void;deletePerson:(id:string)=>boolean;assignPerson:(target:string,personId:number|null,className:string,color:string,geometry?:Geometry)=>boolean;frameTimes:Record<string,(number|null)[]>;fillInterpolation:()=>void;project:Project|null;videoId:string;frame:number;activeId:string;geometry:Geometry;saveStatus:string;saveError:string;notice:string;pending:Operation[];history:Operation[];redoStack:Operation[];ready:boolean;load:(id:string)=>Promise<void>;commit:(label:string,fn:(d:Domain)=>void,trackOnly?:boolean)=>boolean;navigate:(n:number)=>void;undo:()=>void;redo:()=>void;retry:()=>void;newPerson:()=>void;editObservation:(label:string,fn:(o:Observation)=>void,propagate?:boolean)=>void;setBox:(geometry:Geometry,box:Box|null,proposal?:Proposal,context?:{videoId:string;frame:number;activeId:string})=>void;equal:()=>void;copyPrevious:()=>void;approve:()=>boolean;rename:(id:string,n:number|null)=>void;toast:(message:string)=>void;};
-let pumpRunning=false;let persistChain=Promise.resolve();
+let pumpTask:Promise<void>|null=null;let persistChain=Promise.resolve();
+let lastPersisted:{record:any;task:Promise<void>}|null=null;
 const deletedProjects=new Set<string>();
 export function markProjectDeleted(id:string){
  deletedProjects.add(id);
@@ -23,33 +25,34 @@ export function markProjectDeleted(id:string){
 function assertProjectExists(id:string){if(deletedProjects.has(id))throw new Error('This project was deleted. It cannot be saved or reopened.');}
 const clone=<T,>(x:T):T=>structuredClone(x);
 const same=(a:any,b:any)=>JSON.stringify(a)===JSON.stringify(b);
-const journalKey=(id:string)=>'frameinsight:journal:'+id;
 const positionKey=(id:string)=>'frameinsight:position:'+id;
 function persist(){
  const s=useStore.getState();if(!s.project)return Promise.resolve();
- // Store transactions replace their changed records; this snapshot is immutable.
- // IndexedDB performs its own structured clone. Cloning it here again stalls
- // every mouse release, twice per acknowledgement, for large projects.
+ // Capture immutable references, then serialize checkpoint/operation writes.
+ // Repeated Save calls with identical content share the same durable write.
  const record={project:s.project,pending:s.pending,history:s.history,redoStack:s.redoStack,videoId:s.videoId,frame:s.frame,activeId:s.activeId,geometry:s.geometry};
- const task=persistChain.then(()=>dbSet(journalKey(record.project.id),record));
- persistChain=task.catch(()=>{});return task;
+ const previous=lastPersisted?.record;
+ if(previous?.project===record.project&&previous.pending===record.pending&&previous.history===record.history&&previous.redoStack===record.redoStack)return lastPersisted!.task;
+ const task=persistChain.then(()=>writeRecovery(record));
+ lastPersisted={record,task};persistChain=task.catch(()=>{if(lastPersisted?.task===task)lastPersisted=null;});return task;
 }
-async function durableAndPump(){try{await persist();useStore.setState({saveStatus:useStore.getState().pending.length?'Saved locally':'Saved'});void pump();}catch(e){useStore.setState({saveStatus:'Save failed',saveError:'Browser storage failed. Keep this tab open and export a recovery copy. '+String(e)});}}
-async function pump(){
- if(pumpRunning)return;pumpRunning=true;
- try{while(useStore.getState().pending.length){
+async function durableAndPump(){try{await persist();void pump();}catch(e){useStore.setState({saveStatus:'Save failed',saveError:'Browser storage failed. Keep this tab open and export a recovery copy. '+String(e)});}}
+function pump():Promise<void>{
+ if(pumpTask)return pumpTask;
+ pumpTask=Promise.resolve().then(async()=>{try{while(useStore.getState().pending.length){
   const s=useStore.getState(), op=s.pending[0], pid=s.project!.id;
-  assertProjectExists(pid);useStore.setState({saveStatus:'Saving'});
+  assertProjectExists(pid);await persist();useStore.setState({saveStatus:'Saving'});
   const result=await post('/projects/'+pid+'/operations',op);
   assertProjectExists(pid);if(useStore.getState().project?.id!==pid)break;
   if(result.classes)useStore.setState({project:{...useStore.getState().project!,classes:result.classes,class_colors:result.class_colors}});
   useStore.setState({pending:useStore.getState().pending.filter(p=>p.id!==op.id),saveError:''});await persist();
  }
  useStore.setState({saveStatus:'Saved'});
- }catch(e){useStore.setState({saveStatus:'Save failed',saveError:String(e)});}finally{pumpRunning=false;}
+ }catch(e){useStore.setState({saveStatus:'Save failed',saveError:String(e)});}finally{pumpTask=null;}});
+ return pumpTask;
 }
 function queue(op:Operation,state:Domain,history:Operation[],redoStack:Operation[]){
- const s=useStore.getState();inheritFrameIndex(s.project!.state.observations,state.observations,op.changes);useStore.setState({project:{...s.project!,state,revision:s.project!.revision+1},pending:[...s.pending,op],history,redoStack,saveStatus:'Saving',saveError:''});void durableAndPump();
+ const s=useStore.getState();const project={...s.project!,state,revision:s.project!.revision+1};extendRecovery(s.project!,project,op);inheritFrameIndex(s.project!.state.observations,state.observations,op.changes);useStore.setState({project,pending:[...s.pending,op],history,redoStack,saveStatus:'Saving',saveError:''});void durableAndPump();
 }
 function invalidate(before:Domain,after:Domain){
  const frames=new Set<string>(),identities=new Set<string>();
@@ -134,12 +137,12 @@ export const useStore=create<Store>((set,get)=>({
  forgetProject:async(id)=>{
   await persistChain;
   if(get().project?.id===id)set({project:null,videoId:'',frame:0,activeId:'',geometry:classKey('Person'),pending:[],history:[],redoStack:[],hiddenIds:{},unregisteredTracks:{},frameTimes:{},saveStatus:'Saved',saveError:''});
-  try{await dbDelete(journalKey(id));}finally{
+  try{await deleteRecovery(id);}finally{
    for(const key of [positionKey(id),'frameinsight:visibility:'+id,'frameinsight:classVisibility:'+id])localStorage.removeItem(key);
    if(localStorage.getItem('frameinsight:lastProject')===id)localStorage.removeItem('frameinsight:lastProject');
   }
  },
- saveNow:async()=>{if(get().project)assertProjectExists(get().project!.id);await persist();await pump();const deadline=Date.now()+30000;while(get().pending.length){if(get().saveStatus==='Save failed')throw new Error(get().saveError||'Saving failed. Your edits are kept locally.');if(Date.now()>deadline)throw new Error('Still saving. Keep this tab open and try again.');await new Promise(resolve=>setTimeout(resolve,50));if(!pumpRunning)await pump();}set({saveStatus:'Saved',saveError:''});},
+ saveNow:async()=>{if(get().project)assertProjectExists(get().project!.id);await persist();do{await pump();if(get().saveStatus==='Save failed')throw new Error(get().saveError||'Saving failed. Your edits are kept locally.');}while(get().pending.length);set({saveStatus:'Saved',saveError:''});},
  markHiddenRange:(start,end)=>{const s=get();let removed=0;const ok=s.commit(`Delete person boxes: frames ${start}–${end}`,d=>{removed=deleteGeometryRange(d,s.videoId,s.activeId,start,end,s.project!.videos[s.videoId].frame_count,s.geometry)});if(ok)s.toast(`${removed} boxes deleted. Selected box type absent on frames ${start}–${end}. Ctrl+Z undoes this.`);return ok;},
  hiddenIds:{},
  togglePersonVisibility:(id)=>{const s=get(),hidden=!s.hiddenIds[id];set({hiddenIds:{...s.hiddenIds,[id]:hidden},...(hidden&&s.activeId===id?{activeId:''}:{})});},
@@ -241,7 +244,7 @@ export const useStore=create<Store>((set,get)=>({
  assignPerson:(target,personId,className,color,chosenGeometry)=>{const s=get();if(target!==s.activeId||trackIdConflict(s.project!.state,s.activeId,personId)){s.toast('That ID belongs to another track. Choose a different ID.');return false;}const g=chosenGeometry||geometryForClass(s.project?.state.identities[target],className),sourceGeometry=s.project&&legacyExtended(s.project.state.identities[s.activeId])?'person_ext':s.geometry;const reconnect=s.activeId!==target&&s.project&&Object.values(s.project.state.observations).some(o=>o.identity_uuid===target&&getBox(o,g));const ok=s.commit('Assign existing track / class / color',d=>{assignPersonInDomain(d,s.activeId,target,s.videoId,s.frame,personId,className,color,g,sourceGeometry);if(reconnect)interpolatePerson(d,s.videoId,target,s.frameTimes[s.videoId],s.frame,geometryForClass(d.identities[target],className))});if(ok){set({unregisteredTracks:{...get().unregisteredTracks,[s.activeId]:false}});get().selectPerson(target);set({geometry:geometryForClass(get().project!.state.identities[target],className)});}return ok;},
  rename:(id,n)=>{const s=get();if(n!==null&&(!Number.isSafeInteger(n)||n<=0)){s.toast('Person ID must be a positive integer');return;}s.commit('Rename person ID',d=>{if(n!==null&&trackIdConflict(d,id,n))throw new Error('That ID is already assigned. Choose a different ID.');d.identities[id].person_id=n;});},
 }));
-async function getJournal(id:string){return get<any>(journalKey(id));}
+async function getJournal(id:string){return readRecovery(id);}
 function compensate(redo:boolean){
  const s=useStore.getState(),stack=redo?s.redoStack:s.history,original=stack.at(-1);if(!original||!s.project)return;if(deletedProjects.has(s.project.id)){s.toast('This project was deleted. Return to your projects.');return;}if(s.settingsSaving){s.toast('Wait for project settings to finish saving.');return;}
  const changes=original.changes.map(c=>({...c,before:c.after,after:c.before}));

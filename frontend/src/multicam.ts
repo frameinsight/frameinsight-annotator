@@ -59,6 +59,18 @@ export function appearanceRuns(observations:Iterable<Observation>,videoId:string
  for(const frame of frames){const last=runs[runs.length-1];if(last&&frame===last.end+1)last.end=frame;else runs.push({start:frame,end:frame});}
  return runs;
 }
+/** Visit annotations once for all camera strips, rather than once per camera. */
+export function sessionAppearanceRuns(observations:Iterable<Observation>,cameras:SessionCamera[],assignments:CameraAssignment[],personId:string):Record<string,AppearanceRun[]>{
+ const result:Record<string,AppearanceRun[]>=Object.fromEntries(cameras.map(c=>[c.id,[]]));
+ if(!personId)return result;
+ const cameraByVideo=new Map(cameras.map(c=>[c.video_id,c.id]));
+ const selected=new Map<string,Set<string>>();
+ for(const a of assignments)if(a.person_uuid===personId){if(!selected.has(a.video_id))selected.set(a.video_id,new Set());selected.get(a.video_id)!.add(a.identity_uuid);}
+ const frames=new Map<string,Set<number>>();
+ for(const o of observations){const camera=cameraByVideo.get(o.video_id);if(!camera||!selected.get(o.video_id)?.has(o.identity_uuid)||!boxKeys(o).length)continue;if(!frames.has(camera))frames.set(camera,new Set());frames.get(camera)!.add(o.frame_index);}
+ for(const [camera,values] of frames){for(const frame of [...values].sort((a,b)=>a-b)){const runs=result[camera],last=runs.at(-1);if(last&&frame===last.end+1)last.end=frame;else runs.push({start:frame,end:frame});}}
+ return result;
+}
 export function formatSessionTime(seconds:number){const sign=seconds<0?'−':'';const ms=Math.round(Math.abs(seconds)*1000);return `${sign}${Math.floor(ms/60000).toString().padStart(2,'0')}:${Math.floor(ms/1000)%60<10?'0':''}${Math.floor(ms/1000)%60}.${(ms%1000).toString().padStart(3,'0')}`;}
 
 /** History may only compensate the state it produced, never another editor's work. */

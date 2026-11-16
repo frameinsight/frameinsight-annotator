@@ -5,7 +5,7 @@ import {classKey,getBox,emptyObservation,type Change,type Domain,type Operation,
 
 const mocks=vi.hoisted(()=>({post:vi.fn(async()=>({})),set:vi.fn(async()=>{})}));
 vi.mock('./api',()=>({api:vi.fn(),post:mocks.post}));
-vi.mock('idb-keyval',()=>({get:vi.fn(),set:mocks.set,del:vi.fn()}));
+vi.mock('idb-keyval',()=>({keys:vi.fn(async()=>[]),get:vi.fn(),set:mocks.set,del:vi.fn()}));
 let useStore:typeof import('./store').useStore;
 const clone=<T,>(value:T):T=>structuredClone(value);
 function fixture(){
@@ -92,7 +92,7 @@ describe('recovery as one saved undoable action',()=>{
   useStore.getState().setBox(classKey('Head'),[220,70,260,120]);await useStore.getState().saveNow();const o=Object.values(useStore.getState().project!.state.observations).find(o=>o.identity_uuid===id&&o.frame_index===10)!;expect(o.person_visible).toBeNull();expect(o.person_ext).toBeNull();expect(Object.keys(o.boxes!)).toEqual([classKey('person_visible'),classKey('Head')]);
   useStore.getState().selectClass('person_visible');useStore.getState().selectPerson('p');expect(useStore.getState().geometry).toBe('person_visible');useStore.getState().selectPerson(id);expect(useStore.getState().geometry).toBe(classKey('person_visible'));
   useStore.getState().focusPerson('p');expect(useStore.getState().geometry).toBe('person_visible');expect(useStore.getState().hiddenIds[id]).toBe(true);
-  expect(mocks.set.mock.calls.some((args:any[])=>args[1]?.project?.state?.observations&&Object.values(args[1].project.state.observations).some((row:any)=>row.boxes?.[classKey('Head')]))).toBe(true);
+  expect(mocks.set.mock.calls.some((args:any[])=>args[1]?.changes?.some((change:any)=>change.after?.boxes?.[classKey('Head')]))).toBe(true);
  });
  it('keeps the chosen catalog class for new tracks and falls back when it is absent',async()=>{
   const project=clone(useStore.getState().project!);project.classes=['Torso','Face'];useStore.setState({project});useStore.getState().selectClass('Face');useStore.getState().newPerson();expect(useStore.getState().geometry).toBe(classKey('Face'));expect(useStore.getState().project!.state.identities[useStore.getState().activeId].name).toBe('Track 1');await useStore.getState().saveNow();

@@ -4,7 +4,7 @@ import type {ProjectSettingsUpdate} from './store';
 
 const mocks = vi.hoisted(() => ({api: vi.fn(), post: vi.fn(async () => ({})), get: vi.fn(), set: vi.fn(async () => {}), del: vi.fn(async () => {})}));
 vi.mock('./api', () => ({api: mocks.api, post: mocks.post}));
-vi.mock('idb-keyval', () => ({get: mocks.get, set: mocks.set, del: mocks.del}));
+vi.mock('idb-keyval', () => ({keys:vi.fn(async()=>[]),get: mocks.get, set: mocks.set, del: mocks.del}));
 let useStore: typeof import('./store').useStore;
 const clone = <T,>(value: T): T => structuredClone(value);
 const settings = (revision = 2): ProjectSettingsUpdate => ({base_revision: revision, name: 'Pedestrian tracking', class_renames: {Person: 'Pedestrian'}, new_classes: ['Head'], request_id: 'settings-request'});
@@ -148,7 +148,7 @@ describe('atomic project settings in the annotation store', () => {
     await useStore.getState().saveProjectSettings('project', {base_revision: 2, name: before.name, class_renames: {}, deleted_classes: ['Person'], deletion_confirmed: true, request_id: 'delete-class'});
     expect(useStore.getState()).toMatchObject({project: saved, activeId: '', geometry: classKey('Extended'), hiddenIds: {}, unregisteredTracks: {}, history: [], redoStack: []});
     expect(localStorage.setItem).toHaveBeenCalledWith('frameinsight:classVisibility:project', JSON.stringify({Extended: true}));
-    expect(mocks.set).toHaveBeenCalledWith('frameinsight:journal:project', expect.objectContaining({project: saved, activeId: '', geometry: classKey('Extended'), history: []}));
+    expect(mocks.set).toHaveBeenCalledWith('frameinsight:journal:project', expect.objectContaining({journalVersion:3,project: expect.objectContaining({id:saved.id,classes:saved.classes,revision:saved.revision}), activeId: '', geometry: classKey('Extended'), history: []}));
   });
 });
 
@@ -179,7 +179,7 @@ describe('project deletion and stale tabs', () => {
     mocks.api.mockRejectedValueOnce(Object.assign(new Error('Project changed'), {status: 409}));
     await expect(useStore.getState().deleteProject(before.id, before.revision)).rejects.toThrow('Project changed');
     expect(useStore.getState()).toMatchObject({project: before, activeId: 'p', settingsSaving: false, deletingProjectId: null});
-    expect(mocks.del).not.toHaveBeenCalled(); expect(localStorage.removeItem).not.toHaveBeenCalled();
+    expect(mocks.del).not.toHaveBeenCalledWith('frameinsight:journal:'+before.id); expect(localStorage.removeItem).not.toHaveBeenCalled();
   });
 
   it('reports successful server deletion with a warning if browser recovery cleanup fails', async () => {

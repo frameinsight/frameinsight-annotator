@@ -101,6 +101,15 @@ def get_state(c, pid):
 def snapshot(pid):
     with connect() as c: return get_state(c, pid)
 
+def event_snapshot(pid):
+    """Live save/status updates never need to load annotation entities."""
+    with connect() as c:
+        row = c.execute('SELECT revision FROM projects WHERE id=?', (pid,)).fetchone()
+        if not row:
+            raise KeyError('Project not found')
+        videos = {r['id']: json.loads(r['data']) for r in c.execute('SELECT id,data FROM videos WHERE project_id=?', (pid,))}
+        return {'revision': row['revision'], 'videos': videos}
+
 def apply(pid, operation: Operation):
     with transaction() as c:
         old = c.execute('SELECT project_id,revision,data FROM operations WHERE id=?', (operation.id,)).fetchone()

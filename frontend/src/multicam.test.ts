@@ -21,3 +21,11 @@ describe('multi-camera shared identities',()=>{
 });
 
 it('metadata undo detects external edits even when a fresh server revision is fetched',()=>{const before={name:'Room',cameras:[camera('a')],people:[],assignments:[]};expect(sameSessionContent(before,structuredClone(before))).toBe(true);expect(sameSessionContent(before,{...before,name:'Another editor renamed this'})).toBe(false);expect(sameSessionContent(before,{...before,cameras:[camera('a',1)]})).toBe(false);});
+
+it('builds all camera appearance strips with one observation pass',async()=>{
+ const {sessionAppearanceRuns}=await import('./multicam');const cameras=Array.from({length:12},(_,i)=>camera('camera'+i));
+ const assignments=cameras.map(c=>({video_id:c.video_id,identity_uuid:'track-'+c.id,person_uuid:'shared'}));let visits=0;
+ const rows={*[Symbol.iterator](){for(const a of assignments)for(const frame of [0,1,3]){visits++;yield {...emptyObservation(a.video_id,frame,a.identity_uuid,'s'),person_visible:[1,2,3,4] as [number,number,number,number]};}}};
+ const strips=sessionAppearanceRuns(rows,cameras,assignments,'shared');expect(visits).toBe(36);for(const c of cameras)expect(strips[c.id]).toEqual([{start:0,end:1},{start:3,end:3}]);
+ visits=0;expect(Object.values(sessionAppearanceRuns(rows,cameras,assignments,''))).toEqual(cameras.map(()=>[]));expect(visits).toBe(0);
+});

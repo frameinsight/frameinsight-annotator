@@ -139,3 +139,21 @@ test('deleting a camera track confirms its scope and Undo restores boxes and sha
  await page.getByRole('button',{name:'Delete track 1 from Camera 1',exact:true}).click();await page.getByRole('button',{name:'Delete camera track',exact:true}).click();await expect(page.getByTestId('camera-local-track-'+s.tracks[0])).toHaveCount(0);await expect.poll(async()=>(await state(request,s)).state.identities[s.tracks[0]]).toBeUndefined();await expect.poll(async()=>(await session(request,s)).assignments.length).toBe(1);const after=await state(request,s);const otherCameraRows=(data:any)=>Object.fromEntries(Object.entries(data.state.observations).filter(([,row]:any)=>row.video_id!==s.videos[0]));expect(otherCameraRows(after)).toEqual(otherCameraRows(before));expect((await session(request,s)).people).toEqual(linked.people);
  await page.getByRole('button',{name:'Undo delete',exact:true}).click();await expect(page.getByTestId('camera-local-track-'+s.tracks[0])).toBeVisible();await expect.poll(async()=>(await state(request,s)).state).toEqual(before.state);await expect.poll(async()=>(await session(request,s)).assignments.length).toBe(2);const restored=await session(request,s);expect(restored.assignments).toEqual(expect.arrayContaining(linked.assignments));
 });
+
+test('pending annotation saves allow frame navigation and shared-person creation without stale saving errors',async({page,request})=>{
+ const s=await setup(request,3);await open(page,s);await page.getByRole('button',{name:'Select local track 1',exact:true}).click();
+ let release!:()=>void,requested=false;const gate=new Promise<void>(resolve=>{release=resolve});let held=false;
+ await page.route(`**/api/projects/${s.pid}/operations`,async route=>{if(!held){held=true;requested=true;await gate;}await route.continue();});
+ try{
+  const canvas=page.getByTestId('canvas');await canvas.press('b');await draw(page,[105,85],[205,305]);await expect.poll(()=>requested).toBe(true);
+  await expect(page.locator('.mc-save-status')).toHaveText('Saving…');
+  for(let frame=1;frame<=3;frame++){await canvas.press('f');await expect(canvas).toHaveAttribute('data-frame',String(frame));}
+  // This metadata change has no dependency on the unsent geometry operation.
+  await person(page,17);expect((await session(request,s)).people.map((p:any)=>p.person_id)).toContain(17);
+  await expect(canvas).toHaveAttribute('data-frame','3');await expect(page.locator('.mc-save-status')).toHaveText('Saving…');await expect(page.getByRole('alert')).toHaveCount(0);
+  release();await expect(page.locator('.save-status')).toHaveText('Saved');await expect(page.locator('.mc-save-status')).toHaveText('Saved');
+  await expect(canvas).toHaveAttribute('data-frame','3');await expect(page.getByRole('alert')).toHaveCount(0);
+  const saved=await state(request,s);const row:any=Object.values(saved.state.observations).find((o:any)=>o.video_id===s.videos[0]&&o.frame_index===0&&o.identity_uuid===s.tracks[0]);for(const [i,value] of [105,85,205,305].entries())expect(row.boxes['class:Visible'][i]).toBeCloseTo(value,3);
+  await page.reload();await page.getByTestId('open-project-'+s.pid).click();await page.getByTestId('open-session-'+s.session.id).click();await expect(page.getByTestId('canvas')).toHaveAttribute('data-frame','0');expect((await state(request,s)).state.observations[row.id]).toEqual(row);
+ }finally{release()}
+});

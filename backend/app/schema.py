@@ -182,6 +182,9 @@ def validate_state(state: dict, videos: dict, *, visible_only: bool = False, str
             start, end = e.get('start', e.get('frame_index')), e.get('end')
             if start >= v['frame_count'] or (end is not None and (end < start or end >= v['frame_count'])):
                 raise ValueError('Frame or interval outside decoded frame ledger')
+    gaps_by_track = {}
+    for gap in state['intervals'].values():
+        gaps_by_track.setdefault((gap['video_id'], gap['identity_uuid']), []).append(gap)
     for o in state['observations'].values():
         key = (o['video_id'], o['frame_index'], o['identity_uuid'])
         if key in seen: raise ValueError('Two observations have the same identity on one frame')
@@ -191,7 +194,7 @@ def validate_state(state: dict, videos: dict, *, visible_only: bool = False, str
             raise ValueError('Observation must belong to its identity and video segment')
         if o['frame_index'] < s['start'] or (s['end'] is not None and o['frame_index'] > s['end']):
             raise ValueError('Observation lies outside its visible segment')
-        for gap in state['intervals'].values():
+        for gap in gaps_by_track.get((o['video_id'], o['identity_uuid']), ()):
             if gap['identity_uuid'] == o['identity_uuid'] and gap['video_id'] == o['video_id'] and gap['start'] <= o['frame_index'] and (gap['end'] is None or o['frame_index'] <= gap['end']):
                 if (get_box(o, gap['geometry']) if gap.get('geometry') else any(box_items(o))):
                     raise ValueError('A missing-box gap cannot contain that box type')

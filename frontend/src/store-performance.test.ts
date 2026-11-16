@@ -2,7 +2,7 @@ import {beforeAll,afterAll,it,expect,vi} from 'vitest';
 import {emptyObservation,type Project,classKey,getBox} from './types';
 const mocks=vi.hoisted(()=>({post:vi.fn(async()=>({})),set:vi.fn(async()=>{})}));
 vi.mock('./api',()=>({api:vi.fn(),post:mocks.post}));
-vi.mock('idb-keyval',()=>({get:vi.fn(),set:mocks.set,del:vi.fn()}));
+vi.mock('idb-keyval',()=>({keys:vi.fn(async()=>[]),get:vi.fn(),set:mocks.set,del:vi.fn()}));
 let useStore:typeof import('./store').useStore;
 beforeAll(async()=>{vi.stubGlobal('window',{addEventListener:vi.fn(),setTimeout:vi.fn()});vi.stubGlobal('localStorage',{getItem:vi.fn(()=>null),setItem:vi.fn(),removeItem:vi.fn()});vi.stubGlobal('setInterval',vi.fn());({useStore}=await import('./store'));});
 afterAll(()=>vi.unstubAllGlobals());
@@ -55,4 +55,14 @@ it('does not bypass duplicate-ID checks when a stale selection crosses to anothe
  const project=largeProject();project.state.observations={};project.state.identities={a:{id:'a',person_id:1,name:'A'},b:{id:'b',person_id:1,name:'B'}};project.videos.b={...project.videos.v,id:'b'};project.state.segments={a:{id:'a',video_id:'v',identity_uuid:'a',start:0,end:null,status:'verified'},b:{id:'b',video_id:'b',identity_uuid:'b',start:0,end:null,status:'verified'}};
  useStore.setState({project,videoId:'b',frame:0,activeId:'a',geometry:'class:Person',pending:[],history:[],redoStack:[],hiddenIds:{},frameTimes:{},saveStatus:'Saved',saveError:''});
  useStore.getState().setBox('class:Person',[100,100,180,280]);expect(useStore.getState().project).toBe(project);expect(useStore.getState().notice).toContain('unique');expect(useStore.getState().pending).toEqual([]);
+});
+
+it('explicit Save waits for a slow acknowledgement without a synthetic timeout or a false Saved indicator',async()=>{
+ const project=largeProject();project.state.observations=Object.fromEntries(Object.entries(project.state.observations).filter(([,o])=>o.identity_uuid==='track0'&&o.frame_index<61));
+ useStore.setState({project,videoId:'v',frame:30,activeId:'track0',geometry:'class:Person',pending:[],history:[],redoStack:[],hiddenIds:{},saveStatus:'Saved',saveError:''});
+ let release!:()=>void;mocks.post.mockImplementationOnce(()=>new Promise(resolve=>{release=()=>resolve({});}));mocks.post.mockClear();
+ useStore.getState().setBox('class:Person',[106,100,186,280]);await vi.waitFor(()=>expect(mocks.post).toHaveBeenCalledTimes(1));
+ let finished=false;const saving=useStore.getState().saveNow().then(()=>{finished=true;});
+ const now=vi.spyOn(Date,'now').mockReturnValue(Date.now()+120000);
+ try{await Promise.resolve();await Promise.resolve();expect(finished).toBe(false);expect(useStore.getState().saveStatus).toBe('Saving');useStore.getState().navigate(31);expect(useStore.getState().frame).toBe(31);release();await saving;expect(useStore.getState().saveStatus).toBe('Saved');expect(useStore.getState().pending).toEqual([]);}finally{now.mockRestore();}
 });
