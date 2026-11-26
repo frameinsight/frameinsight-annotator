@@ -35,4 +35,4 @@ Interfaces: import preview accepts optional video_mapping; returns impact with p
 
 ### Task 3: Verify and deliver
 - [x] Review diff, run full suites and exercise dialogs in browser.
-- [ ] Update user documentation and release notes; push fixes to main, verify remote/CI.
+- [x] Update user documentation and release notes; push fixes to main, verify remote/CI.
