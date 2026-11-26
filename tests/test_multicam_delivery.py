@@ -521,3 +521,111 @@ def test_native_backup_rejects_incomplete_recordings(camera_project, monkeypatch
     assert db.snapshot(pid) == before
     with db.connect() as c:
         assert not c.execute('SELECT 1 FROM exports WHERE project_id=?', (pid,)).fetchone()
+
+
+def replacement_preview(pid, document, mapping):
+    # Exercise the same mapped preview used by the upload endpoint.
+    return delivery.preview_session_document(pid, document, mapping)['impact']
+
+
+def test_replace_session_import_previews_counts_and_preserves_unmapped_video(camera_project):
+    pid, videos, identities, session = camera_project
+    document = doc(session, pid)
+    mapping = {v: v for v in videos[:2]}
+    before = db.snapshot(pid)
+    impact = replacement_preview(pid, document, mapping)
+    assert impact['project_revision'] == 0
+    assert [(row['existing_tracks'], row['existing_boxes'], row['imported_tracks'], row['imported_boxes']) for row in impact['cameras']] == [(1, 3, 1, 3), (1, 3, 1, 3)]
+    assert impact['affected_sessions'][0]['id'] == session['id']
+    assert impact['affected_sessions'][0]['name'] == 'Shop morning'
+    assert db.snapshot(pid) == before  # preview does not write
+    result = delivery.import_session_document(pid, document, mapping, 0, mode='replace', replacement_token=impact['replacement_token'])
+    after = db.snapshot(pid)
+    assert len(after['state']['identities']) == 3
+    assert len(after['state']['observations']) == 9
+    assert identities[0] not in after['state']['identities']
+    assert after['state']['identities'][identities[2]] == before['state']['identities'][identities[2]]
+    for col, rows in before['state'].items():
+        for key, row in rows.items():
+            if row.get('video_id') == videos[2]: assert after['state'][col][key] == row
+    assert {after['state']['identities'][a['identity_uuid']]['person_id'] for a in result['session']['assignments']} == {1}
+    assert result['session']['people'][0]['person_id'] == 7
+    assert len(result['session']['assignments']) == 2
+    assert get_session(session['id'])['assignments'] == []
+    assert checked(result['session'], after['revision'])['passed']
+
+
+@pytest.mark.parametrize('failure', ['missing_confirmation', 'stale_project', 'stale_session', 'insert'])
+def test_replacement_failure_preserves_all_annotations_and_sessions(camera_project, monkeypatch, failure):
+    pid, videos, _, session = camera_project
+    document = doc(session, pid); mapping = {v: v for v in videos[:2]}
+    impact = replacement_preview(pid, document, mapping)
+    if failure == 'stale_project':
+        with db.transaction() as c: c.execute('UPDATE projects SET revision=1 WHERE id=?', (pid,))
+    elif failure == 'stale_session':
+        update_session(session['id'], SessionUpdate(**{**{k: session[k] for k in ('revision','name','cameras','people','assignments')}, 'name': 'Changed'}))
+    elif failure == 'insert':
+        def fail(*args): raise ValueError('Injected session insertion failure')
+        monkeypatch.setattr(delivery, 'insert_session', fail)
+    before, sessions = db.snapshot(pid), list_sessions(pid)
+    with pytest.raises((ValueError, db.Conflict)):
+        delivery.import_session_document(pid, document, mapping, 0, mode='replace', replacement_token='' if failure == 'missing_confirmation' else impact['replacement_token'])
+    assert db.snapshot(pid) == before
+    assert list_sessions(pid) == sessions
+
+
+def test_replace_empty_camera_export_clears_mapped_annotations(camera_project):
+    pid, videos, _, session = camera_project
+    before = db.snapshot(pid)
+    with db.transaction() as c: c.execute('DELETE FROM entities WHERE project_id=?', (pid,))
+    document = doc({**session, 'people': [], 'assignments': []}, pid)
+    with db.transaction() as c:
+        for col, rows in before['state'].items():
+            for key, row in rows.items():
+                c.execute('INSERT INTO entities VALUES(?,?,?,?)', (pid, col, key, json.dumps(row)))
+    mapping = {v: v for v in videos[:2]}
+    impact = replacement_preview(pid, document, mapping)
+    assert sum(c['imported_boxes'] for c in impact['cameras']) == 0
+    result = delivery.import_session_document(pid, document, mapping, 0, mode='replace', replacement_token=impact['replacement_token'])
+    after = db.snapshot(pid)
+    assert len(after['state']['identities']) == 1
+    assert len(after['state']['observations']) == 3
+    assert all(o['video_id'] == videos[2] for o in after['state']['observations'].values())
+    assert result['session']['people'] == []
+
+
+def test_replace_retains_legacy_identity_shared_with_unmapped_camera(camera_project):
+    pid, videos, identities, session = camera_project
+    document = doc(session, pid)
+    # Simulate legacy identity used by both a mapped and an unmapped video.
+    with db.transaction() as c:
+        for row in c.execute("SELECT collection,id,data FROM entities WHERE project_id=?", (pid,)).fetchall():
+            value = json.loads(row['data'])
+            if value.get('video_id') == videos[2] and value.get('identity_uuid') == identities[2]:
+                value['identity_uuid'] = identities[0]
+                c.execute('UPDATE entities SET data=? WHERE project_id=? AND collection=? AND id=?', (json.dumps(value), pid, row['collection'], row['id']))
+        c.execute("DELETE FROM entities WHERE project_id=? AND collection='identities' AND id=?", (pid, identities[2]))
+    before = db.snapshot(pid); mapping = {v: v for v in videos[:2]}
+    impact = replacement_preview(pid, document, mapping)
+    delivery.import_session_document(pid, document, mapping, 0, mode='replace', replacement_token=impact['replacement_token'])
+    after = db.snapshot(pid)
+    assert after['state']['identities'][identities[0]] == before['state']['identities'][identities[0]]
+    assert all(after['state']['observations'][key] == row for key,row in before['state']['observations'].items() if row['video_id'] == videos[2])
+
+
+def test_mapped_import_preview_rejects_video_outside_camera_membership(camera_project):
+    pid, videos, _, session = camera_project
+    document = doc(session, pid)
+    # An otherwise valid annotation projection can include an empty extra video;
+    # it cannot be replaced through a two-camera session's confirmation.
+    annotation = document['annotations']
+    annotation['videos'][videos[2]] = db.snapshot(pid)['videos'][videos[2]]
+    with db.connect() as c:
+        annotation['frames'][videos[2]] = [json.loads(r['data']) for r in c.execute('SELECT data FROM frames WHERE video_id=? ORDER BY frame_index', (videos[2],))]
+    annotation['summary']['videos'] = 3
+    annotation['summary']['frames_in_ledger'] = 12
+    assert delivery.structural_report(document)['passed']
+    before = db.snapshot(pid)
+    with pytest.raises(ValueError, match='camera'):
+        replacement_preview(pid, document, {v: v for v in videos})
+    assert db.snapshot(pid) == before

@@ -52,6 +52,7 @@ export function VideoLibrary({onOpen, onNew, selectedProject, onSelectProject, o
   const [cacheNotice,setCacheNotice]=useState('');
   const [cacheRefresh,setCacheRefresh]=useState(0);
   const [deleting, setDeleting] = useState<LibraryVideo | null>(null);
+  const [deletingSession, setDeletingSession] = useState<CameraSession | null>(null);
   const [deletingProject, setDeletingProject] = useState<DeletingProject | null>(null);
   const [confirmProjectName, setConfirmProjectName] = useState('');
   const deletionRequest = useRef(0);
@@ -174,7 +175,7 @@ export function VideoLibrary({onOpen, onNew, selectedProject, onSelectProject, o
         <div className="library-actions"><Button variant="outline" size="sm" onClick={onTrim}><Scissors size={16}/>Trim sections</Button>{selectedProject&&<><Button variant="outline" disabled={!!busy} onClick={()=>onSettings(selectedProject)}><Settings2 size={16}/>Project settings</Button>{selected&&<Button variant="ghost" size="icon-sm" aria-label={'Delete project '+selected.name} title="Delete project" disabled={!!busy} onClick={()=>void prepareProjectDeletion(selected)}><Trash2 size={16}/></Button>}</>}<Button variant="outline" size="sm" onClick={() => setGuide(true)}><BookOpen size={16}/>Start guide</Button><Button size="sm" onClick={selectedProject?onNew:onNewProject}><Plus size={17}/>{selectedProject?'New video':'New project'}</Button></div>
       </div>
       <div className="library-body">
-        {error && !deleting && !deletingProject && !clearingCache && <p role="alert" className="error">{error}</p>}
+        {error && !deleting && !deletingProject && !deletingSession && !clearingCache && <p role="alert" className="error">{error}</p>}
         {loading&&!selectedProject&&<p role="status">Loading your projects…</p>}
         {selectedProject&&<Button variant="ghost" size="sm" className="project-back" onClick={()=>{setQuery('');onSelectProject(null)}}><ArrowLeft size={15}/>All projects</Button>}
         {!selectedProject&&<><label className="video-search"><Search size={17}/><Input aria-label="Search projects" placeholder="Search projects…" value={query} onChange={e=>setQuery(e.target.value)}/></label><div className="project-folders">{projects.filter(p=>p.name.toLowerCase().includes(query.toLowerCase())).map(p=>{const classes:string[]=typeof p.classes==='string'?JSON.parse(p.classes):p.classes||[];return <Card className="project-folder gap-4 py-4 shadow-none" key={p.id}>
@@ -196,7 +197,7 @@ export function VideoLibrary({onOpen, onNew, selectedProject, onSelectProject, o
                 <TableCell className="py-2.5"><div className="video-table-actions"><Button variant="outline" size="sm" disabled={!!busy} data-testid={'open-session-' + session.id} aria-label={'Open camera session ' + session.name} onClick={() => {
                   setBusy(session.id); setError('');
                   void onOpenSession(session).catch(error => {setError(message(error)); setBusy('');});
-                }}>{busy === session.id ? <LoaderCircle className="animate-spin"/> : <LayoutGrid/>}{busy === session.id ? 'Opening…' : 'Open session'}</Button></div></TableCell>
+                }}>{busy === session.id ? <LoaderCircle className="animate-spin"/> : <LayoutGrid/>}{busy === session.id ? 'Opening…' : 'Open session'}</Button><Button variant="ghost" size="icon-sm" disabled={!!busy} aria-label={'Delete camera session '+session.name} title="Delete session" onClick={()=>{setError('');setDeletingSession(session)}}><Trash2 size={15}/></Button></div></TableCell>
               </TableRow>)}{!sessions.some(session => session.project_id === selectedProject) && <TableRow className="hover:bg-transparent"><TableCell colSpan={4} className="py-5 text-center text-sm text-muted-foreground">No camera sessions yet. Start new work and choose Multiple cameras to link recordings.</TableCell></TableRow>}</TableBody>
             </Table>
           </div>}
@@ -247,6 +248,18 @@ export function VideoLibrary({onOpen, onNew, selectedProject, onSelectProject, o
         }}/>{restore && <p role="status">{restore.status === 'completed' ? 'Backup restored. Your video is ready to open.' : restore.status === 'failed' ? restore.error || 'The backup could not be restored.' : 'Restoring your backup…'}</p>}{restore?.restored_project_id && <Button variant="outline" onClick={() => void api('/projects/' + restore.restored_project_id).then(project => {setProjects(rows=>[...rows.filter(p=>p.id!==project.id),project]);onSelectProject(project.id);return api<LibraryVideo[]>('/video-library').then(setVideos)}).catch(e => setError(message(e)))}>Open restored project<ArrowRight size={14}/></Button>}</details>
         <div className="library-note"><span><LockKeyhole size={12}/>Your videos and annotations stay on this computer.</span><span>Frameinsight {APP_VERSION}</span></div>
       </div>
+      {deletingSession&&<Modal title="Delete camera session" busy={!!busy} onClose={()=>{if(!busy){setDeletingSession(null);setError('')}}}>
+        <p>Delete <strong>{deletingSession.name}</strong>?</p>
+        <p className="text-sm text-muted-foreground">This removes this session’s camera membership, sync settings, {deletingSession.people.length} shared people and {deletingSession.assignments.length} track assignments.</p>
+        <p className="text-sm text-muted-foreground">Videos, local tracks and boxes, other camera sessions and downloaded exports are kept. The session itself cannot be restored with Undo.</p>
+        {error&&<p role="alert" className="error">{error}</p>}
+        <div className="flex justify-end gap-2"><Button variant="outline" disabled={!!busy} onClick={()=>{setDeletingSession(null);setError('')}}>Cancel</Button><Button variant="destructive" disabled={!!busy} onClick={()=>{
+          const target=deletingSession;setBusy(target.id);setError('');
+          void api(`/camera-sessions/${target.id}?revision=${target.revision}&confirmed=true`,{method:'DELETE'}).then(()=>{setSessions(rows=>rows.filter(row=>row.id!==target.id));setDeletingSession(null)}).catch(e=>{
+            setError(message(e)+' Close this dialog and refresh the session list before trying again.');setSessionsRefresh(value=>value+1);
+          }).finally(()=>setBusy(''));
+        }}>{busy&&<LoaderCircle className="animate-spin"/>}Delete session</Button></div>
+      </Modal>}
       {clearingCache&&<Modal title="Clear frame storage" busy={!!busy} onClose={()=>{if(!busy){setClearingCache(false);setError('')}}}>
         <p>Free up <strong>{storageSize(cacheSelection.reduce((bytes,id)=>bytes+(frameCaches[id]?.bytes||0),0))}</strong> from {cacheSelection.length} selected {cacheSelection.length===1?'video':'videos'}?</p>
         <p className="text-sm text-muted-foreground">Only temporary decoded frame images are removed. Source videos, tracks, boxes, IDs and editing history are kept. Opening these videos again will take time while their exact frames are prepared.</p>

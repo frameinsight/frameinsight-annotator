@@ -7,7 +7,7 @@ import json
 import uuid
 from typing import Literal
 
-from fastapi import APIRouter
+from fastapi import APIRouter, Query
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from . import db
@@ -280,3 +280,17 @@ def camera_session(session_id: str):
 @router.patch('/api/camera-sessions/{session_id}')
 def save_camera_session(session_id: str, body: SessionUpdate):
     return update_session(session_id, body)
+
+
+@router.delete('/api/camera-sessions/{session_id}')
+def delete_camera_session(session_id: str, revision: int = Query(ge=0), confirmed: bool = False):
+    if not confirmed:
+        raise ValueError('Confirm session deletion. Videos and local annotations will be kept.')
+    with db.transaction() as connection:
+        session = get_session(session_id, connection)
+        if session['revision'] != revision:
+            raise db.Conflict(session['revision'])
+        connection.execute('DELETE FROM camera_session_detached_assignments WHERE session_id=?', (session_id,))
+        connection.execute('DELETE FROM camera_session_events WHERE session_id=?', (session_id,))
+        connection.execute('DELETE FROM camera_sessions WHERE id=?', (session_id,))
+    return {'deleted_session_id': session_id}

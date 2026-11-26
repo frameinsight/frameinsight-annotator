@@ -169,7 +169,14 @@ To import:
 4. Choose **Import camera session**. Every mapping must use a different target video in the project. Indexed SHA-256 hashes, dimensions, frame counts and frame timestamps must match.
 5. Review the restored session and validate again before its next export.
 
-Import is additive and atomic. It creates a new session, new camera/shared-person UUIDs and fresh local annotation entity UUIDs. Numeric shared person IDs are preserved within the new session. Local numeric track IDs are retained when free; collisions receive free numbers. Existing tracks and associations are kept, so importing twice into the same annotated videos creates additional copies rather than replacing or silently merging them. Use unannotated target videos when transferring a completed session.
+Import is atomic and offers two modes. Both create a new session with new camera/shared-person UUIDs and fresh local annotation entity UUIDs. Numeric shared person IDs and camera timing are preserved. Local numeric track IDs are retained when free; collisions receive free numbers.
+
+- **Add to existing annotations** (default): keeps existing tracks and associations. Repeated imports add copies.
+- **Replace annotations on mapped cameras**: first choose **Preview replacement**, inspect each camera’s current/imported track and box counts, then confirm replacement. Existing annotations, reviews and hidden ranges in mapped videos are replaced, including when the exported camera has no boxes. Unmapped videos and their geometry remain intact. Legacy identities shared with an unmapped video remain available there. Existing sessions using mapped videos are named in the preview; assignments to replaced tracks are removed, while those sessions and their other links remain. Relink those sessions if you still use them.
+
+Replacement confirmation is bound to the project revision, camera mappings, impact counts and affected session revisions. If annotations or session links change, preview and confirm again. Validation, annotation removal/insertion, assignment cleanup and new session creation share one database transaction: any failure rolls everything back. Imports do not populate the client Undo stack; keep a native project backup before replacing work you may need later.
+
+A session can be deleted independently using its trash icon in the project library. Confirmation requires its current revision and removes only session metadata, events and detached assignments. Source videos, local tracks/boxes, other sessions and already downloaded exports remain unchanged.
 
 Import accepts at most 1 GiB of uploaded or decompressed JSON. The 128 MiB retained-state budget applies to editable annotations and session metadata; frame ledgers, box/frame indexes and presence rows use temporary disk storage and do not count against that budget. These rows are still checked against the saved annotation state and source timestamps. Each streamed row is limited to 1 MiB. Unused history and previous validation reports are skipped, while the entire file is checked for valid JSON, duplicate keys and excessive nesting.
 

@@ -280,3 +280,27 @@ def test_delete_shared_person_preserves_local_annotations_other_people_and_sessi
     assert undone['people'] == session['people']
     assert undone['assignments'] == session['assignments']
     assert db.snapshot(cameras[0]) == before
+
+
+def test_delete_session_requires_current_confirmation_and_keeps_video_annotations(cameras):
+    session = shared(cameras)
+    other = shared(cameras)
+    before = db.snapshot(cameras[0])
+    # Detached mappings belong to the session and must be cleaned up too.
+    with db.transaction() as c:
+        c.execute('INSERT INTO camera_session_detached_assignments VALUES(?,?,?,?)',
+                  (session['id'], session['cameras'][0]['video_id'], uid(), session['people'][0]['id']))
+    url = f'/api/camera-sessions/{session["id"]}'
+    with TestClient(app) as client:
+        assert client.delete(url + '?revision=0').status_code == 422
+        assert client.delete(url + '?revision=99&confirmed=true').status_code == 409
+        assert get_session(session['id']) == session
+        result = client.delete(url + '?revision=0&confirmed=true')
+        assert result.status_code == 200, result.text
+        assert client.get(url).status_code == 404
+        assert client.delete(url + '?revision=0&confirmed=true').status_code == 404
+    assert db.snapshot(cameras[0]) == before
+    assert get_session(other['id']) == other
+    with db.connect() as c:
+        assert c.execute('SELECT COUNT(*) FROM camera_session_events WHERE session_id=?', (session['id'],)).fetchone()[0] == 0
+        assert c.execute('SELECT COUNT(*) FROM camera_session_detached_assignments WHERE session_id=?', (session['id'],)).fetchone()[0] == 0

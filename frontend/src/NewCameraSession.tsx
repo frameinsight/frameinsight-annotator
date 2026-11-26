@@ -15,13 +15,16 @@ export function WorkflowChoice({onSingle,onMultiple}:{onSingle:()=>void;onMultip
 
 type CameraLibraryVideo=Video&{project_id:string};
 type ImportPreview={name:string;cameras:{video_id:string;name:string;video_name?:string;source_hash?:string;frame_count:number}[]};
+type ImportImpact={project_revision:number;replacement_token:string;cameras:{video_id:string;video_name:string;camera_name:string;existing_tracks:number;existing_boxes:number;imported_tracks:number;imported_boxes:number}[];affected_sessions:{id:string;name:string;revision:number;video_ids:string[]}[]};
 export function NewCameraSession({projectId,onCreated,onBusy}:{projectId:string;onCreated:(session:CameraSession)=>Promise<void>;onBusy:(busy:boolean)=>void}){
  const [videos,setVideos]=useState<CameraLibraryVideo[]>([]),[name,setName]=useState('Camera session'),[selected,setSelected]=useState<string[]>([]),[names,setNames]=useState<Record<string,string>>({}),[path,setPath]=useState('');
- const [action,setAction]=useState<'upload'|'create'|'preview'|'import'|null>(null),[error,setError]=useState(''),[libraryError,setLibraryError]=useState(''),[importError,setImportError]=useState(''),[importFile,setImportFile]=useState<File|null>(null),[preview,setPreview]=useState<ImportPreview|null>(null),[mapping,setMapping]=useState<Record<string,string>>({});
+ const [action,setAction]=useState<'upload'|'create'|'preview'|'plan'|'import'|null>(null),[error,setError]=useState(''),[libraryError,setLibraryError]=useState(''),[importError,setImportError]=useState(''),[importFile,setImportFile]=useState<File|null>(null),[preview,setPreview]=useState<ImportPreview|null>(null),[mapping,setMapping]=useState<Record<string,string>>({});
+ const [mode,setMode]=useState<'add'|'replace'>('add'),[impact,setImpact]=useState<ImportImpact|null>(null),[confirmed,setConfirmed]=useState(false);
+ function invalidateImpact(){setImpact(null);setConfirmed(false)}
  const busy=action!==null;
  useEffect(()=>{let gone=false,inFlight=false;const load=async()=>{if(inFlight)return;inFlight=true;try{const rows=await api<CameraLibraryVideo[]>('/video-library');if(!gone){setVideos(rows.filter(video=>video.project_id===projectId));setLibraryError('')}}catch(e){if(!gone)setLibraryError(message(e))}finally{inFlight=false}};void load();const timer=setInterval(()=>void load(),1500);return()=>{gone=true;clearInterval(timer)}},[projectId]);
  async function refreshVideos(){const rows=await api<CameraLibraryVideo[]>('/video-library');setVideos(rows.filter(video=>video.project_id===projectId));}
- async function run(next:NonNullable<typeof action>,fn:()=>Promise<void>){const report=next==='preview'||next==='import'?setImportError:setError;report('');setAction(next);onBusy(true);try{await fn()}catch(e){report(message(e))}finally{setAction(null);onBusy(false)}}
+ async function run(next:NonNullable<typeof action>,fn:()=>Promise<void>){const report=next==='preview'||next==='plan'||next==='import'?setImportError:setError;report('');setAction(next);onBusy(true);try{await fn()}catch(e){report(message(e))}finally{setAction(null);onBusy(false)}}
  async function upload(files:File[]){await run('upload',async()=>{for(const file of files){const body=new FormData();body.append('file',file);const result=await api<{video_id:string}>(`/projects/${projectId}/videos`,{method:'POST',body});setSelected(old=>[...old,result.video_id]);}await refreshVideos()})}
  const ready=videos.filter(v=>v.status==='ready'),preparing=videos.filter(v=>v.status!=='ready'&&v.status!=='failed');
  const mappingReady=preview!==null&&preview.cameras.every(c=>ready.some(v=>v.id===mapping[c.video_id]))&&new Set(Object.values(mapping)).size===preview.cameras.length;
@@ -35,9 +38,9 @@ export function NewCameraSession({projectId,onCreated,onBusy}:{projectId:string;
  <details className="border-t border-border pt-3" data-testid="camera-session-import">
   <summary className="text-sm cursor-pointer">Import a multi-camera annotation JSON</summary>
   <div className="grid gap-3 mt-3">
-   <p className="text-sm text-muted-foreground">Upload the matching original videos above, then choose which video belongs to each camera. Existing annotations are kept.</p>
-   <Input aria-label="Multi-camera annotation file" type="file" accept=".json,.gz" disabled={busy} onChange={e=>{setImportFile(e.target.files?.[0]||null);setPreview(null);setMapping({});setImportError('')}}/>
-   <Button variant="outline" disabled={busy||!importFile} onClick={()=>void run('preview',async()=>{setPreview(null);setMapping({});const body=new FormData();body.append('file',importFile!);const result=await api<ImportPreview>(`/projects/${projectId}/camera-sessions/import/preview`,{method:'POST',body});setPreview(result)})}>
+   <p className="text-sm text-muted-foreground">Upload the matching original videos above, then choose which video belongs to each camera. Add keeps existing annotations; Replace updates only the mapped videos after you confirm.</p>
+   <Input aria-label="Multi-camera annotation file" type="file" accept=".json,.gz" disabled={busy} onChange={e=>{setImportFile(e.target.files?.[0]||null);setPreview(null);setMapping({});invalidateImpact();setImportError('')}}/>
+   <Button variant="outline" disabled={busy||!importFile} onClick={()=>void run('preview',async()=>{setPreview(null);setMapping({});invalidateImpact();const body=new FormData();body.append('file',importFile!);const result=await api<ImportPreview>(`/projects/${projectId}/camera-sessions/import/preview`,{method:'POST',body});setPreview(result)})}>
     {action==='preview'&&<LoaderCircle className="animate-spin"/>}{action==='preview'?'Reading camera list…':'Read camera list'}
    </Button>
    {preparing.length>0&&<p className="text-sm text-muted-foreground" role="status">{preparing.length} {preparing.length===1?'video is':'videos are'} still preparing exact frames. You can read the camera list now; match each camera when its video is ready.</p>}
@@ -45,13 +48,23 @@ export function NewCameraSession({projectId,onCreated,onBusy}:{projectId:string;
    {preview&&<>
     <p className="text-sm">{preview.name}</p>
     {preview.cameras.map(c=><label key={c.video_id} className="text-sm">{c.name} · {c.video_name||c.video_id}
-     <NativeSelect aria-label={'Match camera '+c.name} value={mapping[c.video_id]||''} disabled={busy||!ready.length} onChange={e=>setMapping(old=>({...old,[c.video_id]:e.target.value}))}>
+     <NativeSelect aria-label={'Match camera '+c.name} value={mapping[c.video_id]||''} disabled={busy||!ready.length} onChange={e=>{setMapping(old=>({...old,[c.video_id]:e.target.value}));invalidateImpact()}}>
       <option value="">{!ready.length&&preparing.length?'Waiting for videos to finish preparing':'Choose the matching video'}</option>
       {videos.map(v=><option key={v.id} value={v.id} disabled={v.status!=='ready'}>{v.name} · {v.id.slice(0,6)}{v.status==='ready'?'':v.status==='failed'?' · Preparing failed':' · Preparing exact frames…'}</option>)}
      </NativeSelect>
     </label>)}
-    <Button disabled={busy||!mappingReady} onClick={()=>void run('import',async()=>{const current=await api<Project>('/projects/'+projectId);const body=new FormData();body.append('file',importFile!);body.append('video_mapping',JSON.stringify(mapping));body.append('project_revision',String(current.revision));const result=await api<{session:CameraSession}>(`/projects/${projectId}/camera-sessions/import`,{method:'POST',body});await onCreated(result.session)})}>
-     {action==='import'&&<LoaderCircle className="animate-spin"/>}{action==='import'?'Importing camera session…':'Import camera session'}
+    <label className="text-sm">Import mode<NativeSelect aria-label="Camera annotation import mode" value={mode} disabled={busy} onChange={e=>{setMode(e.target.value as 'add'|'replace');invalidateImpact()}}><option value="add">Add to existing annotations</option><option value="replace">Replace annotations on mapped cameras</option></NativeSelect></label>
+    {mode==='replace'&&<>
+     <Button variant="outline" disabled={busy||!mappingReady} onClick={()=>void run('plan',async()=>{invalidateImpact();const body=new FormData();body.append('file',importFile!);body.append('video_mapping',JSON.stringify(mapping));const result=await api<ImportPreview&{impact:ImportImpact}>(`/projects/${projectId}/camera-sessions/import/preview`,{method:'POST',body});setImpact(result.impact)})}>{action==='plan'&&<LoaderCircle className="animate-spin"/>}{action==='plan'?'Checking mapped cameras…':'Preview replacement'}</Button>
+     {impact&&<div className="grid gap-3 rounded-xl border border-border p-3" data-testid="camera-import-impact">
+      <p className="text-sm">Only these videos’ annotations will be replaced. Original videos and unmapped annotations stay unchanged. Imported shared people and camera timing will be saved in a new session.</p>
+      <div className="overflow-x-auto"><table className="w-full min-w-[400px] text-xs" aria-label="Camera replacement impact"><thead><tr className="text-left text-muted-foreground"><th className="p-2">Camera / video</th><th className="p-2">Tracks: current → imported</th><th className="p-2">Boxes: current → imported</th></tr></thead><tbody>{impact.cameras.map(row=><tr key={row.video_id}><td className="p-2 min-w-32"><span className="block font-medium">{row.camera_name}</span><span className="block max-w-36 truncate text-muted-foreground" title={row.video_name}>{row.video_name}</span><span className="text-muted-foreground">{row.video_id.slice(0,6)}</span></td><td className="p-2 tabular-nums whitespace-nowrap">{row.existing_tracks.toLocaleString()} → {row.imported_tracks.toLocaleString()}</td><td className="p-2 tabular-nums whitespace-nowrap">{row.existing_boxes.toLocaleString()} → {row.imported_boxes.toLocaleString()}</td></tr>)}</tbody></table></div>
+      {impact.affected_sessions.length>0&&<p className="text-sm text-amber-400">These videos are also used by: {impact.affected_sessions.map(row=>row.name).join(', ')}. Those sessions are kept, but assignments to replaced tracks are removed. Review and relink them afterward.</p>}
+      <label className="flex items-start gap-2 text-sm"><Checkbox aria-label="Replace the annotations on these mapped videos" checked={confirmed} disabled={busy} onCheckedChange={value=>setConfirmed(value===true)}/>Replace the annotations on these mapped videos</label>
+     </div>}
+    </>}
+    <Button disabled={busy||!mappingReady||(mode==='replace'&&(!impact||!confirmed))} onClick={()=>void run('import',async()=>{const revision=mode==='replace'?impact!.project_revision:(await api<Project>('/projects/'+projectId)).revision;const body=new FormData();body.append('file',importFile!);body.append('video_mapping',JSON.stringify(mapping));body.append('project_revision',String(revision));body.append('mode',mode);if(mode==='replace')body.append('replacement_token',impact!.replacement_token);const result=await api<{session:CameraSession}>(`/projects/${projectId}/camera-sessions/import`,{method:'POST',body});await onCreated(result.session)})}>
+     {action==='import'&&<LoaderCircle className="animate-spin"/>}{action==='import'?'Importing camera session…':mode==='replace'?'Replace annotations and import session':'Import camera session'}
     </Button>
    </>}
   </div>

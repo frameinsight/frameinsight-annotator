@@ -88,4 +88,45 @@ test('a downloaded camera session imports through the UI with boxes and shared I
  const restored=await data(await request.get('/api/projects/'+s.project.id));const observations=Object.values(restored.state.observations) as any[];expect(observations).toHaveLength(2);
  for(const [index,video_id] of targetVideos.entries())expect(observations.find(row=>row.video_id===video_id).boxes['class:Person']).toEqual([40+index*20,30,100+index*20,120]);
  expect(Object.values(restored.state.identities).map((identity:any)=>identity.person_id)).toEqual([1,1]);expect((await data(await request.get('/api/projects/'+source.id))).state).toEqual(before.state);
+ // Reimport the revision onto these same videos: explicit replace must not double tracks.
+ await s.open();await page.getByLabel('Multi-camera annotation file',{exact:true}).setInputFiles({name:'revised-room.json',mimeType:'application/json',buffer:raw});await page.getByRole('button',{name:'Read camera list',exact:true}).click();
+ for(const [index,video_id] of targetVideos.entries())await selectOption(page,`Match camera Camera ${index+1}`,new RegExp(video_id.slice(0,6)));
+ await selectOption(page,'Camera annotation import mode','Replace annotations on mapped cameras');
+ const replace=page.getByRole('button',{name:'Replace annotations and import session',exact:true});await expect(replace).toBeDisabled();
+ await page.getByRole('button',{name:'Preview replacement',exact:true}).click();
+ await expect(page.getByTestId('camera-import-impact')).toContainText('Roundtrip room');
+ await expect(page.getByRole('table',{name:'Camera replacement impact'}).getByRole('row')).toHaveCount(3);
+ await page.getByRole('checkbox',{name:'Replace the annotations on these mapped videos',exact:true}).check();await expect(replace).toBeEnabled();
+ // Session-only edits do not change project revision; the confirmation must catch them too.
+ const existing=importedSessions[0];await data(await request.patch('/api/camera-sessions/'+existing.id,{data:{revision:existing.revision,name:'Changed externally',cameras:existing.cameras,people:existing.people,assignments:existing.assignments}}));
+ await replace.click();await expect(page.getByTestId('camera-session-import').getByRole('alert')).toContainText('preview is missing or changed');
+ expect((await data(await request.get('/api/projects/'+s.project.id))).state).toEqual(restored.state);
+ await page.getByRole('button',{name:'Preview replacement',exact:true}).click();await expect(page.getByTestId('camera-import-impact')).toContainText('Changed externally');
+ await page.getByRole('checkbox',{name:'Replace the annotations on these mapped videos',exact:true}).check();await replace.click();await expect(page.getByTestId('multicamera-workspace')).toBeVisible();
+ const replaced=await data(await request.get('/api/projects/'+s.project.id));expect(Object.keys(replaced.state.identities)).toHaveLength(2);expect(Object.keys(replaced.state.observations)).toHaveLength(2);
+ expect(Object.keys(replaced.state.identities).some(id=>id in restored.state.identities)).toBe(false);
+ const finalSessions=await data(await request.get(`/api/projects/${s.project.id}/camera-sessions`));expect(finalSessions).toHaveLength(2);
+ const latest=finalSessions.find((row:any)=>row.id!==existing.id);expect(latest.people[0].person_id).toBe(17);expect(latest.assignments).toHaveLength(2);expect(finalSessions.find((row:any)=>row.id===existing.id).assignments).toHaveLength(0);
+});
+
+test('delete camera session confirms scope, cancels safely and keeps recordings and other sessions',async({page,request})=>{
+ const s=await setup(page,request);
+ const data=async(response:any)=>{expect(response.ok(),await response.text()).toBeTruthy();return response.json()};
+ const vids:string[]=[];
+ for(let n=0;n<2;n++){
+  const v=await data(await request.post(`/api/projects/${s.project.id}/videos/local`,{data:{path:'tests/fixtures/numbered.mp4'}}));vids.push(v.video_id);
+  await expect.poll(async()=>(await data(await request.get('/api/projects/'+s.project.id))).videos[v.video_id].status).toBe('ready');
+ }
+ const body={name:'Obsolete room',cameras:vids.map((video_id,n)=>({video_id,name:`Camera ${n+1}`}))};
+ const session=await data(await request.post(`/api/projects/${s.project.id}/camera-sessions`,{data:body}));
+ const other=await data(await request.post(`/api/projects/${s.project.id}/camera-sessions`,{data:{...body,name:'Keep room'}}));
+ const before=await data(await request.get('/api/projects/'+s.project.id));
+ await page.goto('/');await page.getByTestId('open-project-'+s.project.id).click();
+ await expect(page.getByRole('button',{name:'Delete camera session Obsolete room',exact:true})).toBeVisible();await page.getByRole('button',{name:'Delete camera session Obsolete room',exact:true}).click();
+ const dialog=page.getByRole('dialog');await expect(dialog).toContainText('Obsolete room');await expect(dialog).toContainText('Videos, local tracks and boxes');
+ await dialog.getByRole('button',{name:'Cancel',exact:true}).click();await expect(page.getByTestId('session-row-'+session.id)).toBeVisible();
+ await page.getByRole('button',{name:'Delete camera session Obsolete room',exact:true}).click();await dialog.getByRole('button',{name:'Delete session',exact:true}).click();
+ await expect(page.getByTestId('session-row-'+session.id)).toHaveCount(0);await expect(page.getByTestId('session-row-'+other.id)).toBeVisible();
+ const after=await data(await request.get('/api/projects/'+s.project.id));expect(after.state).toEqual(before.state);expect(after.videos).toEqual(before.videos);
+ await page.reload();await page.getByTestId('open-project-'+s.project.id).click();await expect(page.getByTestId('session-row-'+session.id)).toHaveCount(0);
 });

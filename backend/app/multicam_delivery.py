@@ -1,7 +1,8 @@
 """Revision-bound, media-free multi-camera delivery and explicit remapped import.
 
 Shared people belong to a camera session. Equal local track numbers never imply
-an association, and importing a session never overwrites existing video tracks.
+an association. Imports add tracks by default; replacing mapped cameras requires
+an explicit revision-bound preview confirmation.
 """
 import copy
 import hashlib
@@ -19,11 +20,12 @@ from . import db
 from .annotation_export import annotation_document
 from .config import DATA, safe_path
 from .export_names import json_filename
-from .multicam import get_session, insert_session, validate_session_snapshot
-from .native_annotations import preview_native_document
+from .multicam import get_session, insert_session, list_sessions, prune_assignments, validate_session_snapshot
+from .native_annotations import preview_native_document, replacement_changes
+from .geometry import box_items
 from .session_json import SessionDocument, read_session_json
 from .review_validation import LIMITATION, validate_document
-from .schema import Operation, validate_state
+from .schema import Operation, validate_state, identity_video_scopes
 from .version import APP_VERSION
 from .video import sha256
 
@@ -246,9 +248,57 @@ def _scope_import_state(source, video_id):
             'videos': {video_id: source['videos'][video_id]}, 'state': selected}
 
 
-def import_session_document(pid, document, video_mapping, project_revision):
+def _mapped_import_impact(c, project, document, video_mapping):
     if not isinstance(video_mapping, dict) or not all(isinstance(k, str) and isinstance(v, str) for k, v in video_mapping.items()):
         raise ValueError('Map every source video ID to an existing video in this project.')
+    source = document['annotations']
+    if set(source['videos']) != {camera['video_id'] for camera in document['session']['cameras']}:
+        raise ValueError('The annotation videos must match the exported camera membership exactly.')
+    if set(video_mapping) != set(source['videos']) or len(set(video_mapping.values())) != len(video_mapping):
+        raise ValueError('Map each exported camera video to a different existing target video; no automatic filename or ID matching.')
+    scopes = identity_video_scopes(project['state'])
+    imported_scopes = identity_video_scopes(source['state'])
+    def counts(state):
+        values = {}
+        for observation in state['observations'].values():
+            vid = observation['video_id']
+            values[vid] = values.get(vid, 0) + sum(1 for _ in box_items(observation))
+        return values
+    existing_boxes, imported_boxes = counts(project['state']), counts(source['state'])
+    cameras = []
+    for old_vid, new_vid in video_mapping.items():
+        original, target = source['videos'][old_vid], project['videos'].get(new_vid)
+        if not target or target.get('status') != 'ready':
+            raise ValueError('Every mapped target video must belong to this project and finish indexing.')
+        if not original.get('source_hash') or original['source_hash'] != target.get('source_hash'):
+            raise ValueError('The mapped video SHA-256 must match the original recording exactly.')
+        if any(original.get(k) != target.get(k) for k in ('width', 'height', 'frame_count')):
+            raise ValueError('Video dimensions or frame count do not match the exported video')
+        ledger = (json.loads(r['data']) for r in c.execute('SELECT data FROM frames WHERE video_id=? ORDER BY frame_index', (new_vid,)))
+        signature = lambda f: tuple(f[k] for k in ('frame_index', 'pts', 'time_base_num', 'time_base_den'))
+        if any(a is None or b is None or signature(a) != signature(b)
+               for a, b in zip_longest(ledger, source['frames'][old_vid])):
+            raise ValueError('The mapped source frame ledger differs from the exported recording.')
+        cameras.append({'source_video_id': old_vid, 'video_id': new_vid, 'video_name': target['name'],
+                        'camera_name': next(cam['name'] for cam in document['session']['cameras'] if cam['video_id'] == old_vid),
+                        'existing_tracks': sum(new_vid in vids for vids in scopes.values()),
+                        'existing_boxes': existing_boxes.get(new_vid, 0),
+                        'imported_tracks': sum(old_vid in vids for vids in imported_scopes.values()),
+                        'imported_boxes': imported_boxes.get(old_vid, 0)})
+    affected = [{'id': s['id'], 'name': s['name'], 'revision': s['revision'],
+                 'video_ids': sorted(cam['video_id'] for cam in s['cameras'] if cam['video_id'] in video_mapping.values())}
+                for s in list_sessions(project['id'], c)
+                if any(cam['video_id'] in video_mapping.values() for cam in s['cameras'])]
+    impact = {'project_revision': project['revision'], 'cameras': cameras, 'affected_sessions': affected}
+    # A freshness stamp, not an authorization token: confirmation is invalidated
+    # by local annotation edits, mapping changes, or edits to affected sessions.
+    impact['replacement_token'] = hashlib.sha256(json.dumps(impact, sort_keys=True).encode()).hexdigest()
+    return impact
+
+
+def import_session_document(pid, document, video_mapping, project_revision, mode='add', replacement_token=''):
+    if mode not in ('add', 'replace'):
+        raise ValueError('Choose Add or Replace annotations')
     try:
         report = structural_report(document)
     except (KeyError, TypeError, AttributeError, IndexError) as error:
@@ -256,16 +306,23 @@ def import_session_document(pid, document, video_mapping, project_revision):
     if not report['passed']:
         raise ValueError('Invalid camera session: ' + '; '.join(e['message'] for e in report['errors'][:5]))
     source = document['annotations']
-    if set(video_mapping) != set(source['videos']) or len(set(video_mapping.values())) != len(video_mapping):
-        raise ValueError('Map each exported camera video to a different existing target video; no automatic filename or ID matching.')
     with db.transaction() as c:
         project = db.get_state(c, pid)
         if project['revision'] != project_revision:
             raise db.Conflict(project['revision'])
+        impact = _mapped_import_impact(c, project, document, video_mapping)
+        if mode == 'replace' and replacement_token != impact['replacement_token']:
+            raise ValueError('Replacement preview is missing or changed. Preview the mapped cameras and confirm replacement again.')
         changes, identity_map, warnings = [], {}, []
         # Imported rows are newly allocated. Keep existing records read-only and
         # copy only collection maps instead of every existing box for each camera.
         working = {**project, 'state': {key: dict(rows) for key, rows in project['state'].items()}}
+        if mode == 'replace':
+            for new_vid in video_mapping.values():
+                removals = replacement_changes(working, new_vid)
+                changes.extend(removals)
+                for change in removals:
+                    working['state'][change['collection']].pop(change['id'], None)
         working['classes'] = list(dict.fromkeys(project['classes'] + source['classes']))
         if len(working['classes']) > 100:
             raise ValueError('Import would exceed the project limit of 100 classes')
@@ -273,20 +330,8 @@ def import_session_document(pid, document, video_mapping, project_revision):
         if not isinstance(source_palette, dict) or any(not isinstance(name, str) or not isinstance(color, str) or not re.fullmatch(r'#[0-9a-fA-F]{6}', color) for name, color in source_palette.items()):
             raise ValueError('Invalid class colors in camera session')
         for old_vid, new_vid in video_mapping.items():
-            original, target = source['videos'][old_vid], project['videos'].get(new_vid)
-            if not target or target.get('status') != 'ready':
-                raise ValueError('Every mapped target video must belong to this project and finish indexing.')
-            if not original.get('source_hash') or original['source_hash'] != target.get('source_hash'):
-                raise ValueError('The mapped video SHA-256 must match the original recording exactly.')
-            ledger = (json.loads(r['data']) for r in c.execute('SELECT data FROM frames WHERE video_id=? ORDER BY frame_index', (new_vid,)))
-            signature = lambda f: tuple(f[k] for k in ('frame_index', 'pts', 'time_base_num', 'time_base_den'))
-            if any(a is None or b is None or signature(a) != signature(b)
-                   for a, b in zip_longest(ledger, source['frames'][old_vid])):
-                raise ValueError('The mapped source frame ledger differs from the exported recording.')
             scoped = _scope_import_state(source, old_vid)
             if not scoped['state']['identities']:
-                if any(original.get(k) != target.get(k) for k in ('width', 'height', 'frame_count')):
-                    raise ValueError('Video dimensions or frame count do not match the exported video')
                 continue
             preview = preview_native_document(scoped, working, new_vid, 'add',
                                               max_entities=None, max_boxes=None, validate_merged=False)
@@ -307,7 +352,12 @@ def import_session_document(pid, document, video_mapping, project_revision):
                                  'person_uuid': people_map[a['person_uuid']]} for a in document['session']['assignments']]}
         validate_state(working['state'], working['videos'], visible_only=True, structural_only=True)
         for change in changes:
-            c.execute('INSERT INTO entities VALUES(?,?,?,?)', (pid, change['collection'], change['id'], json.dumps(change['after'])))
+            if change['after'] is None:
+                c.execute('DELETE FROM entities WHERE project_id=? AND collection=? AND id=?', (pid, change['collection'], change['id']))
+            else:
+                c.execute('INSERT INTO entities VALUES(?,?,?,?)', (pid, change['collection'], change['id'], json.dumps(change['after'])))
+        if mode == 'replace':
+            prune_assignments(c, pid, working['state'])
         palette = dict(project['class_colors'])
         for name in working['classes']:
             if name in source_palette: palette.setdefault(name, source_palette[name])
@@ -318,7 +368,7 @@ def import_session_document(pid, document, video_mapping, project_revision):
         revision = project_revision
         for offset in range(0, max(len(changes), 1), IMPORT_BATCH_SIZE):
             operation = Operation(id=str(uuid.uuid4()), base_revision=revision,
-                                  label='Import multi-camera annotations', changes=changes[offset:offset+IMPORT_BATCH_SIZE])
+                                  label='Replace multi-camera annotations' if mode == 'replace' else 'Import multi-camera annotations', changes=changes[offset:offset+IMPORT_BATCH_SIZE])
             revision += 1
             c.execute('INSERT INTO operations VALUES(?,?,?,?,?)', (operation.id, pid, revision, operation.model_dump_json(), db.now()))
         c.execute('UPDATE projects SET revision=?,classes=?,class_colors=? WHERE id=?',
@@ -330,20 +380,33 @@ def import_session_document(pid, document, video_mapping, project_revision):
 
 
 @router.post('/api/projects/{pid}/camera-sessions/import')
-def import_session(pid: str, file: UploadFile = File(...), video_mapping: str = Form(...), project_revision: int = Form(...)):
+def import_session(pid: str, file: UploadFile = File(...), video_mapping: str = Form(...), project_revision: int = Form(...),
+                   mode: str = Form('add'), replacement_token: str = Form('')):
     try:
         mapping = json.loads(video_mapping)
     except (ValueError, TypeError) as error:
         raise ValueError('Provide an explicit source-to-target video mapping as JSON.') from error
     with read_session_json(file.file) as document:
-        return import_session_document(pid, document, mapping, project_revision)
+        return import_session_document(pid, document, mapping, project_revision, mode, replacement_token)
 
 
 @router.post('/api/projects/{pid}/camera-sessions/import/preview')
-def preview_session_import(pid: str, file: UploadFile = File(...)):
-    db.snapshot(pid)
+def preview_session_import(pid: str, file: UploadFile = File(...), video_mapping: str | None = Form(None)):
+    try:
+        mapping = json.loads(video_mapping) if video_mapping is not None else None
+    except (ValueError, TypeError) as error:
+        raise ValueError('Provide an explicit source-to-target video mapping as JSON.') from error
     with read_session_json(file.file) as document:
-        return _preview_session_import(document)
+        return preview_session_document(pid, document, mapping)
+
+
+def preview_session_document(pid, document, video_mapping=None):
+    preview = _preview_session_import(document)
+    with db.transaction() as c:
+        project = db.get_state(c, pid)
+        if video_mapping is not None:
+            preview['impact'] = _mapped_import_impact(c, project, document, video_mapping)
+    return preview
 
 
 def _preview_session_import(document):
