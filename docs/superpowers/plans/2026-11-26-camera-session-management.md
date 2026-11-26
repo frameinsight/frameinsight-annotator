@@ -31,8 +31,8 @@ Interfaces: import preview accepts optional video_mapping; returns impact with p
 - [x] Write/run failing tests for scoped replacement, empty source, rollback, stale confirmation and other-session impact.
 - [x] Implement impact preview and atomic replacement, prune obsolete assignments, preserve shared people from import.
 - [x] Add Source import mode, preview table and explicit replacement checkbox; invalidate preview on mapping/mode/file changes.
-- [ ] Run backend/frontend/build and browser tests, including Add compatibility, rollback/retry and replacement roundtrip.
+- [x] Run backend/frontend/build and browser tests, including Add compatibility, rollback/retry and replacement roundtrip.
 
 ### Task 3: Verify and deliver
-- [ ] Review diff, run full suites and exercise dialogs in browser.
+- [x] Review diff, run full suites and exercise dialogs in browser.
 - [ ] Update user documentation and release notes; push fixes to main, verify remote/CI.
